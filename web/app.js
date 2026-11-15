@@ -352,10 +352,11 @@ function screenTransactions(v) {
     const list = filteredTxns(), size = perPage(), pages = Math.max(1, Math.ceil(list.length / size));
     state.page = Math.min(Math.max(0, state.page), pages - 1);
     const from = state.page * size, shown = list.slice(from, from + size);
-    const pager = list.length > size ? `<nav class="pager" aria-label="${esc(__("Pages"))}">
+    // always shown, even for one page, so paging is discoverable
+    const pager = `<nav class="pager" aria-label="${esc(__("Pages"))}">
         <button class="smallbtn" data-page="${state.page - 1}" ${state.page === 0 ? "disabled" : ""}>${esc(__("‹ Previous"))}</button>
         <span>${esc(__("{from}–{to} of {total}", { from: from + 1, to: from + shown.length, total: list.length }))}</span>
-        <button class="smallbtn" data-page="${state.page + 1}" ${state.page >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button></nav>` : "";
+        <button class="smallbtn" data-page="${state.page + 1}" ${state.page >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button></nav>`;
     $("#txnResults").innerHTML = list.length ? table([{ t: "Date" }, { t: "Transaction" }, { t: "Account" }, { t: "State" }, { t: "Amount", num: 1 }], txnRows(shown)) + pager : `<div class="empty">${esc(__("No transactions match. Add your first with the + button."))}</div>`;
     $("#txnResults").querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => { state.page = parseInt(b.dataset.page, 10); drawResults(); $("#view").scrollIntoView({ block: "start" }); }));
     bindTxnActions($("#txnResults"));
