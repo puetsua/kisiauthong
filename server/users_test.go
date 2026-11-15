@@ -59,7 +59,7 @@ func TestAvatar(t *testing.T) {
 	for name, img := range map[string]string{
 		"not an image": "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("<svg onload=alert(1)>")),
 		"too small":    pngDataURL(t, 8),
-		"too large":    pngDataURL(t, 1100),
+		"too large":    pngDataURL(t, 513),
 		"no data URL":  "https://example.org/me.png",
 	} {
 		if code := a.do("PUT", "/api/me/avatar", map[string]string{"image": img}, nil); code != 400 {

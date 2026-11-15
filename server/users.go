@@ -19,7 +19,7 @@ import (
 
 const (
 	maxAvatarBytes = 512 << 10
-	maxAvatarSide  = 1024
+	maxAvatarSide  = 512 // clients crop and scale photos to this before uploading
 )
 
 var colorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -92,7 +92,7 @@ func avatarImage(dataURL string) ([]byte, string, error) {
 type avatarError struct{}
 
 func (avatarError) Error() string {
-	return "the photo must be a PNG or JPEG image, 16 to 1024 pixels wide and at most 512 KB"
+	return "the photo must be a PNG or JPEG image, 16 to 512 pixels wide and at most 512 KB"
 }
 
 var errBadAvatar = avatarError{}

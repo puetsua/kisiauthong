@@ -47,8 +47,9 @@ and sign them in with a password, TOTP and passkeys.
   WebAuthn refuses IP addresses, so the app must be opened as
   `http://localhost:…` or by a domain name. Credentials are stored per
   user (migration 10, table `passkeys`) with their signature counters.
-- **Avatars**: a photo (PNG or JPEG, 16–1024 px, at most 512 KB; the web
-  app crops it to a 256 px square first) stored with the user and served
+- **Avatars**: a photo (PNG or JPEG, 16–512 px, at most 512 KB; clients
+  resize before uploading: the web app lets the user move and zoom the photo
+  in a round frame, then sends that square as JPEG of at most 512 px) stored with the user and served
   to signed-in users at `/api/users/{id}/avatar?v=<version>`, or a colour
   for the initials. Migration 11 adds `users.avatar_version`.
 - **Administrators** add users (who start with an empty book), reset

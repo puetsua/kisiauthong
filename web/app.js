@@ -1525,9 +1525,13 @@ function screenAccount(v) {
   drawKeys();
   $("#avatarFile").addEventListener("change", async (e) => {
     const file = e.target.files[0];
+    e.target.value = ""; // choosing the same file again opens the cropper again
     if (!file) return;
-    try { state.me = await put("/api/me/avatar", { image: await squareImage(file, 256) }); renderUserBtn(); msg(__("Photo saved.")); render(); }
-    catch (err) { errMsg(err); }
+    try {
+      const image = await cropPhoto(file);
+      if (!image) return;
+      state.me = await put("/api/me/avatar", { image }); renderUserBtn(); msg(__("Photo saved.")); render();
+    } catch (err) { errMsg(err); }
   });
   const rm = $("#avatarRemove");
   if (rm) rm.addEventListener("click", async () => { try { state.me = await api("/api/me/avatar", { method: "DELETE" }); renderUserBtn(); render(); } catch (err) { errMsg(err); } });
@@ -1656,15 +1660,90 @@ async function drawPasskeys() {
   });
 }
 
-// a photo cropped to its centre square and scaled down, as JPEG, before it is uploaded
-async function squareImage(file, side) {
+// Photo cropper: drag to move, zoom with the slider, wheel, pinch or +/-; arrow keys move.
+// Resolves to a square JPEG of at most AVATAR_MAX px (the server takes no more), or null if cancelled.
+const AVATAR_MAX = 512, AVATAR_BYTES = 500 * 1024, ZOOM_MAX = 5;
+async function cropPhoto(file) {
   const bmp = await createImageBitmap(file).catch(() => { throw new Error(__("That file is not an image this browser can read.")); });
-  const s = Math.min(bmp.width, bmp.height), c = document.createElement("canvas");
-  c.width = c.height = Math.min(side, s);
-  const g = c.getContext("2d");
-  g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
-  g.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, c.width, c.height);
-  return c.toDataURL("image/jpeg", 0.86);
+  if (bmp.width < 16 || bmp.height < 16) throw new Error(__("That photo is too small."));
+  openDialog(__("Crop photo"), `<div class="cropper">
+      <canvas id="cropCanvas" tabindex="0" aria-label="${esc(__("Drag to move the photo; use the arrow keys to move and + or - to zoom"))}"></canvas>
+      <div class="cropzoom"><span aria-hidden="true">−</span><input type="range" id="cropZoom" min="1" max="${ZOOM_MAX}" step="0.01" value="1" aria-label="${esc(__("Zoom"))}"><span aria-hidden="true">+</span></div>
+      <button class="primarybtn big" type="button" id="cropSave">${esc(__("Save photo"))}</button>
+    </div>`);
+  const dlg = $("#dialog"), cv = $("#cropCanvas"), zoomEl = $("#cropZoom"), g = cv.getContext("2d");
+  const V = cv.getBoundingClientRect().width || 300, dpr = window.devicePixelRatio || 1;
+  cv.width = cv.height = Math.round(V * dpr);
+  const base = V / Math.min(bmp.width, bmp.height); // the short side fills the frame at zoom 1
+  let z = 1, scale = base, ox = (V - bmp.width * base) / 2, oy = (V - bmp.height * base) / 2, queued = false;
+  const clamp = () => { // the photo always covers the whole frame
+    ox = Math.min(0, Math.max(V - bmp.width * scale, ox));
+    oy = Math.min(0, Math.max(V - bmp.height * scale, oy));
+  };
+  const draw = () => {
+    queued = false;
+    if (!bmp.width) return; // closed: the dialog is gone
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, V, V);
+    g.imageSmoothingQuality = "high";
+    g.drawImage(bmp, ox, oy, bmp.width * scale, bmp.height * scale);
+    g.beginPath(); g.rect(0, 0, V, V); g.arc(V / 2, V / 2, V / 2 - 1, 0, Math.PI * 2);
+    g.fillStyle = "rgba(20,12,28,.5)"; g.fill("evenodd"); // the corners the round avatar hides
+    g.beginPath(); g.arc(V / 2, V / 2, V / 2 - 1, 0, Math.PI * 2); g.strokeStyle = "rgba(255,255,255,.9)"; g.lineWidth = 1.5; g.stroke();
+  };
+  const redraw = () => { if (!queued) { queued = true; requestAnimationFrame(draw); } };
+  // zoom to nz keeping the photo point under (cx, cy) in place
+  const zoomTo = (nz, cx = V / 2, cy = V / 2) => {
+    nz = Math.min(ZOOM_MAX, Math.max(1, nz));
+    const ix = (cx - ox) / scale, iy = (cy - oy) / scale;
+    z = nz; scale = base * z; ox = cx - ix * scale; oy = cy - iy * scale;
+    clamp(); zoomEl.value = String(z); redraw();
+  };
+  const at = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * V / r.width, (e.clientY - r.top) * V / r.height]; };
+  const pts = new Map();
+  let pinch = null;
+  cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, at(e)); pinch = null; });
+  cv.addEventListener("pointermove", (e) => {
+    if (!pts.has(e.pointerId)) return;
+    const p = at(e), prev = pts.get(e.pointerId);
+    pts.set(e.pointerId, p);
+    if (pts.size === 1) { ox += p[0] - prev[0]; oy += p[1] - prev[1]; clamp(); redraw(); return; }
+    const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    if (pinch) zoomTo(pinch.z * d / pinch.d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+    else pinch = { d, z };
+  });
+  const up = (e) => { pts.delete(e.pointerId); pinch = null; };
+  cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+  cv.addEventListener("wheel", (e) => { e.preventDefault(); const [x, y] = at(e); zoomTo(z * Math.exp(-e.deltaY * 0.0015), x, y); }, { passive: false });
+  cv.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 40 : 10, moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+    if (moves[e.key]) { ox += moves[e.key][0]; oy += moves[e.key][1]; clamp(); redraw(); }
+    else if (e.key === "+" || e.key === "=") zoomTo(z * 1.1);
+    else if (e.key === "-") zoomTo(z / 1.1);
+    else return;
+    e.preventDefault();
+  });
+  zoomEl.addEventListener("input", () => zoomTo(parseFloat(zoomEl.value)));
+  draw();
+  cv.focus();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; bmp.close(); resolve(v); } };
+    dlg.addEventListener("close", () => finish(null), { once: true });
+    $("#cropSave").addEventListener("click", () => {
+      // the framed square of the photo, scaled down to at most AVATAR_MAX (never up)
+      const side = V / scale, out = Math.max(16, Math.min(AVATAR_MAX, Math.round(side))), c = document.createElement("canvas");
+      c.width = c.height = out;
+      const cg = c.getContext("2d");
+      cg.fillStyle = "#fff"; cg.fillRect(0, 0, out, out); // transparent PNGs get a white background in JPEG
+      cg.imageSmoothingQuality = "high";
+      cg.drawImage(bmp, -ox / scale, -oy / scale, side, side, 0, 0, out, out);
+      let q = 0.88, url = c.toDataURL("image/jpeg", q);
+      while (url.length * 0.75 > AVATAR_BYTES && q > 0.4) url = c.toDataURL("image/jpeg", (q -= 0.12));
+      finish(url);
+      dlg.close();
+    });
+  });
 }
 
 // Users (administrators): everyone who can sign in here, with an add form at the end
