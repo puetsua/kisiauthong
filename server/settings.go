@@ -112,6 +112,8 @@ type GeneralSettings struct {
 	OpenDays int `json:"openDays"`
 	// TimeZone shows transaction times in this IANA zone; "" follows the device (for travelling).
 	TimeZone string `json:"timeZone"`
+	// NumberFormat writes amounts as "grouped" (1,074,958), "plain" (1074958) or "cjk" (107萬4958).
+	NumberFormat string `json:"numberFormat"`
 }
 
 const (
@@ -120,6 +122,8 @@ const (
 )
 
 var pageWidths = map[string]bool{"default": true, "wide": true, "full": true}
+
+var numberFormats = map[string]bool{"grouped": true, "plain": true, "cjk": true}
 
 // uiLanguages are the UI languages the web client ships translations for.
 var uiLanguages = map[string]bool{"en": true, "zh-TW": true}
@@ -184,7 +188,7 @@ func defaultDashboard() DashboardSettings {
 func defaultSettings() Settings {
 	return Settings{
 		Dashboard: defaultDashboard(),
-		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, PageWidth: "default", OpenDays: defaultOpenDays},
+		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, PageWidth: "default", OpenDays: defaultOpenDays, NumberFormat: "grouped"},
 	}
 }
 
@@ -278,6 +282,12 @@ func (g *GeneralSettings) validate() error {
 	}
 	if g.OpenDays < 1 || g.OpenDays > maxOpenDays {
 		return fmt.Errorf("openDays must be 1-%d", maxOpenDays)
+	}
+	if g.NumberFormat == "" { // rows saved before this setting existed
+		g.NumberFormat = "grouped"
+	}
+	if !numberFormats[g.NumberFormat] {
+		return fmt.Errorf("numberFormat must be grouped, plain or cjk")
 	}
 	if g.PageWidth == "" { // rows saved before this setting existed
 		g.PageWidth = "default"

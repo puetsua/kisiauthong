@@ -18,6 +18,8 @@ const I18N = {
     "{amount} left": "剩 {amount}", "{amount} over": "超支 {amount}", "Starts {date}": "{date} 開始", "Ended {date}": "{date} 已結束",
     "{amount} a day for {n} day(s)": "每天 {amount}，還有 {n} 天", "{n} day(s) left": "還有 {n} 天", "of {limit}": "／{limit}",
     "{amount} this month": "本月 {amount}", "Nothing spent this month": "本月沒有支出", "Categories": "分類",
+    "Number format": "數字格式", "Grouped (1,074,958)": "千分位（1,074,958）", "Plain (1074958)": "不分位（1074958）",
+    "萬・億・兆 (107萬4958)": "萬・億・兆（107萬4958）", "Number format saved.": "已儲存數字格式。",
     "Time": "時間", "Time zone": "時區", "Auto (this device · {zone})": "自動（這台裝置 · {zone}）", "Time zone saved.": "已儲存時區。",
     "{time} in {zone}": "{zone}當地 {time}", "Total": "總額", "Frequently used": "常用",
     "Owed": "欠款", "Card": "卡片", "Wallet": "錢包", "Phone": "手機", "Coins": "零錢", "Home": "住家", "Car": "汽車", "Travel": "旅行",

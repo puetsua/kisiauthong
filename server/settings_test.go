@@ -285,6 +285,18 @@ func TestSettingsLegacyDashboardBecomesItems(t *testing.T) {
 	}
 }
 
+func TestSettingsNumberFormat(t *testing.T) {
+	withTestStore(t)
+	if _, s := doSettings(t, http.MethodGet, ""); s.General.NumberFormat != "grouped" {
+		t.Fatalf("default: %q", s.General.NumberFormat)
+	}
+	for _, f := range []string{"plain", "cjk", "grouped"} {
+		if code, s := doSettings(t, http.MethodPut, `{"general":{"numberFormat":"`+f+`"}}`); code != 200 || s.General.NumberFormat != f {
+			t.Fatalf("%s: %d %q", f, code, s.General.NumberFormat)
+		}
+	}
+}
+
 func TestSettingsTimeZone(t *testing.T) {
 	withTestStore(t)
 	if _, s := doSettings(t, http.MethodGet, ""); s.General.TimeZone != "" {
@@ -316,6 +328,7 @@ func TestSettingsRejectsInvalid(t *testing.T) {
 		`{"dashboard":{"items":[{"id":"a","type":"recent","title":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}}`,
 		`{"dashboard":{"items":[{"id":"a","type":"accounts","include":[""]}]}}`,
 		`{"general":{"timeZone":"Mars/Olympus"}}`,
+		`{"general":{"numberFormat":"roman"}}`,
 		`{}`,
 		`not json`,
 	} {

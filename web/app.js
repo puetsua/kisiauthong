@@ -45,10 +45,36 @@ function currencyOptions(selected) {
     + (rest.length ? `<optgroup label="${esc(__("All currencies"))}">${rest.map((c) => curOption(c, sel)).join("")}</optgroup>` : "");
 }
 const toMinor = (a, c) => Math.round(parseFloat(a || 0) * Math.pow(10, expOf(c)));
-// fmt(minor, currency, calc): "TWD 1,580" / "USD 12.50"; calc = a calculated figure, shown at full precision
+// How amounts are written (Settings → Number format): grouped "1,074,958", plain "1074958",
+// or with the CJK myriad units "107萬4958" (萬 10⁴, 億 10⁸, 兆 10¹²; lower groups keep 4 digits: "100萬0958").
+const NUMFMT_L = { grouped: N_("Grouped (1,074,958)"), plain: N_("Plain (1074958)"), cjk: N_("萬・億・兆 (107萬4958)") };
+const numberFormat = () => (state.general && state.general.numberFormat) || "grouped";
+const MYRIAD = ["", "萬", "億", "兆"];
+function writeInt(n) {
+  switch (numberFormat()) {
+    case "plain": return String(n);
+    case "cjk": {
+      const groups = [];
+      for (let x = n; x > 0; x = Math.floor(x / 10000)) groups.push(x % 10000);
+      if (!groups.length) return "0";
+      if (groups.length > MYRIAD.length) return String(n); // beyond 兆: plain digits
+      let out = "";
+      for (let i = groups.length - 1; i >= 0; i--) {
+        if (groups[i] === 0) continue;
+        out += (out ? String(groups[i]).padStart(4, "0") : String(groups[i])) + MYRIAD[i];
+      }
+      return out;
+    }
+    default: return n.toLocaleString(LANG);
+  }
+}
+// fmt(minor, currency, calc): "TWD 1,580" / "USD 12.50"; calc = a calculated figure, shown at full precision.
+// Built from integer minor units, so no floating point touches the digits.
 function fmt(minor, currency, calc = false) {
-  const c = currency || defCur(), e = expOf(c), d = shownDigits(minor, c, calc), v = (minor || 0) / Math.pow(10, e);
-  return (currency || "") + " " + v.toLocaleString(LANG, { minimumFractionDigits: d, maximumFractionDigits: d });
+  const c = currency || defCur(), e = expOf(c), d = shownDigits(minor, c, calc);
+  const m = Math.round(minor || 0), abs = Math.abs(m), unit = Math.pow(10, e);
+  const whole = writeInt(Math.floor(abs / unit)), frac = d ? "." + String(abs % unit).padStart(e, "0") : "";
+  return (currency || "") + " " + (m < 0 ? "-" : "") + whole + frac;
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 // msg shows a short toast at the bottom of the page; errors stay longer and can be clicked away.
@@ -920,6 +946,7 @@ function screenSettings(v) {
   v.innerHTML = `<section class="panel"><h3>${esc(__("General"))}</h3>
       <div class="setrow"><label>${esc(__("Language"))} <select id="setLang">${langOpts}</select></label>
         <label>${esc(__("Default currency"))} <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label>
+        <label>${esc(__("Number format"))} <select id="setNumFmt">${enumOptions(NUMFMT_L, Object.keys(NUMFMT_L), numberFormat())}</select></label>
         <label>${esc(__("Page width"))} <select id="setWidth">${enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())}</select></label>
         <label>${esc(__("Time zone"))} <select id="setTz"><option value="">${esc(__("Auto (this device · {zone})", { zone: deviceTZ().replace(/_/g, " ") }))}</option>${zoneOptions(state.general && state.general.timeZone)}</select></label>
         <label>${esc(__("Days open by default"))} <select id="setOpenDays">${[...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
@@ -948,6 +975,7 @@ function screenSettings(v) {
   };
   $("#setLang").addEventListener("change", (e) => saveGeneral({ language: e.target.value }, () => __("Language saved.")));
   $("#setDefCur").addEventListener("change", (e) => saveGeneral({ defaultCurrency: e.target.value }, () => __("Default currency saved.")));
+  $("#setNumFmt").addEventListener("change", (e) => saveGeneral({ numberFormat: e.target.value }, () => __("Number format saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
   $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
   $("#setOpenDays").addEventListener("change", (e) => { state.dayOpen = {}; saveGeneral({ openDays: parseInt(e.target.value, 10) }, () => __("Days open by default saved.")); });
