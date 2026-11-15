@@ -108,3 +108,34 @@ func TestUpdatesPersist(t *testing.T) {
 		}
 	}
 }
+
+// The sample data must respect the money-box invariants: no non-credit
+// account below zero, and allocations never exceed an account's balance.
+func TestSeedRespectsBalanceInvariants(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer s.db.Close()
+	if len(s.data.Transactions) <= 50 {
+		t.Fatalf("seed should hold more than one page of transactions, got %d", len(s.data.Transactions))
+	}
+	for _, a := range s.data.Accounts {
+		bal, alloc := s.data.Balance(a.ID), s.data.AllocatedForAccount(a.ID)
+		if !a.AllowNegative && bal < 0 {
+			t.Errorf("%s balance %d < 0", a.ID, bal)
+		}
+		if alloc > bal {
+			t.Errorf("%s allocated %d > balance %d", a.ID, alloc, bal)
+		}
+	}
+	for _, tt := range s.data.TransactionTags {
+		found := false
+		for _, tx := range s.data.Transactions {
+			found = found || tx.ID == tt.TransactionID
+		}
+		if !found {
+			t.Errorf("tag link to unknown transaction %s", tt.TransactionID)
+		}
+	}
+}
