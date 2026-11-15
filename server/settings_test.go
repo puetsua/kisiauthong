@@ -290,10 +290,14 @@ func TestSettingsNumberFormat(t *testing.T) {
 	if _, s := doSettings(t, http.MethodGet, ""); s.General.NumberFormat != "grouped" {
 		t.Fatalf("default: %q", s.General.NumberFormat)
 	}
-	for _, f := range []string{"plain", "cjk", "grouped"} {
+	for _, f := range []string{"plain", "four", "grouped"} {
 		if code, s := doSettings(t, http.MethodPut, `{"general":{"numberFormat":"`+f+`"}}`); code != 200 || s.General.NumberFormat != f {
 			t.Fatalf("%s: %d %q", f, code, s.General.NumberFormat)
 		}
+	}
+	// the retired 萬・億・兆 style becomes groups of four
+	if code, s := doSettings(t, http.MethodPut, `{"general":{"numberFormat":"cjk"}}`); code != 200 || s.General.NumberFormat != "four" {
+		t.Fatalf("cjk: %d %q", code, s.General.NumberFormat)
 	}
 }
 

@@ -112,7 +112,7 @@ type GeneralSettings struct {
 	OpenDays int `json:"openDays"`
 	// TimeZone shows transaction times in this IANA zone; "" follows the device (for travelling).
 	TimeZone string `json:"timeZone"`
-	// NumberFormat writes amounts as "grouped" (1,074,958), "plain" (1074958) or "cjk" (107萬4958).
+	// NumberFormat writes amounts as "grouped" (1,074,958), "four" (107,4958) or "plain" (1074958).
 	NumberFormat string `json:"numberFormat"`
 }
 
@@ -123,7 +123,7 @@ const (
 
 var pageWidths = map[string]bool{"default": true, "wide": true, "full": true}
 
-var numberFormats = map[string]bool{"grouped": true, "plain": true, "cjk": true}
+var numberFormats = map[string]bool{"grouped": true, "four": true, "plain": true}
 
 // uiLanguages are the UI languages the web client ships translations for.
 var uiLanguages = map[string]bool{"en": true, "zh-TW": true}
@@ -286,8 +286,11 @@ func (g *GeneralSettings) validate() error {
 	if g.NumberFormat == "" { // rows saved before this setting existed
 		g.NumberFormat = "grouped"
 	}
+	if g.NumberFormat == "cjk" { // the 萬・億・兆 style was replaced by groups of four
+		g.NumberFormat = "four"
+	}
 	if !numberFormats[g.NumberFormat] {
-		return fmt.Errorf("numberFormat must be grouped, plain or cjk")
+		return fmt.Errorf("numberFormat must be grouped, four or plain")
 	}
 	if g.PageWidth == "" { // rows saved before this setting existed
 		g.PageWidth = "default"
