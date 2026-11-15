@@ -89,3 +89,17 @@ func TestSpendingByCategoryPerCurrencyAndMonth(t *testing.T) {
 		}
 	}
 }
+
+func TestListenAddrDefaultsToLoopback(t *testing.T) {
+	cases := []struct{ host, port, want string }{
+		{"", "", "127.0.0.1:8080"},
+		{"", "8099", "127.0.0.1:8099"},
+		{"0.0.0.0", "8080", "0.0.0.0:8080"},
+		{"::1", "8080", "[::1]:8080"},
+	}
+	for _, c := range cases {
+		if got := listenAddr(c.host, c.port); got != c.want {
+			t.Errorf("listenAddr(%q, %q) = %q, want %q", c.host, c.port, got, c.want)
+		}
+	}
+}

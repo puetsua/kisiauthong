@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -499,10 +500,20 @@ func main() {
 	}
 	mux.Handle("/", http.FileServer(http.Dir(webDir)))
 
-	port := os.Getenv("PORT")
+	addr := listenAddr(os.Getenv("KISIAUTHONG_HOST"), os.Getenv("PORT"))
+	log.Printf("kisiauthong listening on http://%s (db %s, web %s)", addr, dbPath, webDir)
+	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+// listenAddr defaults to loopback only: there is no login yet, so the books
+// must not be reachable from the network unless the host opts in with
+// KISIAUTHONG_HOST (e.g. 0.0.0.0 in a container or for LAN access).
+func listenAddr(host, port string) string {
+	if host == "" {
+		host = "127.0.0.1"
+	}
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("kisiauthong listening on http://localhost:%s (db %s, web %s)", port, dbPath, webDir)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	return net.JoinHostPort(host, port)
 }
