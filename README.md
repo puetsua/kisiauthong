@@ -19,7 +19,7 @@ go test ./...     # domain tests
 
 Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. Set `KISIAUTHONG_SOURCE_URL` to the source repository of the code you run; it is shown under Settings → About (AGPL §13). Desktop and Android clients are future plans.
 
-Settings (sidebar → Settings): default currency for new accounts and tags, dashboard layout, JSON export of all data (`GET /api/export`), and About.
+Settings (sidebar → Settings): default currency and a short list of frequently used currencies (e.g. USD, TWD, JPY) shown first in currency pickers, with every ISO 4217 currency still available below them; dashboard layout, JSON export of all data (`GET /api/export`), and About.
 
 ## License
 

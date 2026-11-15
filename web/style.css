@@ -14,7 +14,14 @@ body{margin:0;font-family:"Segoe UI",system-ui,"Noto Sans TC",sans-serif;color:v
 .sidefoot a{color:inherit;text-decoration:none}.sidefoot a:hover{text-decoration:underline}
 .setrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .setrow label{display:flex;flex-direction:column;font-size:.86rem;color:var(--muted);gap:4px}
-.setrow input{padding:8px;border:1px solid var(--line);border-radius:6px;width:7em;text-transform:uppercase;font-size:1rem}
+.setrow select{padding:8px;border:1px solid var(--line);border-radius:6px;font-size:1rem;background:#fff;color:var(--ink);max-width:100%}
+.setlabel{font-size:.86rem;color:var(--muted);margin-top:14px}
+.curchips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.chip.cur{display:inline-flex;align-items:center;gap:2px;font-size:.9rem;color:var(--ink);padding:3px 4px 3px 10px}
+.chip.cur button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:1.05rem;line-height:1;padding:2px 6px;border-radius:50%}
+.chip.cur button:hover{background:var(--redbg);color:var(--red)}
+.chip.cur button:disabled{display:none}
+.chip.cur:has(button:disabled){padding-right:10px}
 a.smallbtn{text-decoration:none;display:inline-block}
 .about-name{font-family:Georgia,"Noto Serif TC",serif;font-size:1.3rem;margin:0 0 8px}
 .panel a{color:var(--green)}

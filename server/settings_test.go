@@ -68,11 +68,43 @@ func TestSettingsPartialUpdateKeepsOtherSection(t *testing.T) {
 	}
 }
 
+func TestSettingsFrequentCurrencies(t *testing.T) {
+	withTestStore(t)
+	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "TWD" {
+		t.Fatalf("default list: %v", s.General.Currencies)
+	}
+	// USD, TWD, JPY use case: normalised, de-duplicated, order kept
+	code, s := doSettings(t, http.MethodPut, `{"general":{"currencies":["usd","TWD"," jpy","USD"]}}`)
+	if code != 200 || strings.Join(s.General.Currencies, ",") != "USD,TWD,JPY" || s.General.DefaultCurrency != "TWD" {
+		t.Fatalf("set list: %d %+v", code, s.General)
+	}
+	// changing only the default keeps the list
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"defaultCurrency":"JPY"}}`); strings.Join(s.General.Currencies, ",") != "USD,TWD,JPY" || s.General.DefaultCurrency != "JPY" {
+		t.Fatalf("default-only update: %+v", s.General)
+	}
+	// dropping the default from the list keeps it listed
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"currencies":["USD"]}}`); strings.Join(s.General.Currencies, ",") != "USD,JPY" {
+		t.Fatalf("default removed from list: %v", s.General.Currencies)
+	}
+}
+
+func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
+	withTestStore(t)
+	if err := store.setSetting("general", `{"defaultCurrency":"JPY"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "TWD,JPY" {
+		t.Fatalf("legacy row: %+v", s.General)
+	}
+}
+
 func TestSettingsRejectsInvalid(t *testing.T) {
 	withTestStore(t)
 	for _, body := range []string{
 		`{"general":{"defaultCurrency":"YEN1"}}`,
 		`{"general":{"defaultCurrency":""}}`,
+		`{"general":{"currencies":["USD","US"]}}`,
+		`{"general":{"currencies":"USD"}}`,
 		`{"dashboard":{"order":["nope"],"hidden":[]}}`,
 		`{}`,
 		`not json`,

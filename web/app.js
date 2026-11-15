@@ -5,6 +5,17 @@ const state = { data: null, dashboard: null, general: null, about: null, customi
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
+const favCurs = () => (state.general && state.general.currencies && state.general.currencies.length ? state.general.currencies : [defCur()]);
+const ALL_CURRENCIES = (() => { try { return Intl.supportedValuesOf("currency"); } catch (e) { return []; } })();
+const CUR_NAMES = (() => { try { return new Intl.DisplayNames([document.documentElement.lang || "en"], { type: "currency" }); } catch (e) { return null; } })();
+const curName = (c) => { try { return CUR_NAMES ? CUR_NAMES.of(c) : c; } catch (e) { return c; } };
+const curOption = (c, sel) => `<option value="${esc(c)}" ${c === sel ? "selected" : ""}>${esc(c)} — ${esc(curName(c))}</option>`;
+// Frequently used currencies first, then every ISO 4217 code under "All currencies".
+function currencyOptions(selected) {
+  const sel = selected || defCur(), fav = favCurs().includes(sel) ? favCurs() : [...favCurs(), sel];
+  const rest = ALL_CURRENCIES.filter((c) => !fav.includes(c));
+  return fav.map((c) => curOption(c, sel)).join("") + (rest.length ? `<optgroup label="All currencies">${rest.map((c) => curOption(c, sel)).join("")}</optgroup>` : "");
+}
 const toMinor = (a, c) => Math.round(parseFloat(a || 0) * Math.pow(10, expOf(c)));
 function fmt(minor, currency) {
   const e = expOf(currency || defCur()), v = (minor || 0) / Math.pow(10, e);
@@ -271,10 +282,10 @@ function screenTags(v) {
 function screenSettings(v) {
   const src = state.about && state.about.sourceUrl;
   v.innerHTML = `<section class="panel"><h3>General</h3>
-      <form id="generalForm" class="setrow">
-        <label>Default currency <input name="defaultCurrency" value="${esc(defCur())}" maxlength="3" pattern="[A-Za-z]{3}" required autocomplete="off"></label>
-        <button class="smallbtn" type="submit">Save</button>
-      </form></section>
+      <div class="setrow"><label>Default currency <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label></div>
+      <div class="setlabel">Frequently used currencies</div>
+      <div class="curchips">${favCurs().map((c) => `<span class="chip cur" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="Remove ${esc(c)}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}</div>
+      <div class="setrow"><select id="setAddCur" aria-label="Add currency"><option value="">+ Add currency…</option>${ALL_CURRENCIES.filter((c) => !favCurs().includes(c)).map((c) => curOption(c, "")).join("")}</select></div></section>
     <section class="panel"><h3>Dashboard</h3>
       <div class="setrow"><button class="smallbtn" id="setCustomize">Customize dashboard</button><button class="smallbtn" id="setDashReset">Reset to default</button></div></section>
     <section class="panel"><h3>Data</h3>
@@ -285,16 +296,20 @@ function screenSettings(v) {
         ["License", '<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0-or-later</a>'],
         ["Source", src ? `<a href="${esc(src)}" target="_blank" rel="noopener">${esc(src)}</a>` : '<span class="muted">Set KISIAUTHONG_SOURCE_URL</span>'],
       ])}</section>`;
-  $("#generalForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const cur = e.target.elements.defaultCurrency.value.trim().toUpperCase();
+  const saveGeneral = async (patch, done) => {
     try {
-      const s = await put("/api/settings", { general: { defaultCurrency: cur } });
+      const s = await put("/api/settings", { general: patch });
       state.general = s.general;
-      msg("Settings saved.");
-      render();
+      msg(done);
     } catch (err) { msg("Error: " + err.message); }
-  });
+    render();
+  };
+  $("#setDefCur").addEventListener("change", (e) => saveGeneral({ defaultCurrency: e.target.value }, "Default currency saved."));
+  $("#setAddCur").addEventListener("change", (e) => { if (e.target.value) saveGeneral({ currencies: [...favCurs(), e.target.value] }, e.target.value + " added."); });
+  v.querySelectorAll("[data-cur-del]").forEach((b) => b.addEventListener("click", () => {
+    const c = b.dataset.curDel;
+    saveGeneral({ currencies: favCurs().filter((x) => x !== c) }, c + " removed.");
+  }));
   $("#setCustomize").addEventListener("click", () => {
     state.dashDraft = JSON.parse(JSON.stringify(dashLayout()));
     state.customizing = true;
@@ -384,7 +399,7 @@ function openAccountDialog(editId) {
   openDialog(a ? "Edit account" : "New account", dialogForm(`
     <label>Name <input name="name" required placeholder="Savings A" value="${a ? esc(a.name) : ""}"></label>
     <label>Kind <select name="kind">${["bank", "savings", "cash", "credit_card", "ewallet", "investment", "loan"].map((k) => `<option ${a && a.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label>
-    <label>Currency <input name="currency" value="${a ? esc(a.currency) : esc(defCur())}" maxlength="3" required></label>
+    <label>Currency <select name="currency" required>${currencyOptions(a && a.currency)}</select></label>
     <label>Opening balance <input name="opening" type="number" step="0.01" value="${a ? decimal(a.openingBalanceMinor, a.currency) : "0"}"></label>
     <label>Credit limit (cards only) <input name="creditLimit" type="number" step="0.01" value="${a && a.creditLimitMinor ? decimal(a.creditLimitMinor, a.currency) : ""}"></label>`, a ? "Save changes" : "Add account"));
   $("#dialogForm").addEventListener("submit", async (e) => {
@@ -408,7 +423,7 @@ function openTagDialog(kind, editId) {
     <label>Monthly limit (category, optional) <input name="limit" type="number" step="0.01" value="${t && t.limitMinor !== undefined ? decimal(t.limitMinor, t.currency || defCur()) : ""}"></label>
     <label>Target (goal, optional) <input name="target" type="number" step="0.01" value="${t && t.targetMinor !== undefined ? decimal(t.targetMinor, t.currency || defCur()) : ""}"></label>
     <label>Target date (goal) <input name="targetDate" type="date" value="${t ? esc(t.targetDate || "") : ""}"></label>
-    <label>Currency <input name="currency" value="${t ? esc(t.currency || defCur()) : esc(defCur())}" maxlength="3"></label>`, t ? "Save changes" : "Add tag"));
+    <label>Currency <select name="currency">${currencyOptions(t && t.currency)}</select></label>`, t ? "Save changes" : "Add tag"));
   $("#dialogForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = (f.currency || defCur()).toUpperCase();

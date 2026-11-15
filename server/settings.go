@@ -22,7 +22,12 @@ type DashboardSettings struct {
 
 type GeneralSettings struct {
 	DefaultCurrency string `json:"defaultCurrency"`
+	// Currencies is the user's frequently used list, in display order. It is
+	// a shortlist for pickers only; any ISO 4217 code can still be recorded.
+	Currencies []string `json:"currencies"`
 }
+
+const maxCurrencies = 50
 
 // AboutInfo is read-only and comes from the environment, not the settings table.
 type AboutInfo struct {
@@ -40,7 +45,7 @@ var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 func defaultSettings() Settings {
 	return Settings{
 		Dashboard: DashboardSettings{Order: append([]string{}, dashboardWidgets...), Hidden: []string{}},
-		General:   GeneralSettings{DefaultCurrency: "TWD"},
+		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}},
 	}
 }
 
@@ -63,11 +68,34 @@ func (d *DashboardSettings) validate() error {
 	return nil
 }
 
+func normCurrency(c string) string { return strings.ToUpper(strings.TrimSpace(c)) }
+
+// validate normalises codes and drops duplicates. The default currency is
+// always on the list: it is appended when missing.
 func (g *GeneralSettings) validate() error {
-	g.DefaultCurrency = strings.ToUpper(strings.TrimSpace(g.DefaultCurrency))
+	g.DefaultCurrency = normCurrency(g.DefaultCurrency)
 	if !currencyRe.MatchString(g.DefaultCurrency) {
 		return fmt.Errorf("defaultCurrency must be a 3-letter ISO 4217 code")
 	}
+	seen := map[string]bool{}
+	list := []string{}
+	for _, c := range g.Currencies {
+		c = normCurrency(c)
+		if !currencyRe.MatchString(c) {
+			return fmt.Errorf("invalid currency code: %q", c)
+		}
+		if !seen[c] {
+			seen[c] = true
+			list = append(list, c)
+		}
+	}
+	if !seen[g.DefaultCurrency] {
+		list = append(list, g.DefaultCurrency)
+	}
+	if len(list) > maxCurrencies {
+		return fmt.Errorf("at most %d frequently used currencies", maxCurrencies)
+	}
+	g.Currencies = list
 	return nil
 }
 
@@ -88,6 +116,10 @@ func (s *Store) loadSettings() (Settings, error) {
 			return out, fmt.Errorf("stored general setting is invalid JSON")
 		}
 	}
+	// rows saved before the currency list existed: keep their default listed
+	if err := out.General.validate(); err != nil {
+		return out, fmt.Errorf("stored general setting: %w", err)
+	}
 	out.About.SourceURL = os.Getenv("KISIAUTHONG_SOURCE_URL")
 	return out, nil
 }
@@ -101,7 +133,8 @@ func (s *Store) saveJSONSetting(key string, v interface{}) error {
 }
 
 // handleSettings serves GET/PUT /api/settings. PUT accepts any subset of
-// {dashboard, general}; omitted sections are left unchanged.
+// {dashboard, general}; omitted sections are left unchanged, and fields
+// omitted inside general keep their stored value.
 func handleSettings(w http.ResponseWriter, r *http.Request) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -110,12 +143,25 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var body struct {
 			Dashboard *DashboardSettings `json:"dashboard"`
-			General   *GeneralSettings   `json:"general"`
+			General   json.RawMessage    `json:"general"`
 		}
 		if !decode(w, r, &body) {
 			return
 		}
-		if body.Dashboard == nil && body.General == nil {
+		var general *GeneralSettings
+		if len(body.General) > 0 && string(body.General) != "null" {
+			cur, err := store.loadSettings()
+			if err != nil {
+				writeErr(w, 500, err.Error())
+				return
+			}
+			general = &cur.General
+			if err := json.Unmarshal(body.General, general); err != nil {
+				writeErr(w, 400, "invalid general: "+err.Error())
+				return
+			}
+		}
+		if body.Dashboard == nil && general == nil {
 			writeErr(w, 400, "nothing to update: send dashboard and/or general")
 			return
 		}
@@ -125,8 +171,8 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if body.General != nil {
-			if err := body.General.validate(); err != nil {
+		if general != nil {
+			if err := general.validate(); err != nil {
 				writeErr(w, 400, err.Error())
 				return
 			}
@@ -137,8 +183,8 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if body.General != nil {
-			if err := store.saveJSONSetting("general", body.General); err != nil {
+		if general != nil {
+			if err := store.saveJSONSetting("general", general); err != nil {
 				writeErr(w, 500, err.Error())
 				return
 			}
