@@ -418,3 +418,13 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .pill.on{background:var(--posbg);color:var(--pos)}
 .pill.off{background:var(--track);color:var(--muted)}
 .sbtns{align-items:center}
+
+/* passkeys */
+.author{display:flex;align-items:center;gap:10px;margin:14px 0 4px;color:var(--muted);font-size:.85rem}
+.author::before,.author::after{content:"";flex:1;height:1px;background:var(--line)}
+.passkeybtn{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;font-size:.95rem}
+.pklist{list-style:none;margin:0;padding:0}
+.pklist li{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--rule)}
+.pklist li>svg{color:var(--accent);flex:none}
+.pklist li span{flex:1;min-width:0;display:flex;flex-direction:column}
+.pklist+.srow{border-top:0}

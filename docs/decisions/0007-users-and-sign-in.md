@@ -39,6 +39,14 @@ and sign them in with a password, TOTP and passkeys.
   in with a password then returns a five-minute ticket instead of a
   session, and the session starts once a code or recovery code is given.
   Turning TOTP off needs a code. Migration 9 adds `users.recovery_codes`.
+- **Passkeys** (WebAuthn, go-webauthn v0.10.2, the last release for Go
+  1.21) are added from My account and sign in on their own, without a
+  username: they must be discoverable credentials with user verification
+  (PIN or biometrics), so a passkey counts as both factors and skips TOTP.
+  The relying party is the host the browser used (or `KISIAUTHONG_ORIGIN`);
+  WebAuthn refuses IP addresses, so the app must be opened as
+  `http://localhost:…` or by a domain name. Credentials are stored per
+  user (migration 10, table `passkeys`) with their signature counters.
 - Failed sign-ins are limited per client address (10 per 15 minutes), and
   an unknown username costs the same time as a wrong password.
 - Account management (password, TOTP, passkeys, API keys, users) needs a

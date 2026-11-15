@@ -89,7 +89,7 @@ func openStore(path string) (*Store, error) {
 		return nil, err
 	}
 	fresh := n == 0
-	if _, err := db.Exec(authTables); err != nil {
+	if _, err := db.Exec(authTables + passkeyTable); err != nil {
 		return nil, err
 	}
 	s := &Store{db: db, books: map[string]*Data{}}
@@ -123,6 +123,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateTransactionTime,           // 7
 	migrateMultiUser,                 // 8
 	migrateRecoveryCodes,             // 9
+	migratePasskeys,                  // 10
 }
 
 func (s *Store) migrate() error {

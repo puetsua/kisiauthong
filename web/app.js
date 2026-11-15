@@ -1407,6 +1407,7 @@ async function boot() {
 // the sign-in screen replaces the app until someone is signed in
 function showAuth(mode) {
   state.me = null; state.data = null;
+  msg("");
   $(".shell").hidden = true; $("#addBtn").hidden = true; $("#notifPanel").hidden = true; $("#userMenu").hidden = true;
   const box = $("#authScreen");
   box.hidden = false;
@@ -1420,9 +1421,17 @@ function showAuth(mode) {
       <label><span>${esc(__("Password"))}</span><input name="password" type="password" autocomplete="${setup ? "new-password" : "current-password"}" required minlength="${setup ? 8 : 1}"></label>
       <p class="autherr" id="authErr" role="alert" hidden></p>
       <button class="primarybtn big" type="submit">${esc(setup ? __("Create account") : __("Sign in"))}</button>
+      ${setup || !window.PublicKeyCredential ? "" : `<div class="author"><span>${esc(__("or"))}</span></div><button class="smallbtn big passkeybtn" type="button" id="passkeySignIn">${KEY_ICON}${esc(__("Sign in with a passkey"))}</button>`}
     </form>`;
   const form = $("#authForm");
   form.elements.username.focus();
+  const pk = $("#passkeySignIn");
+  if (pk) pk.addEventListener("click", async () => {
+    const err = $("#authErr");
+    err.hidden = true;
+    try { await passkeySignIn(); await boot(); }
+    catch (x) { if (x.name !== "NotAllowedError" && x.name !== "AbortError") { err.textContent = x.message; err.hidden = false; } }
+  });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(form).entries()), err = $("#authErr");
@@ -1496,6 +1505,7 @@ function screenAccount(v) {
       <div class="sabout">${avatarHTML(u, 56)}<span><b>${esc(u.displayName || u.username)}</b><small class="muted">@${esc(u.username)}${u.isAdmin ? " · " + esc(__("Administrator")) : ""}</small></span></div>
       <form id="profileForm">${row(__("Display name"), `<div class="inline"><input name="displayName" maxlength="60" value="${esc(u.displayName || "")}"><button class="smallbtn" type="submit">${esc(__("Save"))}</button></div>`)}</form>
     </div></section>
+    <section class="ssec"><h3>${esc(__("Passkeys"))}</h3><div class="scard" id="passkeyCard"></div></section>
     <section class="ssec"><h3>${esc(__("Two-step verification"))}</h3><div class="scard" id="totpCard"></div></section>
     <section class="ssec"><h3>${esc(__("Password"))}</h3><div class="scard">
       <form id="pwForm">
@@ -1507,6 +1517,7 @@ function screenAccount(v) {
     </div></section>
   </div></div>`;
   drawTotp();
+  drawPasskeys();
   $("#profileForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     try { state.me = await put("/api/me", { displayName: e.target.elements.displayName.value }); renderUserBtn(); msg(__("Profile saved.")); render(); }
@@ -1562,6 +1573,70 @@ function drawTotp(stage, data) {
     e.preventDefault();
     try { await post("/api/me/totp/disable", { code: e.target.elements.code.value }); await refreshMe(); msg(__("Two-step verification is off.")); drawTotp(); }
     catch (err) { errMsg(err); }
+  });
+}
+
+/* passkeys (WebAuthn): the server sends options with base64url fields; the browser API wants ArrayBuffers */
+const KEY_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M14 10a4 4 0 1 0-3.5 3.97L9 15.5V18h2.5v2H14v-3.2l.5-.5A4 4 0 0 0 14 10zM14.5 8.5h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const fromB64u = (s) => { const b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)); return Uint8Array.from(b, (c) => c.charCodeAt(0)).buffer; };
+const toB64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function creationOptions(o) {
+  const pk = { ...o.publicKey, challenge: fromB64u(o.publicKey.challenge), user: { ...o.publicKey.user, id: fromB64u(o.publicKey.user.id) } };
+  pk.excludeCredentials = (pk.excludeCredentials || []).map((c) => ({ ...c, id: fromB64u(c.id) }));
+  return { publicKey: pk };
+}
+function requestOptions(o) {
+  const pk = { ...o.publicKey, challenge: fromB64u(o.publicKey.challenge) };
+  pk.allowCredentials = (pk.allowCredentials || []).map((c) => ({ ...c, id: fromB64u(c.id) }));
+  return { publicKey: pk };
+}
+async function postRaw(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+async function passkeySignIn() {
+  const begin = await postRaw("/api/auth/passkey", {});
+  const cred = await navigator.credentials.get(requestOptions(begin.options));
+  const res = cred.response;
+  await postRaw("/api/auth/passkey?token=" + encodeURIComponent(begin.token), {
+    id: cred.id, rawId: toB64u(cred.rawId), type: cred.type,
+    response: { authenticatorData: toB64u(res.authenticatorData), clientDataJSON: toB64u(res.clientDataJSON), signature: toB64u(res.signature), userHandle: res.userHandle ? toB64u(res.userHandle) : "" },
+  });
+}
+async function addPasskey(name) {
+  const begin = await post("/api/me/passkeys");
+  const cred = await navigator.credentials.create(creationOptions(begin.options));
+  const res = cred.response;
+  await post(`/api/me/passkeys/finish?token=${encodeURIComponent(begin.token)}&name=${encodeURIComponent(name)}`, {
+    id: cred.id, rawId: toB64u(cred.rawId), type: cred.type,
+    response: { attestationObject: toB64u(res.attestationObject), clientDataJSON: toB64u(res.clientDataJSON), transports: res.getTransports ? res.getTransports() : [] },
+  });
+}
+// a default name for a new passkey: the kind of device it is being added on
+function deviceName() {
+  const ua = navigator.userAgent;
+  const os = /iPhone|iPad/.test(ua) ? "iPhone" : /Android/.test(ua) ? "Android" : /Mac OS X/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";
+  return os ? __("Passkey on {device}", { device: os }) : __("Passkey");
+}
+async function drawPasskeys() {
+  const card = $("#passkeyCard");
+  if (!card) return;
+  let list = [];
+  try { list = await api("/api/me/passkeys"); } catch (e) { errMsg(e); }
+  const when = (iso) => (iso ? dayLabel(zoneParts(new Date(iso), displayTZ()).date) : "");
+  card.innerHTML = (list.length ? `<ul class="pklist">${list.map((p) => `<li>${KEY_ICON}<span><b>${esc(p.name)}</b><small class="muted">${esc(__("Added {date}", { date: when(p.createdAt) }))}${p.lastUsedAt ? " · " + esc(__("Last used {date}", { date: when(p.lastUsedAt) })) : ""}</small></span><button class="smallbtn danger" type="button" data-pk-del="${esc(p.id)}">${esc(__("Remove"))}</button></li>`).join("")}</ul>` : "")
+    + `<form id="pkAdd" class="srow"><span class="sl">${esc(__("Add a passkey"))}</span><div class="sc"><div class="inline"><input name="name" maxlength="60" value="${esc(deviceName())}" aria-label="${esc(__("Passkey name"))}"><button class="smallbtn" type="submit">${esc(__("Add"))}</button></div></div></form>`
+    + (window.PublicKeyCredential ? "" : `<p class="formnote" style="padding:0 20px 14px">${esc(__("This browser does not support passkeys."))}</p>`);
+  card.querySelectorAll("[data-pk-del]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm(__("Remove this passkey? You will no longer be able to sign in with it."))) return;
+    try { await api("/api/me/passkeys/" + encodeURIComponent(b.dataset.pkDel), { method: "DELETE" }); msg(__("Passkey removed.")); drawPasskeys(); } catch (e) { errMsg(e); }
+  }));
+  $("#pkAdd").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try { await addPasskey(e.target.elements.name.value.trim()); msg(__("Passkey added.")); drawPasskeys(); }
+    catch (x) { if (x.name !== "NotAllowedError" && x.name !== "AbortError") errMsg(x); }
   });
 }
 
