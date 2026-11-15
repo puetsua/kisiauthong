@@ -1471,6 +1471,7 @@ function renderUserBtn() {
   if (!u) return;
   $("#userBtn").innerHTML = avatarHTML(u, 32);
   $("#userBtn").setAttribute("aria-label", __("{name}: account menu", { name: u.displayName || u.username }));
+  $("#nav .navadmin").hidden = !u.isAdmin;
 }
 function toggleUserMenu(open) {
   const menu = $("#userMenu"), u = state.me;
@@ -1496,7 +1497,7 @@ $("#userBtn").addEventListener("click", (e) => { e.stopPropagation(); toggleUser
 document.addEventListener("click", (e) => { if (!$("#userMenu").hidden && !e.composedPath().includes($("#userMenu"))) toggleUserMenu(false); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#userMenu").hidden) { toggleUserMenu(false); $("#userBtn").focus(); } });
 
-// My account: profile and sign-in methods (later: two-step, passkeys, API keys, users)
+// My account: profile, sign-in methods and API keys
 function screenAccount(v) {
   const u = state.me;
   const row = (label, control) => `<div class="srow"><span class="sl">${esc(label)}</span><div class="sc">${control}</div></div>`;
@@ -1518,12 +1519,10 @@ function screenAccount(v) {
       </form>
     </div></section>
     <section class="ssec"><h3>${esc(__("API keys"))}</h3><div class="scard" id="keysCard"></div></section>
-    ${u.isAdmin ? `<section class="ssec"><h3>${esc(__("Users"))}</h3><div class="scard" id="usersCard"></div></section>` : ""}
   </div></div>`;
   drawTotp();
   drawPasskeys();
   drawKeys();
-  if (u.isAdmin) drawUsers();
   $("#avatarFile").addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1672,6 +1671,7 @@ async function squareImage(file, side) {
 async function drawUsers() {
   const card = $("#usersCard");
   if (!card) return;
+  drawServer();
   let list = [];
   try { list = await api("/api/users"); } catch (e) { errMsg(e); return; }
   const me = state.me;
@@ -1760,11 +1760,38 @@ const mcpHint = (key) => {
       <div class="keyrow"><code id="mcpCmd">claude mcp add --transport http kisiauthong ${esc(url)} --header "Authorization: Bearer ${esc(key)}"</code><button class="smallbtn" type="button" id="mcpCopy">${esc(__("Copy"))}</button></div>`;
 };
 
+// Administration (administrators only): how the server is doing, and who can sign in
+function screenAdmin(v) {
+  v.innerHTML = `<div class="settings narrow"><div class="sbody">
+    <section class="ssec"><h3>${esc(__("Server"))}</h3><div class="scard" id="serverCard"></div></section>
+    <section class="ssec"><h3>${esc(__("Users"))}</h3><div class="scard" id="usersCard"></div></section>
+  </div></div>`;
+  drawUsers(); // redraws the server counts too
+}
+const fmtBytes = (n) => (n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB");
+async function drawServer() {
+  const card = $("#serverCard");
+  if (!card) return;
+  let s;
+  try { s = await api("/api/admin/server"); } catch (e) { errMsg(e); return; }
+  const row = (label, value) => `<div class="srow"><span class="sl">${esc(label)}</span><div class="sc">${value}</div></div>`;
+  const started = zoneParts(new Date(s.startedAt), displayTZ());
+  const stat = (n, label) => `<div><b>${esc(String(n))}</b><span>${esc(label)}</span></div>`;
+  card.innerHTML = `<div class="admstats">${stat(s.users, __("Users"))}${stat(s.admins, __("Administrators"))}${stat(s.twoStepUsers, __("Two-step verification"))}${stat(s.passkeys, __("Passkeys"))}${stat(s.activeSessions, __("Sessions"))}${stat(s.apiKeys, __("API keys"))}</div>
+    ${row(__("Version"), esc(s.version))}
+    ${row(__("Running since"), esc(dayLabel(started.date) + " " + started.time))}
+    ${row(__("Runtime"), esc(s.runtime))}
+    ${row(__("Database"), `<code class="path">${esc(s.database.path)}</code>`)}
+    ${row(__("Database size"), esc(fmtBytes(s.database.sizeBytes)))}
+    ${row(__("Schema version"), esc(String(s.database.schemaVersion)))}`;
+}
+
 /* ---------- routing ---------- */
-const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount] };
+const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Administration"), screenAdmin] };
 function currentScreen() {
   const h = location.hash.replace("#", "");
   if (h === "budgets" || h === "moneyboxes") return "tags"; // budgets and money boxes live on the Tags page now
+  if (h === "admin" && !(state.me && state.me.isAdmin)) return "dashboard";
   return SCREENS[h] ? h : "dashboard";
 }
 function render() {

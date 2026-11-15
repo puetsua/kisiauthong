@@ -72,6 +72,7 @@ var tableNames = []string{"accounts", "transactions", "tags", "transaction_tags"
 type Store struct {
 	mu    sync.Mutex
 	db    *sql.DB
+	path  string // database file, for the administration page
 	books map[string]*Data
 }
 
@@ -92,7 +93,7 @@ func openStore(path string) (*Store, error) {
 	if _, err := db.Exec(authTables + passkeyTable + apiKeyTable); err != nil {
 		return nil, err
 	}
-	s := &Store{db: db, books: map[string]*Data{}}
+	s := &Store{db: db, path: path, books: map[string]*Data{}}
 	if fresh {
 		// a new database starts in the current shape; there is nothing to migrate
 		if _, err := db.Exec(fmt.Sprintf(dataTables, "")); err != nil {

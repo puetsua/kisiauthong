@@ -101,7 +101,7 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 		rpcReply(w, req.ID, map[string]interface{}{
 			"protocolVersion": version,
 			"capabilities":    map[string]interface{}{"tools": map[string]interface{}{}},
-			"serverInfo":      map[string]string{"name": "kisiauthong", "title": "記數通 KiSiauThong", "version": "0.1.0"},
+			"serverInfo":      map[string]string{"name": "kisiauthong", "title": "記數通 KiSiauThong", "version": appVersion},
 			"instructions":    mcpInstructions,
 		}, nil)
 	case "ping":

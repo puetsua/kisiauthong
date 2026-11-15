@@ -2,6 +2,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -23,7 +25,16 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
 }
-func newID(prefix string) string { return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano()) }
+
+// newID is time-ordered with a random tail: the clock alone repeats within a
+// tick on some systems (Windows), and ids must never collide.
+func newID(prefix string) string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%s-%d-%s", prefix, time.Now().UnixNano(), hex.EncodeToString(b))
+}
 
 func stateView(d *Data) map[string]interface{} {
 	today := time.Now().Format("2006-01-02")
@@ -170,6 +181,7 @@ func newMux(webDir string) *http.ServeMux {
 	mux.HandleFunc("/api/me/avatar", sessionOnly(handleMyAvatar))
 	mux.HandleFunc("/api/me/keys", sessionOnly(handleKeys))
 	mux.HandleFunc("/api/me/keys/", sessionOnly(handleKey))
+	mux.HandleFunc("/api/admin/server", adminOnly(handleAdminServer))
 	mux.HandleFunc("/api/users", adminOnly(handleUsers))
 	mux.HandleFunc("/api/users/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/avatar") {

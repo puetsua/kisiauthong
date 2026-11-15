@@ -55,6 +55,12 @@ and sign them in with a password, TOTP and passkeys.
   passwords (ending that user's sessions), grant or remove admin rights
   (one administrator always remains) and delete users with all their
   books, sessions, passkeys and API keys. Nobody can delete themselves.
+- Administrators have an **Administration** page (in the side navigation,
+  shown to administrators only) with the user list and a server overview
+  (`GET /api/admin/server`): version, start time, runtime, database path,
+  size and schema version, and counts of users, administrators, two-step
+  users, passkeys, live sessions and unexpired API keys. It never shows
+  anything from anyone's books.
 - Failed sign-ins are limited per client address (10 per 15 minutes), and
   an unknown username costs the same time as a wrong password.
 - Account management (password, TOTP, passkeys, API keys, users) needs a
