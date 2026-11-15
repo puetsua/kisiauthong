@@ -714,17 +714,60 @@ function screenTransactions(v) {
 }
 
 const owedText = (a) => __("{owed} owed of {limit} ({pct}%)", { owed: fmt(a.owedMinor, a.currency), limit: fmt(a.creditLimitMinor, a.currency), pct: Math.round((a.utilisation || 0) * 100) });
+// stroke icons per account kind (24px grid)
+const KIND_ICON = {
+  bank: "M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18M12 3l9 5H3z",
+  savings: "M3 4h18v4H3zM5 8v12h14V8M10 12h4",
+  cash: "M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 12h.01M18 12h.01",
+  credit_card: "M3 6h18v12H3zM3 10h18M7 15h4",
+  ewallet: "M7 2h10v20H7zM11 18h2",
+  investment: "M3 20h18M6 16l4-5 3 3 6-7M15 7h4v4",
+  loan: "M6 2h9l5 5v15H6zM14 2v6h6M9 13h6M9 17h6",
+  external: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18",
+};
+const kindIcon = (k) => `<span class="aicon k-${esc(k)}" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="${KIND_ICON[k] || KIND_ICON.bank}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+// the newest transaction touching an account, and how many there are
+function accountActivity(id) {
+  const list = state.data.transactions.filter((t) => t.accountId === id || t.fromAccountId === id || t.toAccountId === id);
+  const last = list.filter((t) => t.state === "posted").reduce((m, t) => (t.date > m ? t.date : m), "");
+  return { n: list.length, last };
+}
+function accountCard(a) {
+  const act = accountActivity(a.id), neg = a.balanceMinor < 0;
+  let detail = "";
+  if (a.creditLimitMinor) {
+    const u = (a.utilisation || 0) * 100;
+    detail = `<span class="bar"><i class="${barCls(u)}" style="width:${Math.min(100, u)}%"></i></span><span class="tfoot"><small>${esc(owedText(a))}</small></span>`;
+  } else if (a.allocatedMinor > 0) {
+    const e = a.balanceMinor > 0 ? Math.min(100, a.allocatedMinor / a.balanceMinor * 100) : 100;
+    detail = `<span class="splitbar"><i class="earmarked" style="width:${e}%"></i></span>
+      <span class="tfoot"><small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.unallocatedMinor, a.currency) }))}</small><small><b class="dot earmarked"></b>${esc(__("Earmarked {amount}", { amount: fmt(a.allocatedMinor, a.currency) }))}</small></span>`;
+  }
+  return `<button type="button" class="tcard acard" data-detail-account="${esc(a.id)}">
+    <span class="thead">${kindIcon(a.kind)}<span class="aname"><b>${esc(a.name)}</b><small>${esc(lbl(KIND_L, a.kind))}</small></span><small class="cur">${esc(a.currency)}</small></span>
+    <span class="bamount${neg ? " neg" : ""}"><b>${fmt(a.balanceMinor, a.currency)}</b></span>
+    ${detail}
+    <small class="last">${esc(act.last ? __("Last activity {date}", { date: dayLabel(act.last) }) : __("No transactions yet"))}</small></button>`;
+}
 function screenAccounts(v) {
-  const rows = state.data.accounts.map((a) => {
-    const card = a.creditLimitMinor ? `${esc(owedText(a))}<div class="bar"><i class="${barCls((a.utilisation || 0) * 100)}" style="width:${Math.min(100, (a.utilisation || 0) * 100)}%"></i></div>` : "—";
-    return row([{ l: "Account", v: `<button class="titlelink" data-detail-account="${esc(a.id)}">${esc(a.name)}</button>` }, { l: N_("Kind"), v: esc(lbl(KIND_L, a.kind)) }, { l: N_("Currency"), v: esc(a.currency) }, { l: "Balance", v: fmt(a.balanceMinor, a.currency), num: 1 }, { l: "Earmarked", v: fmt(a.allocatedMinor, a.currency), num: 1 }, { l: "Free", v: fmt(a.unallocatedMinor, a.currency), num: 1 }, { l: "Credit card", v: card }]);
+  const accs = state.data.accounts;
+  // totals per currency: what you have, and how much of it money boxes claim
+  const curs = [...new Set(accs.map((a) => a.currency))];
+  const totals = curs.map((c) => {
+    const xs = accs.filter((a) => a.currency === c), sum = (k) => xs.reduce((n, a) => n + (a[k] || 0), 0);
+    return `<div class="totcard"><span class="lab">${esc(__("Total · {currency}", { currency: c }))}</span><b>${fmt(sum("balanceMinor"), c)}</b>
+      <small>${esc(__("{n} account(s)", { n: xs.length }))}${sum("allocatedMinor") ? " · " + esc(__("Earmarked {amount}", { amount: fmt(sum("allocatedMinor"), c) })) : ""}</small></div>`;
   }).join("");
-  v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("All accounts"))}</h3><button class="smallbtn" id="newAccount">${esc(__("+ New account"))}</button></div>
-    ${table([{ t: "Account" }, { t: "Kind" }, { t: "Currency" }, { t: "Balance", num: 1 }, { t: "Earmarked", num: 1 }, { t: "Free", num: 1 }, { t: "Credit card" }], rows)}</section>
-    <p class="muted">${esc(__("Click an account name for its pane, where Edit lives. Balance is derived from posted transactions. Earmarked is money claimed by money boxes; Free is what is left. A credit card is an account that may go negative — owed is the negative balance, paying it is a transfer back."))}</p>
-    <section class="panel"><div class="panelhead"><h3>${esc(__("External accounts"))}</h3><button class="smallbtn" id="newExternal">${esc(__("+ New external account"))}</button></div>
-      <div class="extlist">${state.data.externals.map((a) => `<button class="chip extchip" data-detail-account="${esc(a.id)}">${esc(accName(a.id))}</button>`).join("")}</div>
-      <p class="muted">${esc(__("Places outside your books, such as an employer or a shop. They have no balance: money moved to one is spending, money from one is income. Expenses and income use “External” unless you pick another."))}</p></section>`;
+  // one grid, ordered by kind (banks, savings, cash, cards…); the icon and label on each card name the kind
+  const ordered = [...accs].sort((a, b) => OWN_KINDS.indexOf(a.kind) - OWN_KINDS.indexOf(b.kind));
+  const exts = state.data.externals.map((a) => {
+    const act = accountActivity(a.id);
+    return `<button type="button" class="xcard" data-detail-account="${esc(a.id)}">${kindIcon("external")}<span><b>${esc(accName(a.id))}</b><small>${esc(__("{n} transaction(s)", { n: act.n }))}</small></span></button>`;
+  }).join("");
+  v.innerHTML = `<div class="pagehead"><div class="totals">${totals}</div><button class="smallbtn" id="newAccount">${esc(__("+ New account"))}</button></div>
+    <section class="tsection">${ordered.length ? `<div class="tgrid">${ordered.map(accountCard).join("")}</div>` : `<div class="empty">${esc(__("No accounts yet."))}</div>`}</section>
+    <section class="tsection"><div class="tsechead"><h3>${esc(__("External accounts"))}</h3><button class="smallbtn" id="newExternal">${esc(__("+ New external account"))}</button></div>
+      <div class="xgrid">${exts}</div></section>`;
   $("#newAccount").addEventListener("click", () => openAccountDialog());
   $("#newExternal").addEventListener("click", () => openAccountDialog(null, "external"));
   bindDetails(v);

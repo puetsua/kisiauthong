@@ -18,6 +18,8 @@ const I18N = {
     "{amount} left": "剩 {amount}", "{amount} over": "超支 {amount}", "Starts {date}": "{date} 開始", "Ended {date}": "{date} 已結束",
     "{amount} a day for {n} day(s)": "每天 {amount}，還有 {n} 天", "{n} day(s) left": "還有 {n} 天", "of {limit}": "／{limit}",
     "{amount} this month": "本月 {amount}", "Nothing spent this month": "本月沒有支出", "Categories": "分類",
+    "Free {amount}": "可用 {amount}", "Earmarked {amount}": "已預留 {amount}", "Last activity {date}": "最近交易 {date}",
+    "No transactions yet": "還沒有交易", "Total · {currency}": "總額 · {currency}", "No accounts yet.": "還沒有帳戶。",
     "No budgets yet. Give a category a limit to track it here.": "還沒有預算。替分類設定上限，就會在這裡追蹤。", "No other categories.": "沒有其他分類。",
     "+ New category": "+ 新增分類", "Edit money box": "編輯存錢筒", "Edit category": "編輯分類", "New money box": "新增存錢筒", "New category": "新增分類",
     "Set a budget": "設定預算", "Every": "每", "First period starts": "第一期開始日", "From": "從", "To": "到",
@@ -55,8 +57,7 @@ const I18N = {
     "Details worth remembering: who, why, receipt number…": "值得記下的細節：和誰、為什麼、收據號碼…", "A negative amount takes money back out of the money box.": "輸入負數可以把錢從存錢筒撥回帳戶。", "Enter an amount other than zero.": "金額不能是 0。",
     "{box} holds {amount} in {account}; you can take out at most that.": "{box}在{account}只有 {amount}，最多只能撥回這個金額。",
     "Allocating records a decision and never moves cash: the account balance stays the same and its free amount drops. A negative allocation takes money back out. Every allocation is listed in History.": "分配只是記錄一個決定，不會真的移動現金：帳戶餘額不變，可用金額減少。負數的分配會把錢撥回帳戶。所有分配都會列在紀錄中。", "External": "外部", "External accounts": "外部帳戶", "+ New external account": "＋ 新增外部帳戶", "New external account": "新增外部帳戶",
-    "Paid to": "付給", "Received from": "收自", "Employer": "雇主",
-    "Places outside your books, such as an employer or a shop. They have no balance: money moved to one is spending, money from one is income. Expenses and income use “External” unless you pick another.": "帳本以外的對象，例如雇主或商店。外部帳戶沒有餘額：轉給外部帳戶就是支出，從外部帳戶轉入就是收入。支出和收入預設使用「外部」，也可以改選其他外部帳戶。", "Notifications": "通知", "Notifications ({n})": "通知（{n}）", "Dismiss": "清除", "Dismiss all": "全部清除",
+    "Paid to": "付給", "Received from": "收自", "Employer": "雇主", "Notifications": "通知", "Notifications ({n})": "通知（{n}）", "Dismiss": "清除", "Dismiss all": "全部清除",
     "You're all caught up.": "沒有新通知。", "Open in Transactions": "到交易頁查看", "Waiting for confirmation · {date} · {amount}": "等待確認 · {date} · {amount}",
     "{name} is over budget": "{name}超出預算",
     "{name} has used {pct}% of its budget": "{name}已用掉預算的 {pct}%", "{name} is at {pct}% of its credit limit": "{name}已用到信用額度的 {pct}%",
@@ -74,8 +75,6 @@ const I18N = {
     "Add account": "新增帳戶", "Save changes": "儲存變更", "Account added.": "帳戶已新增。", "Account updated.": "帳戶已更新。",
     "Opening balance": "期初餘額", "Credit limit (cards only)": "信用額度（僅信用卡）", "Savings A": "儲蓄帳戶 A",
     "Credit card owed": "信用卡欠款", "Earmarked in money boxes": "存錢筒已預留", "{owed} owed of {limit} ({pct}%)": "欠款 {owed}／額度 {limit}（{pct}%）",
-    "Click an account name for its pane, where Edit lives. Balance is derived from posted transactions. Earmarked is money claimed by money boxes; Free is what is left. A credit card is an account that may go negative — owed is the negative balance, paying it is a transfer back.":
-      "點帳戶名稱可開啟詳細資料並編輯。餘額由已入帳的交易計算而來。「已預留」是存錢筒佔用的金額，「可用」是剩下的部分。信用卡是可以為負數的帳戶：欠款就是負的餘額，繳款則是轉帳回去。",
     // tags
     "Edit tag": "編輯標籤", "Tag updated.": "標籤已更新。", "Target date": "目標日期", "House fund": "購屋基金", "Food": "餐飲", "Money-box target": "存錢筒目標", "Saved": "已存",
     "History": "紀錄", "History — {name}": "紀錄：{name}",
