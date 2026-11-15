@@ -244,8 +244,8 @@ func TestSettingsWidgetTypeRepeats(t *testing.T) {
 
 func TestSettingsWidgetColumns(t *testing.T) {
 	withTestStore(t)
-	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"items":[{"id":"a","type":"accounts","columns":["name","currency","free"]}]}}`)
-	if code != 200 || strings.Join(s.Dashboard.Items[0].Columns, ",") != "name,currency,free" {
+	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"items":[{"id":"a","type":"accounts","columns":["name","type","currency","free"]}]}}`)
+	if code != 200 || strings.Join(s.Dashboard.Items[0].Columns, ",") != "name,currency,free" { // the retired kind column is dropped
 		t.Fatalf("columns: %d %+v", code, s.Dashboard.Items)
 	}
 	for _, body := range []string{

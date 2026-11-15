@@ -125,7 +125,7 @@ func TestSeedRespectsBalanceInvariants(t *testing.T) {
 			continue // outside the books: no balance of its own
 		}
 		bal, alloc := s.data.Balance(a.ID), s.data.AllocatedForAccount(a.ID)
-		if !a.AllowNegative && bal < 0 {
+		if a.LimitMinor == nil && bal < 0 { // sample accounts without a limit stay positive
 			t.Errorf("%s balance %d < 0", a.ID, bal)
 		}
 		if alloc > bal {
@@ -168,6 +168,10 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 	for _, c := range []string{"cycle_every", "cycle_start", "cycle_end"} {
 		mustExec(`ALTER TABLE tags DROP COLUMN ` + c)
 	}
+	// before migration 6 own accounts had a type and no icon
+	mustExec(`ALTER TABLE accounts DROP COLUMN icon`)
+	mustExec(`UPDATE accounts SET kind='savings' WHERE id='acc-a'`)
+	mustExec(`INSERT INTO accounts(id,name,kind,currency,opening_balance_minor,allow_negative,credit_limit_minor) VALUES('old-card','Visa','credit_card','TWD',0,1,5000000)`)
 	s.db.Close()
 
 	s, err = openStore(path) // runs the migration
@@ -182,6 +186,17 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 		if tg := s.data.tagByID(id); tg == nil || tg.Kind != "category" {
 			t.Errorf("migration 4: %s should be a category: %+v", id, tg)
 		}
+	}
+	for id, icon := range map[string]string{"acc-a": "savings", "old-card": "card"} {
+		if a := s.data.accountByID(id); a == nil || a.Kind != "own" || a.Icon != icon {
+			t.Errorf("migration 6: %s should be own with icon %s: %+v", id, icon, a)
+		}
+	}
+	if a := s.data.accountByID("old-card"); a == nil || a.LimitMinor == nil || *a.LimitMinor != 5000000 {
+		t.Errorf("migration 6: the card keeps its limit: %+v", a)
+	}
+	if a := s.data.accountByID(ExternalAccountID); a == nil || a.Kind != "external" {
+		t.Errorf("migration 6: external stays external: %+v", a)
 	}
 	if food := s.data.tagByID("tag-food"); food == nil || food.Cycle != "monthly" || food.CycleEvery != 0 || food.CycleStart != "" {
 		t.Errorf("migration 5: monthly budget should keep its period: %+v", food)

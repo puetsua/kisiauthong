@@ -18,7 +18,7 @@ var seedJSON string
 
 const schema = `
 CREATE TABLE IF NOT EXISTS accounts (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, currency TEXT NOT NULL,
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, icon TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL,
   opening_balance_minor INTEGER NOT NULL DEFAULT 0, allow_negative INTEGER NOT NULL DEFAULT 0,
   credit_limit_minor INTEGER, statement_close_day INTEGER, payment_due_day INTEGER);
 CREATE TABLE IF NOT EXISTS transactions (
@@ -125,6 +125,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateAddTransactionMemo,        // 3
 	migrateTagKinds,                  // 4
 	migrateBudgetPeriods,             // 5
+	migrateAccountIcons,              // 6
 }
 
 func (s *Store) migrate() error {
@@ -171,6 +172,25 @@ func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
 		}
 	}
 	return false, rows.Err()
+}
+
+// Migration 6 (ADR 0005): own accounts lose their type. The type becomes the
+// account's icon, and kind is just "own" or "external". allow_negative is
+// no longer read (any account may run negative).
+func migrateAccountIcons(tx *sql.Tx) error {
+	has, err := hasColumn(tx, "accounts", "icon")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := tx.Exec(`ALTER TABLE accounts ADD COLUMN icon TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(`UPDATE accounts SET
+		icon = CASE kind WHEN 'external' THEN icon WHEN 'own' THEN icon WHEN 'credit_card' THEN 'card' WHEN 'ewallet' THEN 'wallet' ELSE kind END,
+		kind = CASE kind WHEN 'external' THEN 'external' ELSE 'own' END`)
+	return err
 }
 
 // Migration 5 (ADR 0004): budget periods other than calendar months.
@@ -271,22 +291,20 @@ func migrateExpenseIncomeToTransfers(tx *sql.Tx) error {
 
 func (s *Store) reload() error {
 	d := Data{Version: 1}
-	rows, err := s.db.Query(`SELECT id,name,kind,currency,opening_balance_minor,allow_negative,credit_limit_minor,statement_close_day,payment_due_day FROM accounts ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id,name,kind,icon,currency,opening_balance_minor,credit_limit_minor,statement_close_day,payment_due_day FROM accounts ORDER BY name`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var a Account
-		var an int
 		var cl sql.NullInt64
 		var sc, pd sql.NullInt64
-		if err := rows.Scan(&a.ID, &a.Name, &a.Kind, &a.Currency, &a.OpeningBalanceMinor, &an, &cl, &sc, &pd); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Kind, &a.Icon, &a.Currency, &a.OpeningBalanceMinor, &cl, &sc, &pd); err != nil {
 			return err
 		}
-		a.AllowNegative = an != 0
 		if cl.Valid {
-			a.CreditLimitMinor = &cl.Int64
+			a.LimitMinor = &cl.Int64
 		}
 		if sc.Valid {
 			v := int(sc.Int64)
@@ -400,8 +418,8 @@ func nullEmpty(s string) interface{} {
 }
 
 func (s *Store) insertAccount(a Account) error {
-	_, err := s.db.Exec(`INSERT INTO accounts(id,name,kind,currency,opening_balance_minor,allow_negative,credit_limit_minor,statement_close_day,payment_due_day) VALUES(?,?,?,?,?,?,?,?,?)`,
-		a.ID, a.Name, a.Kind, a.Currency, a.OpeningBalanceMinor, b2i(a.AllowNegative), n64(a.CreditLimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay))
+	_, err := s.db.Exec(`INSERT INTO accounts(id,name,kind,icon,currency,opening_balance_minor,credit_limit_minor,statement_close_day,payment_due_day) VALUES(?,?,?,?,?,?,?,?,?)`,
+		a.ID, a.Name, a.Kind, a.Icon, a.Currency, a.OpeningBalanceMinor, n64(a.LimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay))
 	return err
 }
 func (s *Store) insertTag(t Tag) error {
@@ -430,8 +448,8 @@ func (s *Store) setSetting(key, value string) error {
 	return err
 }
 func (s *Store) updateAccount(a Account) error {
-	_, err := s.db.Exec(`UPDATE accounts SET name=?,kind=?,currency=?,opening_balance_minor=?,allow_negative=?,credit_limit_minor=?,statement_close_day=?,payment_due_day=? WHERE id=?`,
-		a.Name, a.Kind, a.Currency, a.OpeningBalanceMinor, b2i(a.AllowNegative), n64(a.CreditLimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay), a.ID)
+	_, err := s.db.Exec(`UPDATE accounts SET name=?,kind=?,icon=?,currency=?,opening_balance_minor=?,credit_limit_minor=?,statement_close_day=?,payment_due_day=? WHERE id=?`,
+		a.Name, a.Kind, a.Icon, a.Currency, a.OpeningBalanceMinor, n64(a.LimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay), a.ID)
 	if err != nil {
 		return err
 	}

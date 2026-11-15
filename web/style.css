@@ -290,8 +290,7 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .totcard .lab,.totcard small{color:var(--muted);font-size:.82rem}
 .totcard b{font-family:Georgia,serif;font-size:1.6rem;color:var(--accent)}
 .aicon{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:var(--accentsoft);color:var(--accent)}
-.aicon.k-credit_card,.aicon.k-loan{background:var(--amberbg);color:var(--amber)}
-.aicon.k-external{background:var(--track);color:var(--muted)}
+.aicon.ext{background:var(--track);color:var(--muted)}
 .acard .thead{align-items:center;justify-content:flex-start}
 .acard .aname{flex:1;min-width:0;display:flex;flex-direction:column}
 .acard .aname b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -327,3 +326,13 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .addtile.small{min-height:0;flex-direction:row;padding:10px 12px;border-radius:10px}
 .addtile.small span{font-size:1.2rem}
 .totals{margin-bottom:22px}
+
+/* account icon picker */
+.iconpick{grid-column:1/-1;border:0;padding:0;margin:14px 0 0;display:flex;flex-wrap:wrap;gap:8px}
+.iconpick legend{font-size:.86rem;color:var(--muted);padding:0;margin-bottom:6px}
+dialog .iconpick label{margin:0;display:block;cursor:pointer}
+.iconpick input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+.iconpick .aicon{width:42px;height:42px;border-radius:10px;border:2px solid transparent;background:var(--soft);color:var(--muted)}
+.iconpick label:hover .aicon{color:var(--accent);background:var(--accentsoft)}
+.iconpick input:checked+.aicon{border-color:var(--accent);background:var(--accentsoft);color:var(--accent)}
+.iconpick input:focus-visible+.aicon{outline:3px solid var(--accent2);outline-offset:2px}

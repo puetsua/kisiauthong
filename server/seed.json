@@ -1,11 +1,11 @@
 {
   "version": 1,
   "accounts": [
-    { "id": "acc-a", "name": "Savings A", "kind": "savings", "currency": "TWD", "openingBalanceMinor": 60000000, "allowNegative": false },
-    { "id": "acc-b", "name": "Bank B", "kind": "bank", "currency": "TWD", "openingBalanceMinor": 18000000, "allowNegative": false },
-    { "id": "acc-c", "name": "Account C", "kind": "bank", "currency": "TWD", "openingBalanceMinor": 12000000, "allowNegative": false },
-    { "id": "acc-jpy", "name": "Japan wallet", "kind": "cash", "currency": "JPY", "openingBalanceMinor": 42600, "allowNegative": false },
-    { "id": "acc-external", "name": "External", "kind": "external", "currency": "", "openingBalanceMinor": 0, "allowNegative": false }
+    { "id": "acc-a", "name": "Savings A", "kind": "own", "icon": "savings", "currency": "TWD", "openingBalanceMinor": 60000000 },
+    { "id": "acc-b", "name": "Bank B", "kind": "own", "icon": "bank", "currency": "TWD", "openingBalanceMinor": 18000000 },
+    { "id": "acc-c", "name": "Account C", "kind": "own", "icon": "bank", "currency": "TWD", "openingBalanceMinor": 12000000 },
+    { "id": "acc-jpy", "name": "Japan wallet", "kind": "own", "icon": "cash", "currency": "JPY", "openingBalanceMinor": 42600 },
+    { "id": "acc-external", "name": "External", "kind": "external", "currency": "", "openingBalanceMinor": 0 }
   ],
   "transactions": [
     { "id": "txn-001", "fromAccountId": "acc-external", "toAccountId": "acc-a", "type": "transfer", "state": "posted", "amountMinor": 8000000, "currency": "TWD", "date": "2026-10-05", "note": "Salary" },

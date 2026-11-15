@@ -34,8 +34,12 @@ type WidgetOptions struct {
 var widgetColumns = map[string][]string{
 	"budgets":  {"name", "spent", "progress", "used", "limit", "remaining", "period"},
 	"spending": {"name", "share", "pct", "spent"},
-	"accounts": {"name", "type", "currency", "balance", "earmarked", "free"},
+	"accounts": {"name", "currency", "balance", "earmarked", "free", "limit", "owed"},
 }
+
+// retiredColumns were once offered; saved layouts that still list them are cleaned.
+// The accounts "type" (kind) column went with account types (ADR 0005).
+var retiredColumns = map[string]bool{"accounts.type": true}
 
 // WidgetItem is one widget on the dashboard. A type may appear any number of
 // times, each with its own options (e.g. two Accounts widgets for different accounts).
@@ -221,6 +225,13 @@ func (d *DashboardSettings) validate() error {
 				return fmt.Errorf("widget %s: invalid include entry", w.ID)
 			}
 		}
+		cols := w.Columns[:0:0]
+		for _, k := range w.Columns {
+			if !retiredColumns[w.Type+"."+k] {
+				cols = append(cols, k)
+			}
+		}
+		w.Columns = cols
 		if len(w.Columns) > 0 {
 			offered := map[string]bool{}
 			for _, k := range widgetColumns[w.Type] {

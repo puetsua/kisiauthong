@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -236,17 +237,44 @@ func (d *Data) accountHasTransactions(id string) bool {
 
 // validateAccount checks kind-specific fields. External accounts have no
 // currency or balance of their own; their transfers take the other side's.
+// legacyAccountIcon maps the account types used before ADR 0005, still
+// accepted as kind, to the icon they now are.
+var legacyAccountIcon = map[string]string{"bank": "bank", "savings": "savings", "cash": "cash", "credit_card": "card",
+	"ewallet": "wallet", "investment": "investment", "loan": "loan"}
+
+var iconRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,23}$`)
+
 func validateAccount(a *Account) error {
+	a.Name = strings.TrimSpace(a.Name)
 	if a.Name == "" {
 		return fmt.Errorf("name required")
 	}
+	if icon, ok := legacyAccountIcon[a.Kind]; ok {
+		a.Kind = "own"
+		if a.Icon == "" {
+			a.Icon = icon
+		}
+	}
+	if a.Kind == "" {
+		a.Kind = "own"
+	}
+	if a.Kind != "own" && a.Kind != "external" {
+		return fmt.Errorf("account kind must be own or external")
+	}
+	if a.Icon != "" && !iconRe.MatchString(a.Icon) {
+		return fmt.Errorf("invalid icon name")
+	}
 	if a.IsExternal() {
-		a.Currency, a.OpeningBalanceMinor, a.AllowNegative = "", 0, false
-		a.CreditLimitMinor, a.StatementCloseDay, a.PaymentDueDay = nil, nil, nil
+		a.Currency, a.OpeningBalanceMinor = "", 0
+		a.LimitMinor, a.StatementCloseDay, a.PaymentDueDay = nil, nil, nil
 		return nil
 	}
-	if a.Currency == "" {
-		return fmt.Errorf("currency required")
+	a.Currency = normCurrency(a.Currency)
+	if !currencyRe.MatchString(a.Currency) {
+		return fmt.Errorf("currency must be a 3-letter ISO 4217 code")
+	}
+	if a.LimitMinor != nil && *a.LimitMinor <= 0 {
+		return fmt.Errorf("limit must be more than zero, or left empty")
 	}
 	return nil
 }

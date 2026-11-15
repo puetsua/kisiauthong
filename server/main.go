@@ -32,19 +32,18 @@ func stateView() map[string]interface{} {
 		bal := d.Balance(a.ID)
 		alloc := d.AllocatedForAccount(a.ID)
 		m := map[string]interface{}{
-			"id": a.ID, "name": a.Name, "kind": a.Kind, "currency": a.Currency, "openingBalanceMinor": a.OpeningBalanceMinor,
+			"id": a.ID, "name": a.Name, "kind": a.Kind, "icon": a.Icon, "currency": a.Currency, "openingBalanceMinor": a.OpeningBalanceMinor,
 			"balanceMinor": bal, "allocatedMinor": alloc, "unallocatedMinor": bal - alloc,
-			"allowNegative": a.AllowNegative,
 		}
-		if a.CreditLimitMinor != nil {
+		if a.LimitMinor != nil {
 			owed := -bal
 			if owed < 0 {
 				owed = 0
 			}
-			m["creditLimitMinor"] = *a.CreditLimitMinor
+			m["limitMinor"] = *a.LimitMinor
 			m["owedMinor"] = owed
-			if *a.CreditLimitMinor > 0 {
-				m["utilisation"] = float64(owed) / float64(*a.CreditLimitMinor)
+			if *a.LimitMinor > 0 {
+				m["utilisation"] = float64(owed) / float64(*a.LimitMinor)
 			}
 		}
 		accounts = append(accounts, m)
@@ -208,9 +207,6 @@ func main() {
 			return
 		}
 		a.ID = newID("acc")
-		if a.Kind == "" {
-			a.Kind = "bank"
-		}
 		if err := validateAccount(&a); err != nil {
 			writeErr(w, 400, err.Error())
 			return

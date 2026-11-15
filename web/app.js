@@ -83,8 +83,6 @@ function row(cells) {
 
 /* ---------- display labels for stored enum values ---------- */
 const TYPE_L = { expense: N_("Expense"), income: N_("Income"), transfer: N_("Transfer"), allocate: N_("Allocate") };
-const KIND_L = { bank: N_("Bank"), savings: N_("Savings"), cash: N_("Cash"), credit_card: N_("Credit card"), ewallet: N_("E-wallet"), investment: N_("Investment"), loan: N_("Loan"), external: N_("External") };
-const OWN_KINDS = ["bank", "savings", "cash", "credit_card", "ewallet", "investment", "loan"];
 const TAGKIND_L = { category: N_("Category"), goal: N_("Money box") };
 // Budget periods (ADR 0004): unit × every N, anchored on cycleStart; "range" is one fixed period.
 const CYCLE_EVERY_L = { daily: N_("Every {n} days"), weekly: N_("Every {n} weeks"), monthly: N_("Every {n} months"), yearly: N_("Every {n} years") };
@@ -160,11 +158,12 @@ const WIDGET_COLS = {
   ],
   accounts: [
     { key: "name", label: N_("Account"), on: 1, v: (a) => `<button class="titlelink" data-detail-account="${esc(a.id)}">${esc(a.name)}</button>` },
-    { key: "type", label: N_("Kind"), on: 1, v: (a) => `<span class="chip">${esc(lbl(KIND_L, a.kind))}</span>` },
     { key: "currency", label: N_("Currency"), v: (a) => esc(a.currency) },
     { key: "balance", label: N_("Balance"), on: 1, num: 1, v: (a) => fmt(a.balanceMinor, a.currency) },
     { key: "earmarked", label: N_("Earmarked"), on: 1, num: 1, v: (a) => fmt(a.allocatedMinor, a.currency) },
     { key: "free", label: N_("Free"), on: 1, num: 1, v: (a) => fmt(a.unallocatedMinor, a.currency) },
+    { key: "limit", label: N_("Limit"), num: 1, v: (a) => (a.limitMinor ? fmt(a.limitMinor, a.currency) : "—") },
+    { key: "owed", label: N_("Owed"), num: 1, v: (a) => (a.limitMinor ? fmt(a.owedMinor, a.currency) : "—") },
   ],
 };
 const defaultCols = (type) => WIDGET_COLS[type].filter((c) => c.on).map((c) => c.key);
@@ -713,19 +712,29 @@ function screenTransactions(v) {
   state.scrollToExpected = false;
 }
 
-const owedText = (a) => __("{owed} owed of {limit} ({pct}%)", { owed: fmt(a.owedMinor, a.currency), limit: fmt(a.creditLimitMinor, a.currency), pct: Math.round((a.utilisation || 0) * 100) });
-// stroke icons per account kind (24px grid)
-const KIND_ICON = {
-  bank: "M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18M12 3l9 5H3z",
-  savings: "M3 4h18v4H3zM5 8v12h14V8M10 12h4",
-  cash: "M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 12h.01M18 12h.01",
-  credit_card: "M3 6h18v12H3zM3 10h18M7 15h4",
-  ewallet: "M7 2h10v20H7zM11 18h2",
-  investment: "M3 20h18M6 16l4-5 3 3 6-7M15 7h4v4",
-  loan: "M6 2h9l5 5v15H6zM14 2v6h6M9 13h6M9 17h6",
-  external: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18",
+const owedText = (a) => __("{owed} owed of {limit} ({pct}%)", { owed: fmt(a.owedMinor, a.currency), limit: fmt(a.limitMinor, a.currency), pct: Math.round((a.utilisation || 0) * 100) });
+// Account icons (ADR 0005): accounts have no type, the user picks an icon. 24px stroke paths.
+const ACCOUNT_ICONS = {
+  bank: [N_("Bank"), "M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18M12 3l9 5H3z"],
+  savings: [N_("Savings"), "M3 4h18v4H3zM5 8v12h14V8M10 12h4"],
+  cash: [N_("Cash"), "M2 6h20v12H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 12h.01M18 12h.01"],
+  card: [N_("Card"), "M3 6h18v12H3zM3 10h18M7 15h4"],
+  wallet: [N_("Wallet"), "M3 7h15a3 3 0 0 1 3 3v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7l12-4v4M16 14h.01"],
+  phone: [N_("Phone"), "M7 2h10v20H7zM11 18h2"],
+  coins: [N_("Coins"), "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .9-3 2s1.3 1.8 3 2 3 .9 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2"],
+  investment: [N_("Investment"), "M3 20h18M6 16l4-5 3 3 6-7M15 7h4v4"],
+  loan: [N_("Loan"), "M6 2h9l5 5v15H6zM14 2v6h6M9 13h6M9 17h6"],
+  home: [N_("Home"), "M3 11l9-8 9 8M5 10v10h14V10M10 20v-6h4v6"],
+  car: [N_("Car"), "M3 13l2-6h14l2 6v5H3zM3 13h18M7 18v2M17 18v2M7 15.5h.01M17 15.5h.01"],
+  travel: [N_("Travel"), "M22 2 11 13M22 2l-7 20-4-9-9-4z"],
+  gift: [N_("Gift"), "M3 8h18v4H3zM5 12v9h14v-9M12 8v13M12 8c-1-3-4-4.5-5-3s1 3 5 3zM12 8c1-3 4-4.5 5-3s-1 3-5 3z"],
+  work: [N_("Work"), "M3 7h18v13H3zM8 7V4h8v3M3 12h18"],
+  shop: [N_("Shop"), "M3 9l2-5h14l2 5M4 9v11h16V9M3 9h18M9 20v-6h6v6"],
+  globe: [N_("Globe"), "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"],
 };
-const kindIcon = (k) => `<span class="aicon k-${esc(k)}" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="${KIND_ICON[k] || KIND_ICON.bank}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+const iconName = (a) => (a && ACCOUNT_ICONS[a.icon] ? a.icon : a && a.kind === "external" ? "globe" : "bank");
+const iconSvg = (name, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><path d="${ACCOUNT_ICONS[name][1]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const accIcon = (a) => `<span class="aicon${a.kind === "external" ? " ext" : ""}" aria-hidden="true">${iconSvg(iconName(a))}</span>`;
 // the newest transaction touching an account, and how many there are
 function accountActivity(id) {
   const list = state.data.transactions.filter((t) => t.accountId === id || t.fromAccountId === id || t.toAccountId === id);
@@ -735,7 +744,7 @@ function accountActivity(id) {
 function accountCard(a) {
   const act = accountActivity(a.id), neg = a.balanceMinor < 0;
   let detail = "";
-  if (a.creditLimitMinor) {
+  if (a.limitMinor) {
     const u = (a.utilisation || 0) * 100;
     detail = `<span class="bar"><i class="${barCls(u)}" style="width:${Math.min(100, u)}%"></i></span><span class="tfoot"><small>${esc(owedText(a))}</small></span>`;
   } else if (a.allocatedMinor > 0) {
@@ -744,7 +753,7 @@ function accountCard(a) {
       <span class="tfoot"><small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.unallocatedMinor, a.currency) }))}</small><small><b class="dot earmarked"></b>${esc(__("Earmarked {amount}", { amount: fmt(a.allocatedMinor, a.currency) }))}</small></span>`;
   }
   return `<button type="button" class="tcard acard" data-detail-account="${esc(a.id)}">
-    <span class="thead">${kindIcon(a.kind)}<span class="aname"><b>${esc(a.name)}</b><small>${esc(lbl(KIND_L, a.kind))}</small></span><small class="cur">${esc(a.currency)}</small></span>
+    <span class="thead">${accIcon(a)}<span class="aname"><b>${esc(a.name)}</b></span><small class="cur">${esc(a.currency)}</small></span>
     <span class="bamount${neg ? " neg" : ""}"><b>${fmt(a.balanceMinor, a.currency)}</b></span>
     ${detail}
     <small class="last">${esc(act.last ? __("Last activity {date}", { date: dayLabel(act.last) }) : __("No transactions yet"))}</small></button>`;
@@ -758,11 +767,10 @@ function screenAccounts(v) {
     return `<div class="totcard"><span class="lab">${esc(__("Total · {currency}", { currency: c }))}</span><b>${fmt(sum("balanceMinor"), c)}</b>
       <small>${esc(__("{n} account(s)", { n: xs.length }))}${sum("allocatedMinor") ? " · " + esc(__("Earmarked {amount}", { amount: fmt(sum("allocatedMinor"), c) })) : ""}</small></div>`;
   }).join("");
-  // one grid, ordered by kind (banks, savings, cash, cards…); the icon and label on each card name the kind
-  const ordered = [...accs].sort((a, b) => OWN_KINDS.indexOf(a.kind) - OWN_KINDS.indexOf(b.kind));
+  const ordered = accs; // by name, as the server lists them
   const exts = state.data.externals.map((a) => {
     const act = accountActivity(a.id);
-    return `<button type="button" class="xcard" data-detail-account="${esc(a.id)}">${kindIcon("external")}<span><b>${esc(accName(a.id))}</b><small>${esc(__("{n} transaction(s)", { n: act.n }))}</small></span></button>`;
+    return `<button type="button" class="xcard" data-detail-account="${esc(a.id)}">${accIcon(a)}<span><b>${esc(accName(a.id))}</b><small>${esc(__("{n} transaction(s)", { n: act.n }))}</small></span></button>`;
   }).join("");
   const addTile = (id, label, cls) => `<button type="button" class="addtile ${cls}" id="${id}"><span aria-hidden="true">+</span>${esc(label)}</button>`;
   v.innerHTML = `<div class="totals">${totals}</div>
@@ -1029,33 +1037,25 @@ function dialogForm(fields, submitLabel, extra = "") {
   return `<form id="dialogForm">${fields}${extra ? `<div class="formactions">${extra}</div>` : ""}<button class="primarybtn big" type="submit">${esc(submitLabel)}</button></form>`;
 }
 const onDlg = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener("click", () => { $("#dialog").close(); fn(); }); };
+const iconPicker = (sel) => `<fieldset class="iconpick"><legend>${esc(__("Icon"))}</legend>${Object.entries(ACCOUNT_ICONS).map(([k, [label]]) =>
+  `<label title="${esc(__(label))}"><input type="radio" name="icon" value="${k}" ${k === sel ? "checked" : ""} aria-label="${esc(__(label))}"><span class="aicon">${iconSvg(k, 20)}</span></label>`).join("")}</fieldset>`;
 function openAccountDialog(editId, presetKind) {
-  const a = editId ? accById(editId) : null, kind = a ? a.kind : presetKind || "bank";
-  const ext = kind === "external";
+  const a = editId ? accById(editId) : null, ext = a ? a.kind === "external" : presetKind === "external";
   openDialog(a ? __("Edit account") : ext ? __("New external account") : __("New account"), dialogForm(
-    field(N_("Name"), `<input name="name" required placeholder="${esc(ext ? __("Employer") : __("Savings A"))}" value="${a ? esc(accName(a.id)) : ""}">`) +
-    // an account cannot switch between own and external once it has history; the anonymous external account never can
-    field("Kind", `<select name="kind" ${a && (a.id === EXT_ID || state.data.transactions.some((t) => [t.accountId, t.fromAccountId, t.toAccountId].includes(a.id))) && ext ? "disabled" : ""}>${enumOptions(KIND_L, ext ? ["external"] : OWN_KINDS.concat(a ? [] : ["external"]), kind)}</select>`) +
-    field("Currency", `<select name="currency" required>${currencyOptions(a && a.currency)}</select>`, "f-own") +
-    field(N_("Opening balance"), `<input name="opening" type="number" step="0.01" value="${a && !ext ? decimal(a.openingBalanceMinor, a.currency) : "0"}">`, "f-own") +
-    field(N_("Credit limit (cards only)"), `<input name="creditLimit" type="number" step="0.01" value="${a && a.creditLimitMinor ? decimal(a.creditLimitMinor, a.currency) : ""}">`, "f-own"),
+    field(N_("Name"), `<input name="name" required maxlength="100" placeholder="${esc(ext ? __("Employer") : __("Savings A"))}" value="${a ? esc(accName(a.id)) : ""}">`, ext ? "wide" : "") +
+    (ext ? "" : field("Currency", `<select name="currency" required>${currencyOptions(a && a.currency)}</select>`) +
+      field(N_("Opening balance"), `<input name="opening" type="number" step="0.01" value="${a ? decimal(a.openingBalanceMinor, a.currency) : "0"}">`) +
+      // a card or a loan is an account that runs negative; its limit tracks how much is owed
+      field(N_("Limit"), `<input name="limit" type="number" step="0.01" min="0.01" placeholder="${esc(__("Optional"))}" value="${a && a.limitMinor ? decimal(a.limitMinor, a.currency) : ""}">`)) +
+    iconPicker(iconName(a || { kind: ext ? "external" : "own" })),
     a ? __("Save changes") : __("Add account")));
-  const form = $("#dialogForm");
-  const sync = () => {
-    const isExternal = form.elements.kind.value === "external";
-    form.querySelectorAll(".f-own").forEach((el) => { el.hidden = isExternal; });
-    form.elements.currency.required = !isExternal;
-  };
-  form.elements.kind.addEventListener("change", sync);
-  sync();
-  form.addEventListener("submit", async (e) => {
+  $("#dialogForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = (f.currency || "").toUpperCase();
-    f.kind = f.kind || kind; // a disabled select is not submitted
-    const body = f.kind === "external" ? { name: f.name, kind: "external" }
-      : { name: f.name, kind: f.kind, currency: cur, openingBalanceMinor: toMinor(f.opening, cur), allowNegative: f.kind === "credit_card" };
-    if (a && f.kind !== "external") { body.statementCloseDay = a.statementCloseDay; body.paymentDueDay = a.paymentDueDay; }
-    if (f.kind !== "external" && f.creditLimit) body.creditLimitMinor = toMinor(f.creditLimit, cur);
+    const body = ext ? { name: f.name, kind: "external", icon: f.icon }
+      : { name: f.name, kind: "own", icon: f.icon, currency: cur, openingBalanceMinor: toMinor(f.opening, cur) };
+    if (!ext && a) { body.statementCloseDay = a.statementCloseDay; body.paymentDueDay = a.paymentDueDay; }
+    if (!ext && f.limit) body.limitMinor = toMinor(f.limit, cur);
     try {
       if (a) { await put("/api/accounts/" + a.id, body); msg(__("Account updated.")); } else { await post("/api/accounts", body); msg(__("Account added.")); }
       $("#dialog").close(); await load();
@@ -1215,9 +1215,9 @@ function allNotifications() {
     if (pct >= 100) out.push({ key: `budget-over:${t.id}:${t.periodStart}`, rank: 1, level: "over", icon: noteIcon("warn"), title: __("{name} is over budget", { name: t.name }), body, open: () => openTagDialog(null, t.id) });
     else if (pct >= 80) out.push({ key: `budget-near:${t.id}:${t.periodStart}`, rank: 3, level: "warn", icon: noteIcon("warn"), title: __("{name} has used {pct}% of its budget", { name: t.name, pct }), body, open: () => openTagDialog(null, t.id) });
   });
-  d.accounts.filter((a) => a.creditLimitMinor && (a.utilisation || 0) >= 0.8).forEach((a) => out.push({
+  d.accounts.filter((a) => a.limitMinor && (a.utilisation || 0) >= 0.8).forEach((a) => out.push({
     key: `credit:${a.id}:${month}`, rank: 2, level: a.utilisation >= 1 ? "over" : "warn", icon: noteIcon("card"),
-    title: __("{name} is at {pct}% of its credit limit", { name: a.name, pct: Math.round(a.utilisation * 100) }), body: owedText(a), open: () => openAccountDialog(a.id),
+    title: __("{name} is at {pct}% of its limit", { name: a.name, pct: Math.round(a.utilisation * 100) }), body: owedText(a), open: () => openAccountDialog(a.id),
   }));
   d.tags.filter((t) => t.targetMinor > 0).forEach((t) => {
     const amounts = { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency) };

@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
+// Account is the user's own account or an external one (ADR 0002). Own
+// accounts have no type (ADR 0005): an icon to tell them apart, and an
+// optional limit for anything that runs negative, such as a card or a loan.
 type Account struct {
 	ID                  string `json:"id"`
 	Name                string `json:"name"`
-	Kind                string `json:"kind"`
+	Kind                string `json:"kind"` // "own" or "external"
+	Icon                string `json:"icon,omitempty"`
 	Currency            string `json:"currency"`
 	OpeningBalanceMinor int64  `json:"openingBalanceMinor"`
-	AllowNegative       bool   `json:"allowNegative"`
-	CreditLimitMinor    *int64 `json:"creditLimitMinor,omitempty"`
+	LimitMinor          *int64 `json:"limitMinor,omitempty"` // owed = max(0, -balance) is tracked against it
 	StatementCloseDay   *int   `json:"statementCloseDay,omitempty"`
 	PaymentDueDay       *int   `json:"paymentDueDay,omitempty"`
 }

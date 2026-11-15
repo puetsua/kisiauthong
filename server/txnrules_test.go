@@ -144,12 +144,22 @@ func TestNormalizeTemplate(t *testing.T) {
 }
 
 func TestValidateAccount(t *testing.T) {
-	limit := int64(5)
-	ext := Account{Name: "Shop", Kind: "external", Currency: "TWD", OpeningBalanceMinor: 100, CreditLimitMinor: &limit}
-	if err := validateAccount(&ext); err != nil || ext.Currency != "" || ext.OpeningBalanceMinor != 0 || ext.CreditLimitMinor != nil {
+	limit, zero := int64(5), int64(0)
+	ext := Account{Name: "Shop", Kind: "external", Currency: "TWD", OpeningBalanceMinor: 100, LimitMinor: &limit}
+	if err := validateAccount(&ext); err != nil || ext.Currency != "" || ext.OpeningBalanceMinor != 0 || ext.LimitMinor != nil {
 		t.Errorf("external account not cleared: %v %+v", err, ext)
 	}
-	for _, a := range []Account{{Kind: "bank", Currency: "TWD"}, {Name: "x", Kind: "bank"}} {
+	own := Account{Name: " Card ", Currency: "twd", Icon: "card", LimitMinor: &limit}
+	if err := validateAccount(&own); err != nil || own.Kind != "own" || own.Name != "Card" || own.Currency != "TWD" {
+		t.Errorf("own account defaults: %v %+v", err, own)
+	}
+	// account types from before ADR 0005 are still accepted and become the icon
+	legacy := Account{Name: "Visa", Kind: "credit_card", Currency: "TWD"}
+	if err := validateAccount(&legacy); err != nil || legacy.Kind != "own" || legacy.Icon != "card" {
+		t.Errorf("legacy kind: %v %+v", err, legacy)
+	}
+	for _, a := range []Account{{Kind: "own", Currency: "TWD"}, {Name: "x", Kind: "own"}, {Name: "x", Currency: "TWD", Kind: "vault"},
+		{Name: "x", Currency: "TWD", Icon: "Bad Icon"}, {Name: "x", Currency: "TWD", LimitMinor: &zero}} {
 		if err := validateAccount(&a); err == nil {
 			t.Errorf("accepted %+v", a)
 		}
