@@ -2,12 +2,14 @@
 // All user-visible strings go through __() / N_() from i18n.js (English source strings).
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, page: 0 };
+const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, page: 0, dayOpen: {} };
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
 const PER_PAGE_CHOICES = [20, 50, 100, 200];
 const perPage = () => (state.general && state.general.transactionsPerPage) || 50;
+const OPEN_DAY_CHOICES = [1, 3, 7, 14, 30];
+const openDays = () => (state.general && state.general.openDays) || 7;
 const WIDTH_L = { default: N_("Default"), wide: N_("Wide"), full: N_("Full width") };
 const pageWidth = () => (state.general && WIDTH_L[state.general.pageWidth] ? state.general.pageWidth : "default");
 const applyPageWidth = () => { document.documentElement.dataset.width = pageWidth(); };
@@ -343,11 +345,21 @@ function feedRow(t, opts = {}) {
       <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, t.type))}</span><span class="fsub"><span class="sr">${esc(lbl(TYPE_L, t.type))} · </span>${esc(sub)}</span></span>
       <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button>${opts.confirm ? `<button type="button" class="smallbtn" data-confirm="${esc(t.id)}">${esc(__("Confirm…"))}</button>` : ""}</li>`;
 }
-// feedHTML groups a newest-first list by day.
-function feedHTML(list) {
+// feedHTML groups a newest-first list by day; the first `open` days start expanded,
+// and a day the user opened or closed keeps that choice (state.dayOpen) across re-renders.
+function feedHTML(list, open = Infinity) {
   const days = [];
   list.forEach((t) => { const last = days[days.length - 1]; if (last && last.date === t.date) last.items.push(t); else days.push({ date: t.date, items: [t] }); });
-  return days.map((d) => `<section class="fday"><h4><span>${esc(dayLabel(d.date))}</span><span class="fnet">${d.items.length > 1 ? esc(dayNet(d.items)) : ""}</span></h4><ul class="feed">${d.items.map((t) => feedRow(t)).join("")}</ul></section>`).join("");
+  return days.map((d, i) => {
+    const byDefault = i < open, isOpen = d.date in state.dayOpen ? state.dayOpen[d.date] : byDefault;
+    return `<details class="fday" data-day="${esc(d.date)}" data-default="${byDefault ? 1 : 0}" ${isOpen ? "open" : ""}><summary><span class="fdate">${esc(dayLabel(d.date))}</span><span class="fcount">${esc(__("{n} transaction(s)", { n: d.items.length }))}</span><span class="fnet">${d.items.length > 1 ? esc(dayNet(d.items)) : ""}</span></summary><ul class="feed">${d.items.map((t) => feedRow(t)).join("")}</ul></details>`;
+  }).join("");
+}
+function bindDays(root) {
+  root.querySelectorAll("details.fday").forEach((dt) => dt.addEventListener("toggle", () => {
+    // toggle also fires for sections rendered open; only remember real changes
+    if (dt.open === (dt.dataset.default === "1")) delete state.dayOpen[dt.dataset.day]; else state.dayOpen[dt.dataset.day] = dt.open;
+  }));
 }
 async function deleteTxn(id) {
   if (!confirm(__("Delete this transaction? This cannot be undone."))) return false;
@@ -384,10 +396,11 @@ function screenTransactions(v) {
         <span>${esc(__("{from}–{to} of {total}", { from: from + 1, to: from + shown.length, total: list.length }))}</span>
         <button class="smallbtn" data-page="${state.page + 1}" ${state.page >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button></nav>`;
     const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, confirm: true })).join("")}</ul></section>` : "";
-    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(shown)}</section>` + pager : "";
+    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(shown, openDays())}</section>` + pager : "";
     $("#txnResults").innerHTML = expectedHTML + postedHTML || `<div class="empty">${esc(__("No transactions match. Add your first with the + button."))}</div>`;
     $("#txnResults").querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => { state.page = parseInt(b.dataset.page, 10); drawResults(); $("#view").scrollIntoView({ block: "start" }); }));
     bindConfirm($("#txnResults"));
+    bindDays($("#txnResults"));
   };
   const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value }; state.page = 0; drawResults(); };
   ["faccount", "ftype"].forEach((id) => $("#" + id).addEventListener("change", upd));
@@ -471,6 +484,7 @@ function screenSettings(v) {
       <div class="setrow"><label>${esc(__("Language"))} <select id="setLang">${langOpts}</select></label>
         <label>${esc(__("Default currency"))} <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label>
         <label>${esc(__("Page width"))} <select id="setWidth">${enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())}</select></label>
+        <label>${esc(__("Days open by default"))} <select id="setOpenDays">${[...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")}</select></label>
         <label>${esc(__("Transactions per page"))} <select id="setPerPage">${[...new Set([...PER_PAGE_CHOICES, perPage()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === perPage() ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
       <div class="setlabel">${esc(__("Frequently used currencies"))}</div>
       <div class="curchips">${favCurs().map((c) => `<span class="chip cur${c === defCur() ? " def" : ""}" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="${esc(__("Remove {currency}", { currency: c }))}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}</div>
@@ -498,6 +512,7 @@ function screenSettings(v) {
   $("#setLang").addEventListener("change", (e) => saveGeneral({ language: e.target.value }, () => __("Language saved.")));
   $("#setDefCur").addEventListener("change", (e) => saveGeneral({ defaultCurrency: e.target.value }, () => __("Default currency saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
+  $("#setOpenDays").addEventListener("change", (e) => { state.dayOpen = {}; saveGeneral({ openDays: parseInt(e.target.value, 10) }, () => __("Days open by default saved.")); });
   $("#setPerPage").addEventListener("change", (e) => { state.page = 0; saveGeneral({ transactionsPerPage: parseInt(e.target.value, 10) }, () => __("Transactions per page saved.")); });
   $("#setAddCur").addEventListener("change", (e) => { const c = e.target.value; if (c) saveGeneral({ currencies: [...favCurs(), c] }, () => __("{currency} added.", { currency: c })); });
   v.querySelectorAll("[data-cur-del]").forEach((b) => b.addEventListener("click", () => {

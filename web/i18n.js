@@ -36,7 +36,7 @@ const I18N = {
     "No allocations yet": "還沒有撥入",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型",
-    "Clear": "清除", "Today": "今天", "Yesterday": "昨天", "No transactions yet.": "還沒有交易。", "Search note, tag, account…": "搜尋備註、標籤、帳戶…", "Pages": "分頁", "‹ Previous": "‹ 上一頁", "Next ›": "下一頁 ›", "{from}–{to} of {total}": "第 {from}–{to} 筆，共 {total} 筆",
+    "Clear": "清除", "Today": "今天", "{n} transaction(s)": "{n} 筆交易", "Days open by default": "預設展開天數", "Days open by default saved.": "預設展開天數已儲存。", "Yesterday": "昨天", "No transactions yet.": "還沒有交易。", "Search note, tag, account…": "搜尋備註、標籤、帳戶…", "Pages": "分頁", "‹ Previous": "‹ 上一頁", "Next ›": "下一頁 ›", "{from}–{to} of {total}": "第 {from}–{to} 筆，共 {total} 筆",
     "No transactions match. Add your first with the + button.": "沒有符合的交易。按 + 按鈕新增第一筆。",
     "Delete this transaction? This cannot be undone.": "要刪除這筆交易嗎？刪除後無法復原。", "Deleted.": "已刪除。",
     "Add transaction": "新增交易", "Edit transaction": "編輯交易", "Save transaction": "儲存交易", "Transaction editor": "交易編輯器",

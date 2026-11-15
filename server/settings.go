@@ -47,7 +47,14 @@ type GeneralSettings struct {
 	TransactionsPerPage int `json:"transactionsPerPage"`
 	// PageWidth caps the content width: "default", "wide" or "full".
 	PageWidth string `json:"pageWidth"`
+	// OpenDays is how many of the newest days start expanded in the transaction list.
+	OpenDays int `json:"openDays"`
 }
+
+const (
+	defaultOpenDays = 7
+	maxOpenDays     = 90
+)
 
 var pageWidths = map[string]bool{"default": true, "wide": true, "full": true}
 
@@ -78,7 +85,7 @@ var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 func defaultSettings() Settings {
 	return Settings{
 		Dashboard: DashboardSettings{Order: append([]string{}, dashboardWidgets...), Hidden: []string{}},
-		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, TransactionsPerPage: defaultTransactionsPerPage, PageWidth: "default"},
+		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, TransactionsPerPage: defaultTransactionsPerPage, PageWidth: "default", OpenDays: defaultOpenDays},
 	}
 }
 
@@ -142,6 +149,12 @@ func (g *GeneralSettings) validate() error {
 	}
 	if g.TransactionsPerPage < minTransactionsPerPage || g.TransactionsPerPage > maxTransactionsPerPage {
 		return fmt.Errorf("transactionsPerPage must be %d-%d", minTransactionsPerPage, maxTransactionsPerPage)
+	}
+	if g.OpenDays == 0 { // rows saved before this setting existed
+		g.OpenDays = defaultOpenDays
+	}
+	if g.OpenDays < 1 || g.OpenDays > maxOpenDays {
+		return fmt.Errorf("openDays must be 1-%d", maxOpenDays)
 	}
 	if g.PageWidth == "" { // rows saved before this setting existed
 		g.PageWidth = "default"

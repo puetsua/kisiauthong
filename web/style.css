@@ -123,8 +123,15 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .feedpanel{padding:4px 18px 8px}
 .feedpanel.expected{border-left:4px solid var(--amber);padding-top:14px;scroll-margin-top:84px}
 .feedpanel.expected h3{margin-bottom:2px}
-.fday h4{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:16px 0 0;padding:0 4px 6px;border-bottom:1px solid var(--line);font-size:.82rem;font-weight:600;color:var(--muted)}
-.fnet{font-variant-numeric:tabular-nums;font-weight:500}
+.fday>summary{list-style:none;display:flex;align-items:center;gap:10px;margin-top:10px;padding:8px 4px;border-bottom:1px solid var(--line);font-size:.82rem;font-weight:600;color:var(--muted);cursor:pointer;border-radius:6px 6px 0 0;user-select:none}
+.fday>summary::-webkit-details-marker{display:none}
+.fday>summary::before{content:"";flex:none;width:6px;height:6px;margin:0 4px 2px 2px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .15s}
+.fday[open]>summary::before{transform:rotate(45deg)}
+.fday>summary:hover{color:var(--ink);background:#f6f4ec}
+.fday>summary:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+.fcount{font-weight:400}
+.fday[open] .fcount{display:none}
+.fnet{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:500}
 .feed{list-style:none;margin:0;padding:0}
 .feed li{display:flex;align-items:center;gap:8px;border-bottom:1px solid #eeeadf}
 .feed li:last-child{border-bottom:0}

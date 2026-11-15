@@ -160,12 +160,30 @@ func TestSettingsPageWidth(t *testing.T) {
 	}
 }
 
+func TestSettingsOpenDays(t *testing.T) {
+	withTestStore(t)
+	if _, s := doSettings(t, http.MethodGet, ""); s.General.OpenDays != 7 {
+		t.Fatalf("default open days: %d", s.General.OpenDays)
+	}
+	if code, s := doSettings(t, http.MethodPut, `{"general":{"openDays":14}}`); code != 200 || s.General.OpenDays != 14 {
+		t.Fatalf("set 14: %d %+v", code, s.General)
+	}
+	if _, s := doSettings(t, http.MethodPut, `{"general":{"pageWidth":"wide"}}`); s.General.OpenDays != 14 {
+		t.Fatalf("open days lost: %+v", s.General)
+	}
+	for _, bad := range []string{"-1", "91", `"7"`} {
+		if code, _ := doSettings(t, http.MethodPut, `{"general":{"openDays":`+bad+`}}`); code != 400 {
+			t.Errorf("openDays %s: want 400, got %d", bad, code)
+		}
+	}
+}
+
 func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
 	withTestStore(t)
 	if err := store.setSetting("general", `{"defaultCurrency":"JPY"}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "JPY,TWD" || s.General.TransactionsPerPage != 50 || s.General.PageWidth != "default" {
+	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "JPY,TWD" || s.General.TransactionsPerPage != 50 || s.General.PageWidth != "default" || s.General.OpenDays != 7 {
 		t.Fatalf("legacy row: %+v", s.General)
 	}
 }
