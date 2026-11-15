@@ -41,7 +41,12 @@ type GeneralSettings struct {
 	// Currencies is the user's frequently used list, in display order. It is
 	// a shortlist for pickers only; any ISO 4217 code can still be recorded.
 	Currencies []string `json:"currencies"`
+	// Language is the UI language: "" follows the browser, else one of uiLanguages.
+	Language string `json:"language"`
 }
+
+// uiLanguages are the UI languages the web client ships translations for.
+var uiLanguages = map[string]bool{"en": true, "zh-TW": true}
 
 const maxCurrencies = 50
 
@@ -119,6 +124,9 @@ func (g *GeneralSettings) validate() error {
 	g.DefaultCurrency = normCurrency(g.DefaultCurrency)
 	if !currencyRe.MatchString(g.DefaultCurrency) {
 		return fmt.Errorf("defaultCurrency must be a 3-letter ISO 4217 code")
+	}
+	if g.Language != "" && !uiLanguages[g.Language] {
+		return fmt.Errorf("language must be empty (browser default), en or zh-TW")
 	}
 	seen := map[string]bool{g.DefaultCurrency: true}
 	list := []string{g.DefaultCurrency}

@@ -96,6 +96,29 @@ func TestSettingsFrequentCurrencies(t *testing.T) {
 	}
 }
 
+func TestSettingsLanguage(t *testing.T) {
+	withTestStore(t)
+	if _, s := doSettings(t, http.MethodGet, ""); s.General.Language != "" {
+		t.Fatalf("language should default to browser (empty), got %q", s.General.Language)
+	}
+	code, s := doSettings(t, http.MethodPut, `{"general":{"language":"zh-TW"}}`)
+	if code != 200 || s.General.Language != "zh-TW" || s.General.DefaultCurrency != "TWD" {
+		t.Fatalf("set zh-TW: %d %+v", code, s.General)
+	}
+	// changing the currency keeps the language
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"defaultCurrency":"JPY"}}`); s.General.Language != "zh-TW" {
+		t.Fatalf("language lost: %+v", s.General)
+	}
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"language":""}}`); s.General.Language != "" {
+		t.Fatalf("back to browser default: %+v", s.General)
+	}
+	for _, bad := range []string{"zh-CN", "fr", "ZH-TW", "th"} {
+		if code, _ := doSettings(t, http.MethodPut, `{"general":{"language":"`+bad+`"}}`); code != 400 {
+			t.Errorf("language %q: want 400, got %d", bad, code)
+		}
+	}
+}
+
 func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
 	withTestStore(t)
 	if err := store.setSetting("general", `{"defaultCurrency":"JPY"}`); err != nil {

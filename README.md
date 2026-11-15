@@ -15,11 +15,12 @@ Platforms: web server (self-hosted), desktop (Windows, Linux, macOS), and Androi
 cd server
 go run .          # http://127.0.0.1:8080  (SQLite at ../data/kisiauthong.db, seeded on first run)
 go test ./...     # domain tests
+node ../scripts/check-i18n.js   # every UI string translated
 ```
 
 Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. The server listens on `127.0.0.1` only (there is no login yet); set `KISIAUTHONG_HOST=0.0.0.0` to reach it from other devices or a container, and only on a network you trust. Set `KISIAUTHONG_SOURCE_URL` to the source repository of the code you run; it is shown under Settings → About (AGPL §13). Desktop and Android clients are future plans.
 
-Settings (sidebar → Settings): default currency and a short list of frequently used currencies (e.g. USD, TWD, JPY) shown first in currency pickers, with every ISO 4217 currency still available below them; dashboard layout (Dashboard → Customize: show/hide, drag or ↑ ↓ to reorder, full or half width, custom titles, row counts, and which accounts / budgets / money boxes / currencies each widget shows, with a live preview), JSON export of all data (`GET /api/export`), and About.
+Settings (sidebar → Settings): language (English or 繁體中文（台灣）, default follows the browser), default currency and a short list of frequently used currencies (e.g. USD, TWD, JPY) shown first in currency pickers, with every ISO 4217 currency still available below them; dashboard layout (Dashboard → Customize: show/hide, drag or ↑ ↓ to reorder, full or half width, custom titles, row counts, and which accounts / budgets / money boxes / currencies each widget shows, with a live preview), JSON export of all data (`GET /api/export`), and About.
 
 ## License
 

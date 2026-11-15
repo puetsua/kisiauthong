@@ -5,29 +5,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>記數通 KiSiauThong</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 <div class="shell">
   <aside class="sidebar">
     <div class="brand"><span lang="nan-Hant-TW">記數通</span><small>KiSiauThong</small></div>
-    <nav id="nav" aria-label="Main">
-      <a href="#dashboard" data-screen="dashboard">Dashboard</a>
-      <a href="#transactions" data-screen="transactions">Transactions</a>
-      <a href="#accounts" data-screen="accounts">Accounts</a>
-      <a href="#budgets" data-screen="budgets">Budgets</a>
-      <a href="#moneyboxes" data-screen="moneyboxes">Money boxes</a>
-      <a href="#templates" data-screen="templates">Templates</a>
-      <a href="#tags" data-screen="tags">Tags</a>
-      <a href="#settings" data-screen="settings">Settings</a>
+    <nav id="nav" data-i18n-aria="Main">
+      <a href="#dashboard" data-screen="dashboard" data-i18n="Dashboard">Dashboard</a>
+      <a href="#transactions" data-screen="transactions" data-i18n="Transactions">Transactions</a>
+      <a href="#accounts" data-screen="accounts" data-i18n="Accounts">Accounts</a>
+      <a href="#budgets" data-screen="budgets" data-i18n="Budgets">Budgets</a>
+      <a href="#moneyboxes" data-screen="moneyboxes" data-i18n="Money boxes">Money boxes</a>
+      <a href="#templates" data-screen="templates" data-i18n="Templates">Templates</a>
+      <a href="#tags" data-screen="tags" data-i18n="Tags">Tags</a>
+      <a href="#settings" data-screen="settings" data-i18n="Settings">Settings</a>
     </nav>
     <div class="sidefoot"><a href="#settings">記數通 · AGPL-3.0-or-later</a></div>
   </aside>
 
   <div class="content">
     <header class="topbar">
-      <button id="menuBtn" class="iconbtn" aria-label="Menu">☰</button>
-      <h1 id="pageTitle">Dashboard</h1>
+      <button id="menuBtn" class="iconbtn" data-i18n-aria="Menu">☰</button>
+      <h1 id="pageTitle"></h1>
       <div class="topactions">
         <button id="dueBtn" class="ghostbtn" type="button" hidden></button>
       </div>
@@ -37,33 +37,34 @@
   </div>
 </div>
 
-<button id="addBtn" class="fab" type="button" aria-label="Add transaction" title="Add transaction"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+<button id="addBtn" class="fab" type="button" data-i18n-aria="Add transaction" data-i18n-title="Add transaction"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
 
 <!-- Transaction drawer -->
 <div id="drawerBackdrop" class="backdrop" hidden></div>
-<aside id="drawer" class="drawer" hidden aria-label="Transaction editor">
-  <div class="drawerhead"><h2 id="drawerTitle">Add transaction</h2><button id="drawerClose" class="iconbtn" aria-label="Close">✕</button></div>
+<aside id="drawer" class="drawer" hidden data-i18n-aria="Transaction editor">
+  <div class="drawerhead"><h2 id="drawerTitle"></h2><button id="drawerClose" class="iconbtn" data-i18n-aria="Close">✕</button></div>
   <form id="txnForm">
     <div class="seg" id="typeSeg" role="tablist">
-      <button type="button" data-type="expense" class="on">Expense</button><button type="button" data-type="income">Income</button><button type="button" data-type="transfer">Transfer</button><button type="button" data-type="allocate">Allocate</button><button type="button" data-type="release">Release</button>
+      <button type="button" data-type="expense" class="on" data-i18n="Expense">Expense</button><button type="button" data-type="income" data-i18n="Income">Income</button><button type="button" data-type="transfer" data-i18n="Transfer">Transfer</button><button type="button" data-type="allocate" data-i18n="Allocate">Allocate</button><button type="button" data-type="release" data-i18n="Release">Release</button>
     </div>
-    <label>Account <select name="accountId" id="fAccount"></select></label>
-    <label id="fToWrap" hidden>To account <select name="toAccountId" id="fToAccount"></select></label>
-    <label>Amount <input name="amount" type="number" step="0.01" min="0.01" required inputmode="decimal"></label>
-    <label>Date <input name="date" type="date" required></label>
-    <label id="fTagWrap">Tag <select name="tagId" id="fTag"><option value="">— none —</option></select></label>
-    <label>Note <input name="note" placeholder="Groceries"></label>
-    <label id="fStateWrap">State <select name="state"><option value="posted">Posted</option><option value="planned">Expected (planned)</option></select></label>
-    <button class="primarybtn big" type="submit">Save transaction</button>
+    <label><span data-i18n="Account">Account</span> <select name="accountId" id="fAccount"></select></label>
+    <label id="fToWrap" hidden><span data-i18n="To account">To account</span> <select name="toAccountId" id="fToAccount"></select></label>
+    <label><span data-i18n="Amount">Amount</span> <input name="amount" type="number" step="0.01" min="0.01" required inputmode="decimal"></label>
+    <label><span data-i18n="Date">Date</span> <input name="date" type="date" required></label>
+    <label id="fTagWrap"><span data-i18n="Tag">Tag</span> <select name="tagId" id="fTag"></select></label>
+    <label><span data-i18n="Note">Note</span> <input name="note" data-i18n-placeholder="Groceries"></label>
+    <label id="fStateWrap"><span data-i18n="State">State</span> <select name="state"><option value="posted" data-i18n="Posted">Posted</option><option value="planned" data-i18n="Expected (planned)">Expected (planned)</option></select></label>
+    <button class="primarybtn big" type="submit" data-i18n="Save transaction">Save transaction</button>
   </form>
 </aside>
 
 <!-- Generic create dialog -->
 <dialog id="dialog">
-  <form method="dialog" class="dialoghead"><h2 id="dialogTitle"></h2><button class="iconbtn" value="cancel" aria-label="Close">✕</button></form>
+  <form method="dialog" class="dialoghead"><h2 id="dialogTitle"></h2><button class="iconbtn" value="cancel" data-i18n-aria="Close">✕</button></form>
   <div id="dialogBody"></div>
 </dialog>
 
-<script src="app.js?v=11"></script>
+<script src="i18n.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

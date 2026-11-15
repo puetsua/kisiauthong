@@ -68,7 +68,7 @@ Offline-first, server-authoritative sync. Every client works fully offline again
 | Client DB | SQLite (`expo-sqlite` / Tauri SQL / better-sqlite3 as appropriate) | Offline-first local store on every client |
 | Shared code | TypeScript package `@kisiauthong/core`: domain types, validation, money math, sync protocol | One implementation of the rules that matter (money, budgets) |
 | API contract | OpenAPI spec in `api/openapi.yaml`, generated TS/Go types | Contract-first; clients never hand-write diverging DTOs |
-| Money | Integer minor units (satang/cents) + ISO 4217 currency code, never `float` | No floating-point money anywhere |
+| Money | Integer minor units (cents) + ISO 4217 currency code, never `float` | No floating-point money anywhere |
 
 Alternatives already considered: Flutter (rejected: splits language from web) and Electron (rejected: size). If you propose changing the stack, write an ADR first — do not silently re-scaffold.
 
@@ -140,7 +140,7 @@ All ids are UUIDs generated on the client so offline creation never needs the se
 - Desktop (Tauri): target Windows 10+, macOS 12+ (Apple Silicon + Intel), and mainstream Linux (`.AppImage`/`.deb`). No platform-specific forks of business logic — platform differences live in the Tauri shell layer only.
 - Mobile: Android 10+ (API 29+). Respect Android back behaviour, scoped storage for exports/attachments, and no hardcoded sizes — support small phones and tablets.
 - Web: evergreen browsers, responsive down to phone widths (the web UI may be the only UI a self-hoster's family uses on mobile browsers).
-- Accessibility and i18n from the start: all user-visible strings go through the i18n layer (English source strings; Thai translation is a first-class target — the project name is Thai), no hardcoded currency/date formats.
+- Accessibility and i18n from the start: all user-visible strings go through the i18n layer (English source strings; Traditional Chinese as used in Taiwan, `zh-TW`, is a first-class target — the project name 記數通 is Taiwanese Hokkien; web: `__()`/`N_()` from `web/i18n.js`, coverage checked by `node scripts/check-i18n.js`), no hardcoded currency/date formats.
 
 ## 7. Sync protocol
 
