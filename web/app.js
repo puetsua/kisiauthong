@@ -2,10 +2,12 @@
 // All user-visible strings go through __() / N_() from i18n.js (English source strings).
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "", state: "" } };
+const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "", state: "" }, page: 0 };
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
+const PER_PAGE_CHOICES = [20, 50, 100, 200];
+const perPage = () => (state.general && state.general.transactionsPerPage) || 50;
 // The default currency is always in the frequently used list, first.
 const favCurs = () => { const d = defCur(), l = (state.general && state.general.currencies) || []; return [d, ...l.filter((c) => c !== d)]; };
 const ALL_CURRENCIES = (() => { try { return Intl.supportedValuesOf("currency"); } catch (e) { return []; } })();
@@ -344,14 +346,21 @@ function screenTransactions(v) {
       <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div>
     <div id="txnResults"></div>`;
   const drawResults = () => {
-    const list = filteredTxns();
-    $("#txnResults").innerHTML = list.length ? table([{ t: "Date" }, { t: "Transaction" }, { t: "Account" }, { t: "State" }, { t: "Amount", num: 1 }], txnRows(list.slice(0, 120))) : `<div class="empty">${esc(__("No transactions match. Add your first with the + button."))}</div>`;
+    const list = filteredTxns(), size = perPage(), pages = Math.max(1, Math.ceil(list.length / size));
+    state.page = Math.min(Math.max(0, state.page), pages - 1);
+    const from = state.page * size, shown = list.slice(from, from + size);
+    const pager = list.length > size ? `<nav class="pager" aria-label="${esc(__("Pages"))}">
+        <button class="smallbtn" data-page="${state.page - 1}" ${state.page === 0 ? "disabled" : ""}>${esc(__("‹ Previous"))}</button>
+        <span>${esc(__("{from}–{to} of {total}", { from: from + 1, to: from + shown.length, total: list.length }))}</span>
+        <button class="smallbtn" data-page="${state.page + 1}" ${state.page >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button></nav>` : "";
+    $("#txnResults").innerHTML = list.length ? table([{ t: "Date" }, { t: "Transaction" }, { t: "Account" }, { t: "State" }, { t: "Amount", num: 1 }], txnRows(shown)) + pager : `<div class="empty">${esc(__("No transactions match. Add your first with the + button."))}</div>`;
+    $("#txnResults").querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => { state.page = parseInt(b.dataset.page, 10); drawResults(); $("#view").scrollIntoView({ block: "start" }); }));
     bindTxnActions($("#txnResults"));
   };
-  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, state: $("#fstate").value }; drawResults(); };
+  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, state: $("#fstate").value }; state.page = 0; drawResults(); };
   ["faccount", "ftype", "fstate"].forEach((id) => $("#" + id).addEventListener("change", upd));
   $("#fq").addEventListener("input", upd);
-  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", state: "" }; render(); });
+  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", state: "" }; state.page = 0; render(); });
   drawResults();
 }
 
@@ -426,7 +435,8 @@ function screenSettings(v) {
   const langOpts = [["", __("Browser default")], ...Object.entries(LANGS)].map(([k, name]) => `<option value="${esc(k)}" ${k === pref ? "selected" : ""} ${k ? `lang="${esc(k)}"` : ""}>${esc(name)}</option>`).join("");
   v.innerHTML = `<section class="panel"><h3>${esc(__("General"))}</h3>
       <div class="setrow"><label>${esc(__("Language"))} <select id="setLang">${langOpts}</select></label>
-        <label>${esc(__("Default currency"))} <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label></div>
+        <label>${esc(__("Default currency"))} <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label>
+        <label>${esc(__("Transactions per page"))} <select id="setPerPage">${[...new Set([...PER_PAGE_CHOICES, perPage()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === perPage() ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
       <div class="setlabel">${esc(__("Frequently used currencies"))}</div>
       <div class="curchips">${favCurs().map((c) => `<span class="chip cur${c === defCur() ? " def" : ""}" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="${esc(__("Remove {currency}", { currency: c }))}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}</div>
       <div class="setrow"><select id="setAddCur" aria-label="${esc(__("Add currency"))}"><option value="">${esc(__("+ Add currency…"))}</option>${ALL_CURRENCIES.filter((c) => !favCurs().includes(c)).map((c) => curOption(c, "")).join("")}</select></div></section>
@@ -451,6 +461,7 @@ function screenSettings(v) {
   };
   $("#setLang").addEventListener("change", (e) => saveGeneral({ language: e.target.value }, () => __("Language saved.")));
   $("#setDefCur").addEventListener("change", (e) => saveGeneral({ defaultCurrency: e.target.value }, () => __("Default currency saved.")));
+  $("#setPerPage").addEventListener("change", (e) => { state.page = 0; saveGeneral({ transactionsPerPage: parseInt(e.target.value, 10) }, () => __("Transactions per page saved.")); });
   $("#setAddCur").addEventListener("change", (e) => { const c = e.target.value; if (c) saveGeneral({ currencies: [...favCurs(), c] }, () => __("{currency} added.", { currency: c })); });
   v.querySelectorAll("[data-cur-del]").forEach((b) => b.addEventListener("click", () => {
     const c = b.dataset.curDel;
@@ -704,7 +715,7 @@ async function generateDue() {
   try { const r = await post("/api/generate", {}); msg(__("Generated {n} due transaction(s).", { n: r.created })); await load(); }
   catch (e) { errMsg(e); }
 }
-$("#dueBtn").addEventListener("click", () => { location.hash = "#transactions"; state.filter.state = "planned"; render(); });
+$("#dueBtn").addEventListener("click", () => { location.hash = "#transactions"; state.filter.state = "planned"; state.page = 0; render(); });
 
 /* ---------- routing ---------- */
 const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], budgets: [N_("Budgets"), screenBudgets], moneyboxes: ["Money boxes", screenMoneyboxes], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings] };

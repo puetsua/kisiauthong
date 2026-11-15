@@ -43,7 +43,15 @@ type GeneralSettings struct {
 	Currencies []string `json:"currencies"`
 	// Language is the UI language: "" follows the browser, else one of uiLanguages.
 	Language string `json:"language"`
+	// TransactionsPerPage is how many rows the transaction list shows per page.
+	TransactionsPerPage int `json:"transactionsPerPage"`
 }
+
+const (
+	defaultTransactionsPerPage = 50
+	minTransactionsPerPage     = 10
+	maxTransactionsPerPage     = 500
+)
 
 // uiLanguages are the UI languages the web client ships translations for.
 var uiLanguages = map[string]bool{"en": true, "zh-TW": true}
@@ -66,7 +74,7 @@ var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 func defaultSettings() Settings {
 	return Settings{
 		Dashboard: DashboardSettings{Order: append([]string{}, dashboardWidgets...), Hidden: []string{}},
-		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}},
+		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, TransactionsPerPage: defaultTransactionsPerPage},
 	}
 }
 
@@ -124,6 +132,12 @@ func (g *GeneralSettings) validate() error {
 	g.DefaultCurrency = normCurrency(g.DefaultCurrency)
 	if !currencyRe.MatchString(g.DefaultCurrency) {
 		return fmt.Errorf("defaultCurrency must be a 3-letter ISO 4217 code")
+	}
+	if g.TransactionsPerPage == 0 { // rows saved before this setting existed
+		g.TransactionsPerPage = defaultTransactionsPerPage
+	}
+	if g.TransactionsPerPage < minTransactionsPerPage || g.TransactionsPerPage > maxTransactionsPerPage {
+		return fmt.Errorf("transactionsPerPage must be %d-%d", minTransactionsPerPage, maxTransactionsPerPage)
 	}
 	if g.Language != "" && !uiLanguages[g.Language] {
 		return fmt.Errorf("language must be empty (browser default), en or zh-TW")

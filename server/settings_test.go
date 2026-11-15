@@ -119,12 +119,32 @@ func TestSettingsLanguage(t *testing.T) {
 	}
 }
 
+func TestSettingsTransactionsPerPage(t *testing.T) {
+	withTestStore(t)
+	if _, s := doSettings(t, http.MethodGet, ""); s.General.TransactionsPerPage != 50 {
+		t.Fatalf("default per page: %d", s.General.TransactionsPerPage)
+	}
+	code, s := doSettings(t, http.MethodPut, `{"general":{"transactionsPerPage":100}}`)
+	if code != 200 || s.General.TransactionsPerPage != 100 {
+		t.Fatalf("set 100: %d %+v", code, s.General)
+	}
+	// other general updates keep it
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"language":"zh-TW"}}`); s.General.TransactionsPerPage != 100 {
+		t.Fatalf("per page lost: %+v", s.General)
+	}
+	for _, bad := range []string{"9", "501", "-5", `"50"`} {
+		if code, _ := doSettings(t, http.MethodPut, `{"general":{"transactionsPerPage":`+bad+`}}`); code != 400 {
+			t.Errorf("transactionsPerPage %s: want 400, got %d", bad, code)
+		}
+	}
+}
+
 func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
 	withTestStore(t)
 	if err := store.setSetting("general", `{"defaultCurrency":"JPY"}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "JPY,TWD" {
+	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "JPY,TWD" || s.General.TransactionsPerPage != 50 {
 		t.Fatalf("legacy row: %+v", s.General)
 	}
 }

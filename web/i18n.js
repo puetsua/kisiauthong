@@ -36,7 +36,7 @@ const I18N = {
     "No allocations yet": "還沒有撥入",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型", "Posted + expected": "已入帳＋預計", "Posted only": "僅已入帳", "Expected only": "僅預計",
-    "Clear": "清除", "Search note, type, account…": "搜尋備註、類型、帳戶…",
+    "Clear": "清除", "Pages": "分頁", "‹ Previous": "‹ 上一頁", "Next ›": "下一頁 ›", "{from}–{to} of {total}": "第 {from}–{to} 筆，共 {total} 筆", "Search note, type, account…": "搜尋備註、類型、帳戶…",
     "No transactions match. Add your first with the + button.": "沒有符合的交易。按 + 按鈕新增第一筆。",
     "Delete this transaction? This cannot be undone.": "要刪除這筆交易嗎？刪除後無法復原。", "Deleted.": "已刪除。",
     "Add transaction": "新增交易", "Edit transaction": "編輯交易", "Save transaction": "儲存交易", "Transaction editor": "交易編輯器",
@@ -84,6 +84,7 @@ const I18N = {
     "Expected range {min} – {max}. Edit the amount to the actual charge if it differs.": "預計範圍 {min} – {max}。實際金額不同的話，請改成實際扣款金額。",
     // settings
     "General": "一般", "Language": "語言", "Browser default": "依瀏覽器設定", "Language saved.": "語言已儲存。",
+    "Transactions per page": "每頁交易筆數", "Transactions per page saved.": "每頁交易筆數已儲存。",
     "Default currency": "預設幣別", "Default currency saved.": "預設幣別已儲存。", "Frequently used currencies": "常用幣別",
     "Add currency": "新增幣別", "+ Add currency…": "＋ 新增幣別…", "Remove {currency}": "移除 {currency}", "All currencies": "所有幣別",
     "{currency} added.": "已新增 {currency}。", "{currency} removed.": "已移除 {currency}。",
