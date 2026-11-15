@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL DEFAULT '', is_admin INTEGER NOT NULL DEFAULT 0,
   totp_secret TEXT NOT NULL DEFAULT '', totp_enabled INTEGER NOT NULL DEFAULT 0, totp_last_step INTEGER NOT NULL DEFAULT 0,
   recovery_codes TEXT NOT NULL DEFAULT '',
-  avatar BLOB, avatar_type TEXT NOT NULL DEFAULT '', avatar_color TEXT NOT NULL DEFAULT '',
+  avatar BLOB, avatar_type TEXT NOT NULL DEFAULT '', avatar_color TEXT NOT NULL DEFAULT '', avatar_version INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS users_username ON users(username COLLATE NOCASE) WHERE username <> '';
 CREATE TABLE IF NOT EXISTS sessions (
@@ -124,6 +124,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateMultiUser,                 // 8
 	migrateRecoveryCodes,             // 9
 	migratePasskeys,                  // 10
+	migrateAvatarVersion,             // 11
 }
 
 func (s *Store) migrate() error {

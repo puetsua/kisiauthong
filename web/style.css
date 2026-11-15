@@ -428,3 +428,21 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .pklist li>svg{color:var(--accent);flex:none}
 .pklist li span{flex:1;min-width:0;display:flex;flex-direction:column}
 .pklist+.srow{border-top:0}
+
+/* avatar choices and the users list */
+.filebtn{cursor:pointer;display:inline-block}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatch{width:28px;height:28px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px var(--line);cursor:pointer;padding:0}
+.swatch.on{box-shadow:0 0 0 2px var(--accent)}
+.userlist{list-style:none;margin:0;padding:0}
+.userlist li{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.uname{display:flex;flex-direction:column;min-width:120px;flex:1}
+.badges{display:flex;gap:6px;flex-wrap:wrap}
+.uactions{display:flex;gap:6px;flex-wrap:wrap}
+.ureset{flex-basis:100%;display:flex;gap:8px;padding-left:48px}
+.ureset[hidden]{display:none}
+.ureset input,.useradd input:not([type=checkbox]){padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:.95rem;min-width:0}
+.useradd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:14px 20px}
+.useradd b{flex-basis:100%;font-size:.92rem}
+.useradd input:not([type=checkbox]){flex:1 1 140px}
+.useradd .checkline{margin:0;font-size:.9rem}

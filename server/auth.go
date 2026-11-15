@@ -65,17 +65,18 @@ type User struct {
 	TOTPEnabled  bool   `json:"totpEnabled"`
 	RecoveryLeft int    `json:"recoveryCodesLeft,omitempty"`
 	HasAvatar    bool   `json:"hasAvatar"`
+	AvatarVer    int    `json:"avatarVersion"`
 	AvatarColor  string `json:"avatarColor"`
 	CreatedAt    string `json:"createdAt"`
 }
 
-const userCols = `id,username,display_name,is_admin,totp_enabled,recovery_codes,avatar IS NOT NULL,avatar_color,created_at`
+const userCols = `id,username,display_name,is_admin,totp_enabled,recovery_codes,avatar IS NOT NULL,avatar_version,avatar_color,created_at`
 
 func scanUser(row interface{ Scan(...interface{}) error }) (*User, error) {
 	var u User
 	var admin, totp, avatar int
 	var rec string
-	if err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &admin, &totp, &rec, &avatar, &u.AvatarColor, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &admin, &totp, &rec, &avatar, &u.AvatarVer, &u.AvatarColor, &u.CreatedAt); err != nil {
 		return nil, err
 	}
 	if totp != 0 {

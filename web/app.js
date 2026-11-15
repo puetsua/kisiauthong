@@ -1504,6 +1504,8 @@ function screenAccount(v) {
     <section class="ssec"><h3>${esc(__("Profile"))}</h3><div class="scard">
       <div class="sabout">${avatarHTML(u, 56)}<span><b>${esc(u.displayName || u.username)}</b><small class="muted">@${esc(u.username)}${u.isAdmin ? " · " + esc(__("Administrator")) : ""}</small></span></div>
       <form id="profileForm">${row(__("Display name"), `<div class="inline"><input name="displayName" maxlength="60" value="${esc(u.displayName || "")}"><button class="smallbtn" type="submit">${esc(__("Save"))}</button></div>`)}</form>
+      ${row(__("Photo"), `<div class="sbtns"><label class="smallbtn filebtn">${esc(u.hasAvatar ? __("Change photo") : __("Upload photo"))}<input type="file" id="avatarFile" accept="image/*" hidden></label>${u.hasAvatar ? `<button class="smallbtn danger" type="button" id="avatarRemove">${esc(__("Remove photo"))}</button>` : ""}</div>`)}
+      ${u.hasAvatar ? "" : row(__("Colour"), `<div class="swatches">${AVATAR_COLORS.map((c) => `<button type="button" class="swatch${avatarColor(u) === c ? " on" : ""}" style="background:${c}" data-color="${c}" aria-label="${esc(c)}" aria-pressed="${avatarColor(u) === c}"></button>`).join("")}</div>`)}
     </div></section>
     <section class="ssec"><h3>${esc(__("Passkeys"))}</h3><div class="scard" id="passkeyCard"></div></section>
     <section class="ssec"><h3>${esc(__("Two-step verification"))}</h3><div class="scard" id="totpCard"></div></section>
@@ -1515,9 +1517,22 @@ function screenAccount(v) {
         ${row("", `<button class="smallbtn" type="submit">${esc(__("Change password"))}</button>`)}
       </form>
     </div></section>
+    ${u.isAdmin ? `<section class="ssec"><h3>${esc(__("Users"))}</h3><div class="scard" id="usersCard"></div></section>` : ""}
   </div></div>`;
   drawTotp();
   drawPasskeys();
+  if (u.isAdmin) drawUsers();
+  $("#avatarFile").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try { state.me = await put("/api/me/avatar", { image: await squareImage(file, 256) }); renderUserBtn(); msg(__("Photo saved.")); render(); }
+    catch (err) { errMsg(err); }
+  });
+  const rm = $("#avatarRemove");
+  if (rm) rm.addEventListener("click", async () => { try { state.me = await api("/api/me/avatar", { method: "DELETE" }); renderUserBtn(); render(); } catch (err) { errMsg(err); } });
+  v.querySelectorAll("[data-color]").forEach((b) => b.addEventListener("click", async () => {
+    try { state.me = await put("/api/me/avatar", { color: b.dataset.color }); renderUserBtn(); render(); } catch (err) { errMsg(err); }
+  }));
   $("#profileForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     try { state.me = await put("/api/me", { displayName: e.target.elements.displayName.value }); renderUserBtn(); msg(__("Profile saved.")); render(); }
@@ -1637,6 +1652,59 @@ async function drawPasskeys() {
     e.preventDefault();
     try { await addPasskey(e.target.elements.name.value.trim()); msg(__("Passkey added.")); drawPasskeys(); }
     catch (x) { if (x.name !== "NotAllowedError" && x.name !== "AbortError") errMsg(x); }
+  });
+}
+
+// a photo cropped to its centre square and scaled down, as JPEG, before it is uploaded
+async function squareImage(file, side) {
+  const bmp = await createImageBitmap(file).catch(() => { throw new Error(__("That file is not an image this browser can read.")); });
+  const s = Math.min(bmp.width, bmp.height), c = document.createElement("canvas");
+  c.width = c.height = Math.min(side, s);
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.86);
+}
+
+// Users (administrators): everyone who can sign in here, with an add form at the end
+async function drawUsers() {
+  const card = $("#usersCard");
+  if (!card) return;
+  let list = [];
+  try { list = await api("/api/users"); } catch (e) { errMsg(e); return; }
+  const me = state.me;
+  card.innerHTML = `<ul class="userlist">${list.map((u) => `<li data-user="${esc(u.id)}">${avatarHTML({ ...u, avatarVersion: u.avatarVersion }, 36)}
+      <span class="uname"><b>${esc(u.displayName || u.username)}</b><small class="muted">@${esc(u.username)}</small></span>
+      <span class="badges">${u.isAdmin ? `<span class="pill on">${esc(__("Administrator"))}</span>` : ""}${u.totpEnabled ? `<span class="pill">${esc(__("Two-step"))}</span>` : ""}${u.id === me.id ? `<span class="pill off">${esc(__("You"))}</span>` : ""}</span>
+      <span class="uactions"><button class="smallbtn" type="button" data-u-admin="${u.isAdmin ? 0 : 1}">${esc(u.isAdmin ? __("Remove admin") : __("Make admin"))}</button>
+        <button class="smallbtn" type="button" data-u-reset>${esc(__("Reset password"))}</button>
+        ${u.id === me.id ? "" : `<button class="smallbtn danger" type="button" data-u-del>${esc(__("Delete"))}</button>`}</span>
+      <form class="ureset" hidden><input type="password" name="password" minlength="8" required autocomplete="new-password" placeholder="${esc(__("New password"))}"><button class="smallbtn" type="submit">${esc(__("Set password"))}</button></form></li>`).join("")}</ul>
+    <form id="userAdd" class="useradd"><b>${esc(__("Add a user"))}</b>
+      <input name="username" required autocapitalize="none" spellcheck="false" placeholder="${esc(__("Username"))}" aria-label="${esc(__("Username"))}">
+      <input name="displayName" placeholder="${esc(__("Display name"))}" aria-label="${esc(__("Display name"))}">
+      <input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="${esc(__("Password"))}" aria-label="${esc(__("Password"))}">
+      <label class="checkline"><input type="checkbox" name="isAdmin"> ${esc(__("Administrator"))}</label>
+      <button class="primarybtn" type="submit">${esc(__("Add user"))}</button></form>`;
+  const idOf = (el) => el.closest("[data-user]").dataset.user;
+  const nameOf = (id) => { const u = list.find((x) => x.id === id); return u.displayName || u.username; };
+  card.querySelectorAll("[data-u-admin]").forEach((b) => b.addEventListener("click", async () => {
+    try { await put("/api/users/" + idOf(b), { isAdmin: b.dataset.uAdmin === "1" }); drawUsers(); if (idOf(b) === me.id) { await refreshMe(); render(); } } catch (e) { errMsg(e); }
+  }));
+  card.querySelectorAll("[data-u-reset]").forEach((b) => b.addEventListener("click", () => { const f = b.closest("li").querySelector(".ureset"); f.hidden = !f.hidden; if (!f.hidden) f.elements.password.focus(); }));
+  card.querySelectorAll(".ureset").forEach((f) => f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try { await put("/api/users/" + idOf(f), { password: f.elements.password.value }); msg(__("Password set. {name} was signed out everywhere.", { name: nameOf(idOf(f)) })); drawUsers(); } catch (err) { errMsg(err); }
+  }));
+  card.querySelectorAll("[data-u-del]").forEach((b) => b.addEventListener("click", async () => {
+    const id = idOf(b);
+    if (!confirm(__("Delete {name} and all of their books? This cannot be undone.", { name: nameOf(id) }))) return;
+    try { await api("/api/users/" + encodeURIComponent(id), { method: "DELETE" }); msg(__("User deleted.")); drawUsers(); } catch (e) { errMsg(e); }
+  }));
+  $("#userAdd").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target).entries());
+    try { await post("/api/users", { username: f.username.trim(), displayName: f.displayName, password: f.password, isAdmin: !!f.isAdmin }); msg(__("User added.")); drawUsers(); } catch (err) { errMsg(err); }
   });
 }
 

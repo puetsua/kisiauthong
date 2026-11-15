@@ -167,6 +167,15 @@ func newMux(webDir string) *http.ServeMux {
 	mux.HandleFunc("/api/me/passkeys", sessionOnly(handlePasskeys))
 	mux.HandleFunc("/api/me/passkeys/", sessionOnly(handlePasskey))
 	mux.HandleFunc("/api/auth/passkey", handlePasskeyLogin)
+	mux.HandleFunc("/api/me/avatar", sessionOnly(handleMyAvatar))
+	mux.HandleFunc("/api/users", adminOnly(handleUsers))
+	mux.HandleFunc("/api/users/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/avatar") {
+			handleAvatar(w, r) // any signed-in user
+			return
+		}
+		adminOnly(handleUser)(w, r)
+	})
 	mux.HandleFunc("/api/me", sessionOnly(handleMe))
 	mux.HandleFunc("/api/me/password", sessionOnly(handleChangePassword))
 
