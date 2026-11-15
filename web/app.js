@@ -523,10 +523,11 @@ function screenDashboard(v) {
   });
   bindActions(v);
 }
+// what each account holds for a money box; an allocation in another currency is only a label on it (ADR 0011)
 function goalAllocations(tagId) {
-  const byAcc = {};
+  const byAcc = {}, box = state.data.tags.find((x) => x.id === tagId), cur = box && box.currency;
   state.data.transactions.forEach((t) => {
-    if (t.tagId !== tagId || t.state !== "posted") return;
+    if (t.tagId !== tagId || t.state !== "posted" || (cur && t.currency !== cur)) return;
     if (t.type === "allocate") byAcc[t.accountId] = (byAcc[t.accountId] || 0) + t.amountMinor; // signed
   });
   return Object.entries(byAcc).filter(([, v]) => v > 0);

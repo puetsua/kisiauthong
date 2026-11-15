@@ -9,12 +9,13 @@ var ext = Account{ID: ExternalAccountID, Name: "External", Kind: "external"}
 func sample() Data {
 	return Data{
 		Accounts: []Account{{ID: "a", Name: "A", Currency: "TWD", OpeningBalanceMinor: 60000000}, ext},
+		Tags:     []Tag{{ID: "food", Name: "Food", Kind: "category", Currency: "TWD"}, {ID: "goal", Name: "Goal", Kind: "goal", Currency: "TWD"}},
 		Transactions: []Transaction{
-			{ID: "1", FromAccountID: ExternalAccountID, ToAccountID: "a", Type: "transfer", State: "posted", AmountMinor: 8000000, Date: "2026-10-05"},
-			{ID: "2", FromAccountID: "a", ToAccountID: ExternalAccountID, Type: "transfer", State: "posted", AmountMinor: 3000000, Date: "2026-10-10"},
-			{ID: "3", FromAccountID: "a", ToAccountID: ExternalAccountID, Type: "transfer", State: "planned", AmountMinor: 999999, Date: "2026-10-12"},
-			{ID: "4", AccountID: "a", TagID: "goal", Type: "allocate", State: "posted", AmountMinor: 40000000, Date: "2026-03-01"},
-			{ID: "5", AccountID: "a", TagID: "goal", Type: "allocate", State: "posted", AmountMinor: -5000000, Date: "2026-10-01"}, // taken back out
+			{ID: "1", FromAccountID: ExternalAccountID, ToAccountID: "a", Type: "transfer", State: "posted", Currency: "TWD", AmountMinor: 8000000, Date: "2026-10-05"},
+			{ID: "2", FromAccountID: "a", ToAccountID: ExternalAccountID, Type: "transfer", State: "posted", Currency: "TWD", AmountMinor: 3000000, Date: "2026-10-10"},
+			{ID: "3", FromAccountID: "a", ToAccountID: ExternalAccountID, Type: "transfer", State: "planned", Currency: "TWD", AmountMinor: 999999, Date: "2026-10-12"},
+			{ID: "4", AccountID: "a", TagID: "goal", Type: "allocate", State: "posted", Currency: "TWD", AmountMinor: 40000000, Date: "2026-03-01"},
+			{ID: "5", AccountID: "a", TagID: "goal", Type: "allocate", State: "posted", Currency: "TWD", AmountMinor: -5000000, Date: "2026-10-01"}, // taken back out
 		},
 	}
 }
@@ -196,5 +197,24 @@ func TestListenAddrDefaultsToLoopback(t *testing.T) {
 		if got := listenAddr(c.host, c.port); got != c.want {
 			t.Errorf("listenAddr(%q, %q) = %q, want %q", c.host, c.port, got, c.want)
 		}
+	}
+}
+
+// A tag counts only transactions in its own currency; in another currency it is just a label (ADR 0011).
+func TestTagCountsItsOwnCurrencyOnly(t *testing.T) {
+	d := sample()
+	d.Accounts = append(d.Accounts, Account{ID: "j", Name: "J", Currency: "JPY", OpeningBalanceMinor: 100000})
+	d.Transactions = append(d.Transactions,
+		Transaction{ID: "6", FromAccountID: "j", ToAccountID: ExternalAccountID, Type: "transfer", State: "posted", Currency: "JPY", AmountMinor: 2500, Date: "2026-10-11"},
+		Transaction{ID: "7", AccountID: "j", TagID: "goal", Type: "allocate", State: "posted", Currency: "JPY", AmountMinor: 50000, Date: "2026-10-11"})
+	d.TransactionTags = []TransactionTag{{TransactionID: "2", TagID: "food"}, {TransactionID: "6", TagID: "food"}}
+	if got := d.BudgetSpent("food", "2026-10-01", "2026-10-31"); got != 3000000 {
+		t.Fatalf("spent = %d, want 3000000 (the JPY expense only carries the label)", got)
+	}
+	if got := d.TagSaved("goal"); got != 35000000 {
+		t.Fatalf("saved = %d, want 35000000 (the JPY allocation only carries the label)", got)
+	}
+	if got := d.Allocated("j", "goal"); got != 50000 {
+		t.Fatalf("the JPY account still earmarks it: %d", got)
 	}
 }

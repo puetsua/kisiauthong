@@ -69,10 +69,19 @@ func (d *Data) AllocatedForAccount(accountID string) int64 {
 	return total
 }
 
+// countsToward reports whether a transaction in currency cur adds to the
+// tag's budget or money box: only in the tag's own currency. In any other
+// currency the tag is just a label on it (ADR 0011).
+func (d *Data) countsToward(tagID, cur string) bool {
+	tag := d.tagByID(tagID)
+	return tag != nil && (tag.Currency == "" || tag.Currency == cur)
+}
+
+// TagSaved is what a money box holds: its allocations in its own currency.
 func (d *Data) TagSaved(tagID string) int64 {
 	var total int64
 	for _, t := range d.Transactions {
-		if t.State != "posted" || t.TagID != tagID {
+		if t.State != "posted" || t.TagID != tagID || !d.countsToward(tagID, t.Currency) {
 			continue
 		}
 		if t.Type == "allocate" { // signed: negative takes money back out of the money box
@@ -82,8 +91,9 @@ func (d *Data) TagSaved(tagID string) int64 {
 	return total
 }
 
-// BudgetSpent sums posted spending (own account -> external) linked to the tag
-// with a date in [start, end] (inclusive YYYY-MM-DD; see BudgetPeriod).
+// BudgetSpent sums posted spending (own account -> external) in the tag's
+// currency linked to the tag, with a date in [start, end] (inclusive
+// YYYY-MM-DD; see BudgetPeriod).
 func (d *Data) BudgetSpent(tagID, start, end string) int64 {
 	linked := map[string]bool{}
 	for _, tt := range d.TransactionTags {
@@ -93,7 +103,7 @@ func (d *Data) BudgetSpent(tagID, start, end string) int64 {
 	}
 	var total int64
 	for _, t := range d.Transactions {
-		if t.State == "posted" && d.IsSpending(t) && linked[t.ID] && t.Date >= start && t.Date <= end {
+		if t.State == "posted" && d.IsSpending(t) && linked[t.ID] && t.Date >= start && t.Date <= end && d.countsToward(tagID, t.Currency) {
 			total += t.AmountMinor
 		}
 	}
