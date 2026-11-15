@@ -158,6 +158,27 @@ func TestSettingsOpenDays(t *testing.T) {
 	}
 }
 
+func TestSettingsDismissedNotifications(t *testing.T) {
+	withTestStore(t)
+	if _, s := doSettings(t, http.MethodGet, ""); s.Notifications.Dismissed == nil || len(s.Notifications.Dismissed) != 0 {
+		t.Fatalf("dismissed should start empty: %+v", s.Notifications)
+	}
+	code, s := doSettings(t, http.MethodPut, `{"notifications":{"dismissed":["budget-over:tag-food:2026-11"," goal-reached:tag-house ","budget-over:tag-food:2026-11"]}}`)
+	if code != 200 || strings.Join(s.Notifications.Dismissed, ",") != "budget-over:tag-food:2026-11,goal-reached:tag-house" {
+		t.Fatalf("dismiss: %d %+v", code, s.Notifications)
+	}
+	// other sections leave it alone
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"language":"zh-TW"}}`); len(s.Notifications.Dismissed) != 2 {
+		t.Fatalf("dismissed lost: %+v", s.Notifications)
+	}
+	long := strings.Repeat("x", 121)
+	for _, bad := range []string{`{"notifications":{"dismissed":[""]}}`, `{"notifications":{"dismissed":["` + long + `"]}}`, `{"notifications":{"dismissed":"x"}}`} {
+		if code, _ := doSettings(t, http.MethodPut, bad); code != 400 {
+			t.Errorf("%s: want 400, got %d", bad, code)
+		}
+	}
+}
+
 func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
 	withTestStore(t)
 	if err := store.setSetting("general", `{"defaultCurrency":"JPY","transactionsPerPage":20}`); err != nil {

@@ -36,7 +36,12 @@ const I18N = {
     "No allocations yet": "還沒有撥入",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型",
-    "Clear": "清除", "Today": "今天", "Week": "週", "Month": "月", "Custom": "自訂", "Period": "期間", "Back to today": "回到今天", "End date": "結束日期",
+    "Clear": "清除", "Today": "今天", "Notifications": "通知", "Notifications ({n})": "通知（{n}）", "Dismiss": "清除", "Dismiss all": "全部清除",
+    "You're all caught up.": "沒有新通知。", "Open in Transactions": "到交易頁查看", "Waiting for confirmation · {date} · {amount}": "等待確認 · {date} · {amount}",
+    "{name} is over budget": "{name}超出預算", "{spent} of {limit} spent this month": "本月已花費 {spent}／{limit}",
+    "{name} has used {pct}% of its budget": "{name}已用掉預算的 {pct}%", "{name} is at {pct}% of its credit limit": "{name}已用到信用額度的 {pct}%",
+    "{name} reached its target": "{name}已達成目標", "{saved} of {target} saved": "已存 {saved}／{target}",
+    "{name} passed its target date": "{name}已過目標日期", "{saved} of {target} saved; target date was {date}": "已存 {saved}／{target}，目標日期是 {date}", "Week": "週", "Month": "月", "Custom": "自訂", "Period": "期間", "Back to today": "回到今天", "End date": "結束日期",
     "No transactions in this period.": "這段期間沒有交易。", "A range can be at most {n} days.": "日期範圍最多 {n} 天。", "Spending": "支出", "From outside": "外部來源", "Tags": "標籤", "to": "到",
     "Expected, not confirmed yet. Confirm it when the real charge or income arrives.": "預計中，尚未確認。實際扣款或入帳後再確認。", "{n} transaction(s)": "{n} 筆交易", "Days open by default": "預設展開天數", "Days open by default saved.": "預設展開天數已儲存。", "Yesterday": "昨天", "No transactions yet.": "還沒有交易。", "Search note, tag, account…": "搜尋備註、標籤、帳戶…", "‹ Previous": "‹ 上一頁", "Next ›": "下一頁 ›",
     "Delete this transaction? This cannot be undone.": "要刪除這筆交易嗎？刪除後無法復原。", "Deleted.": "已刪除。",
@@ -78,7 +83,6 @@ const I18N = {
     "Expected min (variable bill, optional)": "預計最低（金額不固定的帳單，選填）", "Expected max (variable bill, optional)": "預計最高（金額不固定的帳單，選填）",
     "Expected range (variable)": "預計範圍（金額不固定）", "variable {min}–{max}": "不固定 {min}–{max}", "day {n}": "{n} 日", "from {date}": "自 {date} 起",
     "{type} {amount} on {account}": "{account}：{type} {amount}", "Generated {n} due transaction(s).": "已產生 {n} 筆到期交易。",
-    "Expected to confirm: {n}": "待確認：{n}",
     // confirm
     "Confirm expected transaction": "確認預計交易", "Confirm and post": "確認並入帳", "Actual amount": "實際金額", "Posted.": "已入帳。",
     "Confirm…": "確認…", "Edit": "編輯", "Delete": "刪除",

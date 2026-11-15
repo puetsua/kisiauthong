@@ -182,6 +182,34 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .periodnav.top{margin-left:auto}
 .periodnav.bottom{justify-content:center;margin:14px 0}
 .plabel{font-weight:600;font-variant-numeric:tabular-nums;min-width:9em;text-align:center}
+/* notifications */
+.bell{position:relative;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;color:var(--muted)}
+.bell:hover,.bell[aria-expanded="true"]{background:#f1efe6;color:var(--ink)}
+.bell.has{color:var(--ink)}
+.bell .badge{position:absolute;top:3px;right:2px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red);color:#fff;font-size:.7rem;font-weight:700;line-height:18px;text-align:center;box-shadow:0 0 0 2px #fff}
+.notifpanel{position:fixed;z-index:30;width:min(400px,calc(100vw - 24px));max-height:min(70vh,560px);overflow-y:auto;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(20,40,25,.18)}
+.nphead{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 8px;position:sticky;top:0;background:#fff}
+.nphead h2{font-family:Georgia,"Noto Serif TC",serif;font-size:1.1rem;margin:0}
+.linkbtn{background:none;border:0;padding:0;font:inherit;font-size:.86rem;font-weight:600;color:var(--green);cursor:pointer}
+.linkbtn:hover{text-decoration:underline}
+.nlist{list-style:none;margin:0;padding:0 8px 8px}
+.nitem{display:flex;align-items:center;gap:6px;border-radius:10px;padding:2px 4px}
+.nitem+.nitem{border-top:1px solid #eeeadf}
+.nmain{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px;background:none;border:0;padding:10px 6px;font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:8px}
+.nmain:hover{background:#f6f4ec}
+.nicon{flex:none;width:32px;height:32px;border-radius:9px;display:grid;place-items:center}
+.lvl-due .nicon{background:var(--amberbg);color:var(--amber)}
+.lvl-over .nicon{background:var(--redbg);color:var(--red)}
+.lvl-warn .nicon{background:#fdf3e3;color:#9a6200}
+.lvl-good .nicon{background:#e3f1e7;color:var(--green2)}
+.ntext{min-width:0;display:flex;flex-direction:column;gap:2px}
+.ntext b{font-weight:600}
+.ntext small{color:var(--muted);font-size:.84rem}
+.ndis{flex:none;font-size:.9rem;color:var(--muted);border-radius:8px;padding:6px 8px}
+.ndis:hover{background:#f1efe6;color:var(--ink)}
+.nitem .smallbtn{flex:none}
+.nempty{margin:0;padding:18px 16px 22px;color:var(--muted)}
+.npfoot{border-top:1px solid var(--line);padding:10px 16px;text-align:center}
 @media (max-width:800px){
   .shell{flex-direction:column}
   .sidebar{width:100%;height:auto;position:sticky;top:0;z-index:5;padding:12px 14px;gap:10px}
@@ -197,6 +225,7 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .dashgrid>.dw.half{grid-column:1/-1}
   .dashedit details{margin-left:0}
   .flow{flex-direction:column}
+  .notifpanel{left:12px;width:auto}
   .periodnav.top{margin-left:0;width:100%;justify-content:space-between}
   .plabel{min-width:0}
   .txhero .big{font-size:1.6rem}

@@ -66,10 +66,43 @@ type AboutInfo struct {
 	SourceURL string `json:"sourceUrl"`
 }
 
+// NotificationSettings remembers which derived notifications the user
+// dismissed, by key (e.g. "budget-over:tag-food:2026-11"). Notifications
+// themselves are computed from the data, never stored.
+type NotificationSettings struct {
+	Dismissed []string `json:"dismissed"`
+}
+
+const (
+	maxDismissed   = 500
+	maxDismissedID = 120
+)
+
+func (n *NotificationSettings) validate() error {
+	if len(n.Dismissed) > maxDismissed {
+		return fmt.Errorf("at most %d dismissed notifications", maxDismissed)
+	}
+	seen := map[string]bool{}
+	list := []string{}
+	for _, k := range n.Dismissed {
+		k = strings.TrimSpace(k)
+		if k == "" || len(k) > maxDismissedID {
+			return fmt.Errorf("invalid notification key")
+		}
+		if !seen[k] {
+			seen[k] = true
+			list = append(list, k)
+		}
+	}
+	n.Dismissed = list
+	return nil
+}
+
 type Settings struct {
-	Dashboard DashboardSettings `json:"dashboard"`
-	General   GeneralSettings   `json:"general"`
-	About     AboutInfo         `json:"about"`
+	Dashboard     DashboardSettings    `json:"dashboard"`
+	General       GeneralSettings      `json:"general"`
+	Notifications NotificationSettings `json:"notifications"`
+	About         AboutInfo            `json:"about"`
 }
 
 var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
@@ -194,6 +227,16 @@ func (s *Store) loadSettings() (Settings, error) {
 	if err := out.General.validate(); err != nil {
 		return out, fmt.Errorf("stored general setting: %w", err)
 	}
+	if v, ok, err := s.getSetting("notifications"); err != nil {
+		return out, err
+	} else if ok {
+		if err := json.Unmarshal([]byte(v), &out.Notifications); err != nil {
+			return out, fmt.Errorf("stored notifications setting is invalid JSON")
+		}
+	}
+	if out.Notifications.Dismissed == nil {
+		out.Notifications.Dismissed = []string{}
+	}
 	out.About.SourceURL = os.Getenv("KISIAUTHONG_SOURCE_URL")
 	return out, nil
 }
@@ -216,8 +259,9 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 	case http.MethodPut:
 		var body struct {
-			Dashboard *DashboardSettings `json:"dashboard"`
-			General   json.RawMessage    `json:"general"`
+			Dashboard     *DashboardSettings    `json:"dashboard"`
+			General       json.RawMessage       `json:"general"`
+			Notifications *NotificationSettings `json:"notifications"`
 		}
 		if !decode(w, r, &body) {
 			return
@@ -235,9 +279,15 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if body.Dashboard == nil && general == nil {
-			writeErr(w, 400, "nothing to update: send dashboard and/or general")
+		if body.Dashboard == nil && general == nil && body.Notifications == nil {
+			writeErr(w, 400, "nothing to update: send dashboard, general and/or notifications")
 			return
+		}
+		if body.Notifications != nil {
+			if err := body.Notifications.validate(); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
 		}
 		if body.Dashboard != nil {
 			if err := body.Dashboard.validate(); err != nil {
@@ -259,6 +309,12 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if general != nil {
 			if err := store.saveJSONSetting("general", general); err != nil {
+				writeErr(w, 500, err.Error())
+				return
+			}
+		}
+		if body.Notifications != nil {
+			if err := store.saveJSONSetting("notifications", body.Notifications); err != nil {
 				writeErr(w, 500, err.Error())
 				return
 			}

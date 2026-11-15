@@ -2,7 +2,7 @@
 // All user-visible strings go through __() / N_() from i18n.js (English source strings).
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {} };
+const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
@@ -927,7 +927,80 @@ async function generateDue() {
   try { const r = await post("/api/generate", {}); msg(__("Generated {n} due transaction(s).", { n: r.created })); await load(); }
   catch (e) { errMsg(e); }
 }
-$("#dueBtn").addEventListener("click", () => { state.scrollToExpected = true; if (location.hash === "#transactions") render(); else location.hash = "#transactions"; });
+/* ---------- notifications (derived from the data; only dismissals are stored) ---------- */
+const NOTE_ICON = { warn: "M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z", card: "M3 6h18v12H3zM3 10h18M7 15h4", check: "M5 13l4 4L19 7", clock: "M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" };
+const noteIcon = (k) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="${NOTE_ICON[k]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+// notifications: what needs attention now. key identifies a notification for dismissal;
+// month-scoped keys make budget and credit alerts come back next month.
+function allNotifications() {
+  const d = state.data;
+  if (!d) return [];
+  const month = d.today.slice(0, 7), out = [];
+  d.transactions.filter((t) => t.state === "planned").sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id)).forEach((t) => out.push({
+    key: "expected:" + t.id, rank: 0, level: "due", fixed: true, icon: typeIcon(t.type), title: txnTitle(t),
+    body: __("Waiting for confirmation · {date} · {amount}", { date: dayLabel(t.date), amount: amountText(t) }),
+    open: () => openTxnDetail(t.id), action: [__("Confirm…"), () => openConfirm(t.id)],
+  }));
+  d.tags.filter((t) => t.limitMinor > 0).forEach((t) => {
+    const pct = Math.round(t.spentMinor / t.limitMinor * 100), body = __("{spent} of {limit} spent this month", { spent: fmt(t.spentMinor, t.currency), limit: fmt(t.limitMinor, t.currency) });
+    if (pct >= 100) out.push({ key: `budget-over:${t.id}:${month}`, rank: 1, level: "over", icon: noteIcon("warn"), title: __("{name} is over budget", { name: t.name }), body, open: () => openTagDetail(t.id) });
+    else if (pct >= 80) out.push({ key: `budget-near:${t.id}:${month}`, rank: 3, level: "warn", icon: noteIcon("warn"), title: __("{name} has used {pct}% of its budget", { name: t.name, pct }), body, open: () => openTagDetail(t.id) });
+  });
+  d.accounts.filter((a) => a.creditLimitMinor && (a.utilisation || 0) >= 0.8).forEach((a) => out.push({
+    key: `credit:${a.id}:${month}`, rank: 2, level: a.utilisation >= 1 ? "over" : "warn", icon: noteIcon("card"),
+    title: __("{name} is at {pct}% of its credit limit", { name: a.name, pct: Math.round(a.utilisation * 100) }), body: owedText(a), open: () => openAccountDetail(a.id),
+  }));
+  d.tags.filter((t) => t.targetMinor > 0).forEach((t) => {
+    const amounts = { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency) };
+    if (t.savedMinor >= t.targetMinor) out.push({ key: `goal-reached:${t.id}:${t.targetMinor}`, rank: 5, level: "good", icon: noteIcon("check"), title: __("{name} reached its target", { name: t.name }), body: __("{saved} of {target} saved", amounts), open: () => openTagDetail(t.id) });
+    else if (t.targetDate && t.targetDate < d.today) out.push({ key: `goal-late:${t.id}:${t.targetDate}`, rank: 4, level: "warn", icon: noteIcon("clock"), title: __("{name} passed its target date", { name: t.name }), body: __("{saved} of {target} saved; target date was {date}", { ...amounts, date: t.targetDate }), open: () => openTagDetail(t.id) });
+  });
+  return out.sort((a, b) => a.rank - b.rank);
+}
+const notifications = () => { const dismissed = new Set(state.dismissed); return allNotifications().filter((n) => n.fixed || !dismissed.has(n.key)); };
+// saveDismissed keeps only keys that still match a live notification, so the list stays short.
+async function saveDismissed(add) {
+  const live = new Set(allNotifications().map((n) => n.key)); // all, including already-dismissed ones
+  state.dismissed = [...new Set([...state.dismissed.filter((k) => live.has(k)), ...add])];
+  renderBell();
+  try { const s = await put("/api/settings", { notifications: { dismissed: state.dismissed } }); state.dismissed = s.notifications.dismissed; }
+  catch (e) { errMsg(e); }
+}
+function renderBell() {
+  const list = notifications(), n = list.length, badge = $("#bellBtn .badge");
+  badge.hidden = n === 0;
+  badge.textContent = n > 9 ? "9+" : String(n);
+  $("#bellBtn").setAttribute("aria-label", n ? __("Notifications ({n})", { n }) : __("Notifications"));
+  $("#bellBtn").setAttribute("aria-expanded", String(state.notifOpen));
+  $("#bellBtn").classList.toggle("has", n > 0);
+  const panel = $("#notifPanel");
+  panel.hidden = !state.notifOpen;
+  if (!state.notifOpen) return;
+  const rb = $("#bellBtn").getBoundingClientRect();
+  panel.style.top = Math.round(rb.bottom + 8) + "px";
+  panel.style.right = Math.max(12, Math.round(window.innerWidth - rb.right)) + "px";
+  const canDismiss = list.some((x) => !x.fixed), hasExpected = list.some((x) => x.fixed);
+  panel.innerHTML = `<div class="nphead"><h2>${esc(__("Notifications"))}</h2>${canDismiss ? `<button type="button" class="linkbtn" id="nDismissAll">${esc(__("Dismiss all"))}</button>` : ""}</div>
+    ${n ? `<ul class="nlist">${list.map((x, i) => `<li class="nitem lvl-${x.level}">
+        <button type="button" class="nmain" data-n="${i}"><span class="nicon">${x.icon}</span><span class="ntext"><b>${esc(x.title)}</b><small>${esc(x.body)}</small></span></button>
+        ${x.action ? `<button type="button" class="smallbtn" data-na="${i}">${esc(x.action[0])}</button>` : ""}
+        ${x.fixed ? "" : `<button type="button" class="iconbtn ndis" data-nd="${i}" aria-label="${esc(__("Dismiss"))}" title="${esc(__("Dismiss"))}">✕</button>`}</li>`).join("")}</ul>`
+      : `<p class="nempty">${esc(__("You're all caught up."))}</p>`}
+    ${hasExpected ? `<div class="npfoot"><button type="button" class="linkbtn" id="nToTxns">${esc(__("Open in Transactions"))}</button></div>` : ""}`;
+  const close = () => { state.notifOpen = false; renderBell(); };
+  panel.querySelectorAll("[data-n]").forEach((b) => b.addEventListener("click", () => { close(); list[+b.dataset.n].open(); }));
+  panel.querySelectorAll("[data-na]").forEach((b) => b.addEventListener("click", () => { close(); list[+b.dataset.na].action[1](); }));
+  panel.querySelectorAll("[data-nd]").forEach((b) => b.addEventListener("click", () => saveDismissed([list[+b.dataset.nd].key])));
+  const all = $("#nDismissAll");
+  if (all) all.addEventListener("click", () => saveDismissed(list.filter((x) => !x.fixed).map((x) => x.key)));
+  const toTxns = $("#nToTxns");
+  if (toTxns) toTxns.addEventListener("click", () => { close(); state.scrollToExpected = true; if (location.hash === "#transactions") render(); else location.hash = "#transactions"; });
+}
+$("#bellBtn").addEventListener("click", (e) => { e.stopPropagation(); state.notifOpen = !state.notifOpen; renderBell(); });
+// composedPath, not contains(): a click inside the panel may re-render it and detach e.target
+document.addEventListener("click", (e) => { if (state.notifOpen && !e.composedPath().includes($("#notifPanel"))) { state.notifOpen = false; renderBell(); } });
+window.addEventListener("resize", () => { if (state.notifOpen) renderBell(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.notifOpen) { state.notifOpen = false; renderBell(); $("#bellBtn").focus(); } });
 
 /* ---------- routing ---------- */
 const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], budgets: [N_("Budgets"), screenBudgets], moneyboxes: ["Money boxes", screenMoneyboxes], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings] };
@@ -936,9 +1009,7 @@ function render() {
   const key = currentScreen();
   $("#pageTitle").textContent = __(SCREENS[key][0]);
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === key));
-  const planned = state.data ? state.data.transactions.filter((t) => t.state === "planned").length : 0;
-  $("#dueBtn").hidden = planned === 0;
-  $("#dueBtn").textContent = __("Expected to confirm: {n}", { n: planned });
+  renderBell();
   SCREENS[key][1]($("#view"));
 }
 window.addEventListener("hashchange", render);
@@ -949,6 +1020,7 @@ async function load() {
     state.dashboard = s.dashboard;
     state.general = s.general;
     state.about = s.about;
+    state.dismissed = (s.notifications && s.notifications.dismissed) || [];
   } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message })); }
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
