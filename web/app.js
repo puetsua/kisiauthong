@@ -511,11 +511,11 @@ function bindActions(root) {
   bindDetails(root);
 }
 function bindDetails(root) {
-  root.querySelectorAll("[data-detail-txn]").forEach((b) => b.addEventListener("click", () => openTxnDetail(b.dataset.detailTxn)));
-  root.querySelectorAll("[data-detail-account]").forEach((b) => b.addEventListener("click", () => openAccountDetail(b.dataset.detailAccount)));
-  root.querySelectorAll("[data-detail-tag]").forEach((b) => b.addEventListener("click", () => openTagDetail(b.dataset.detailTag)));
-  root.querySelectorAll("[data-detail-template]").forEach((b) => b.addEventListener("click", () => openTemplateDetail(b.dataset.detailTemplate)));
-  root.querySelectorAll("[data-detail-goal]").forEach((b) => b.addEventListener("click", () => openMoneyboxDetail(b.dataset.detailGoal)));
+  // a title opens its edit form straight away; there is no read-only pane in between
+  root.querySelectorAll("[data-detail-txn]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.detailTxn)));
+  root.querySelectorAll("[data-detail-account]").forEach((b) => b.addEventListener("click", () => openAccountDialog(b.dataset.detailAccount)));
+  root.querySelectorAll("[data-detail-tag],[data-detail-goal]").forEach((b) => b.addEventListener("click", () => openTagDialog(null, b.dataset.detailTag || b.dataset.detailGoal)));
+  root.querySelectorAll("[data-detail-template]").forEach((b) => b.addEventListener("click", () => openTemplateDialog(b.dataset.detailTemplate)));
 }
 // pairs: [English label, HTML value]
 function detailTable(pairs) {
@@ -764,10 +764,11 @@ function screenAccounts(v) {
     const act = accountActivity(a.id);
     return `<button type="button" class="xcard" data-detail-account="${esc(a.id)}">${kindIcon("external")}<span><b>${esc(accName(a.id))}</b><small>${esc(__("{n} transaction(s)", { n: act.n }))}</small></span></button>`;
   }).join("");
-  v.innerHTML = `<div class="pagehead"><div class="totals">${totals}</div><button class="smallbtn" id="newAccount">${esc(__("+ New account"))}</button></div>
-    <section class="tsection">${ordered.length ? `<div class="tgrid">${ordered.map(accountCard).join("")}</div>` : `<div class="empty">${esc(__("No accounts yet."))}</div>`}</section>
-    <section class="tsection"><div class="tsechead"><h3>${esc(__("External accounts"))}</h3><button class="smallbtn" id="newExternal">${esc(__("+ New external account"))}</button></div>
-      <div class="xgrid">${exts}</div></section>`;
+  const addTile = (id, label, cls) => `<button type="button" class="addtile ${cls}" id="${id}"><span aria-hidden="true">+</span>${esc(label)}</button>`;
+  v.innerHTML = `<div class="totals">${totals}</div>
+    <section class="tsection"><div class="tgrid">${ordered.map(accountCard).join("")}${addTile("newAccount", __("New account"), "")}</div></section>
+    <section class="tsection"><div class="tsechead"><h3>${esc(__("External accounts"))}</h3></div>
+      <div class="xgrid">${exts}${addTile("newExternal", __("New external account"), "small")}</div></section>`;
   $("#newAccount").addEventListener("click", () => openAccountDialog());
   $("#newExternal").addEventListener("click", () => openAccountDialog(null, "external"));
   bindDetails(v);
@@ -783,8 +784,7 @@ function screenTemplates(v) {
     { l: N_("Status"), v: esc(t.enabled ? __("Enabled") : __("Paused")) },
   ])).join("");
   v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Transaction templates"))}</h3><span><button class="smallbtn" id="genBtn">${esc(__("Generate due"))}</button> <button class="smallbtn" id="newTpl">${esc(__("+ New template"))}</button></span></div>
-    ${rows ? table([{ t: "Template" }, { t: "Generates" }, { t: "Schedule" }, { t: "Next due" }, { t: "Status" }], rows) : `<div class="empty">${esc(__("No templates yet."))}</div>`}
-    <p class="muted">${esc(__("Click a template name for its pane (Edit, Pause, Generate). On its date a template generates one unconfirmed transaction — never twice. Open it and save (adjusting the amount for variable bills) to confirm it."))}</p></section>`;
+    ${rows ? table([{ t: "Template" }, { t: "Generates" }, { t: "Schedule" }, { t: "Next due" }, { t: "Status" }], rows) : `<div class="empty">${esc(__("No templates yet."))}</div>`}</section>`;
   $("#newTpl").addEventListener("click", () => openTemplateDialog());
   $("#genBtn").addEventListener("click", generateDue);
   bindDetails(v);
@@ -949,6 +949,7 @@ function setTxnType(type, tagId) {
 }
 function openDrawer(type, tagId) {
   state.editingTxn = null;
+  $("#fDelete").hidden = true;
   fillSelects();
   $("#txnForm").reset();
   $("#txnForm").elements.date.value = new Date().toISOString().slice(0, 10);
@@ -981,10 +982,12 @@ function openEditTxn(id) {
   $("#fPlannedNote").textContent = t.state !== "planned" ? "" : __("Expected on {date}, not confirmed yet. Check the amount and save to confirm it.", { date: dayLabel(t.date) })
     + (range ? " " + __("Expected range {min} – {max}.", { min: fmt(range.min, t.currency), max: fmt(range.max, t.currency) }) : "");
   $("#drawerTitle").textContent = t.state === "planned" ? __("Confirm expected transaction") : __("Edit transaction");
+  $("#fDelete").hidden = false;
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
 }
 function closeDrawer() { $("#drawer").hidden = true; $("#drawerBackdrop").hidden = true; }
 $("#drawerClose").addEventListener("click", closeDrawer);
+$("#fDelete").addEventListener("click", async () => { if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
 $("#drawerBackdrop").addEventListener("click", closeDrawer);
 document.querySelectorAll("#typeSeg button").forEach((b) => b.addEventListener("click", () => setTxnType(b.dataset.type)));
 $("#fAccount").addEventListener("change", () => refreshToAccounts($("#fToAccount").value));
@@ -1021,9 +1024,11 @@ function openDialog(title, html) {
 }
 // field(label, control): one labelled form control; label is an English source string
 const field = (label, control, cls) => `<label${cls ? ` class="${cls}"` : ""}><span>${esc(__(label))}</span>${control}</label>`;
-function dialogForm(fields, submitLabel) {
-  return `<form id="dialogForm">${fields}<button class="primarybtn big" type="submit">${esc(submitLabel)}</button></form>`;
+// extra: secondary buttons (type="button") shown above the submit button
+function dialogForm(fields, submitLabel, extra = "") {
+  return `<form id="dialogForm">${fields}${extra ? `<div class="formactions">${extra}</div>` : ""}<button class="primarybtn big" type="submit">${esc(submitLabel)}</button></form>`;
 }
+const onDlg = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener("click", () => { $("#dialog").close(); fn(); }); };
 function openAccountDialog(editId, presetKind) {
   const a = editId ? accById(editId) : null, kind = a ? a.kind : presetKind || "bank";
   const ext = kind === "external";
@@ -1086,7 +1091,10 @@ function openTagDialog(kind, editId) {
     field(N_("To"), `<input name="rangeEnd" type="date" value="${t && cyc === "range" ? esc(t.cycleEnd || "") : ""}">`, "f-budget f-range") +
     moneyField(N_("Target amount"), "target", t && t.targetMinor, cur, "f-goal") +
     field("Target date", `<input name="targetDate" type="date" value="${t ? esc(t.targetDate || "") : ""}">`, "f-goal"),
-    t ? __("Save changes") : k === "goal" ? __("Add money box") : __("Add category")));
+    t ? __("Save changes") : k === "goal" ? __("Add money box") : __("Add category"),
+    t && t.kind === "goal" ? `<button type="button" class="smallbtn" id="dlgAlloc">${esc(__("Allocate"))}</button><button type="button" class="smallbtn" id="dlgHistory">${esc(__("History"))}</button>` : ""));
+  onDlg("dlgAlloc", () => openDrawer("allocate", t.id));
+  onDlg("dlgHistory", () => showHistory(t.id));
   const form = $("#dialogForm"), el = form.elements;
   const sync = () => {
     const goal = el.kind.value === "goal", budget = !goal && el.hasBudget.checked, pre = el.preset.value;
@@ -1141,7 +1149,12 @@ function openTemplateDialog(editId) {
     field(N_("Day of month"), `<input name="dayOfMonth" type="number" min="1" max="31" value="${tp ? tp.schedule.dayOfMonth || 1 : 1}">`, "f-dom") +
     field(N_("Start date"), `<input name="startDate" type="date" required value="${tp ? esc(tp.schedule.startDate) : ""}">`) +
     field("Title", `<input name="note" maxlength="200" value="${tp ? esc(tp.template.note || "") : ""}">`, "wide"),
-    tp ? __("Save changes") : __("Add template")));
+    tp ? __("Save changes") : __("Add template"),
+    tp ? `<button type="button" class="smallbtn" id="dlgToggle">${esc(tp.enabled ? __("Pause") : __("Resume"))}</button><button type="button" class="smallbtn" id="dlgGenerate">${esc(__("Generate due"))}</button>` : ""));
+  onDlg("dlgToggle", async () => {
+    try { await post("/api/templates/" + tp.id + "/toggle"); msg(__("Template updated.")); await load(); } catch (e) { errMsg(e); }
+  });
+  onDlg("dlgGenerate", generateDue);
   const form = $("#dialogForm");
   const sync = () => {
     const alloc = form.elements.type.value === "allocate";
@@ -1178,105 +1191,6 @@ function showHistory(tagId) {
     ? table([{ t: "Date" }, { t: N_("Decision") }, { t: "Account" }, { t: "Amount", num: 1 }], list.map((t) => row([{ l: "Date", v: esc(t.date) }, { l: "Decision", v: `${esc(lbl(TYPE_L, t.type))}${t.note ? " — " + esc(t.note) : ""}` }, { l: "Account", v: esc(accName(t.accountId)) }, { l: "Amount", v: esc(amountText(t)), num: 1 }])).join(""))
     : `<p class="muted">${esc(__("No allocations yet"))}</p>`);
 }
-const fullDate = (iso) => { const [y, m, d] = iso.split("-").map(Number); try { return new Intl.DateTimeFormat(LANG, { dateStyle: "full" }).format(new Date(y, m - 1, d)); } catch (e) { return iso; } };
-// flowEnds: where the money came from and went to, as cards { name, role, open: [kind, id] }.
-function flowEnds(t) {
-  const acc = (id) => { const a = accById(id); return { name: accName(id), role: a ? lbl(KIND_L, a.kind) : "", open: ["account", id] }; };
-  const box = (id) => ({ name: tagName(id), role: __("Money box"), open: ["tag", id] });
-  const cats = state.data.tags.filter((x) => isCategoryOf(t, x));
-  const catEnd = cats.length ? { name: cats.map((x) => x.name).join(", "), role: __("Category"), open: cats.length === 1 ? ["tag", cats[0].id] : null } : null;
-  const named = namedExt(t);
-  switch (flow(t)) {
-    case "expense": return [acc(t.fromAccountId), named ? acc(named) : catEnd || { name: __("Uncategorised"), role: __("Spending") }];
-    case "income": return [named ? acc(named) : catEnd || { name: __("Income"), role: __("From outside") }, acc(t.toAccountId)];
-    case "transfer": return [acc(t.fromAccountId), acc(t.toAccountId)];
-    case "allocate": return t.amountMinor < 0 ? [box(t.tagId), acc(t.accountId)] : [acc(t.accountId), box(t.tagId)];
-  }
-  return [acc(t.accountId), { name: "—", role: "" }];
-}
-const linkedTags = (t) => state.data.tags.filter((x) => x.id === t.tagId || state.data.transactionTags.some((l) => l.transactionId === t.id && l.tagId === x.id));
-const isCategoryOf = (t, tag) => tag.kind === "category" && linkedTags(t).some((x) => x.id === tag.id);
-function openTxnDetail(id) {
-  const t = state.data.transactions.find((x) => x.id === id);
-  if (!t) return;
-  const tpl = t.transactionTemplateId && state.data.transactionTemplates.find((x) => x.id === t.transactionTemplateId);
-  const [from, to] = flowEnds(t);
-  const node = (e) => e.open
-    ? `<button type="button" class="node" data-open-${e.open[0]}="${esc(e.open[1])}"><b>${esc(e.name)}</b><small>${esc(e.role)}</small></button>`
-    : `<div class="node"><b>${esc(e.name)}</b><small>${esc(e.role)}</small></div>`;
-  // tags the flow cards do not already show (labels, payees)
-  const inFlow = (x) => x.kind === "goal" || ((flow(t) === "expense" || flow(t) === "income") && !namedExt(t) && x.kind === "category");
-  const extraTags = linkedTags(t).filter((x) => !inFlow(x));
-  const facts = [
-    ...(extraTags.length ? [[__("Tags"), extraTags.map((x) => `<button type="button" class="chip tagchip" data-open-tag="${esc(x.id)}">${esc(x.name)}</button>`).join(" ")]] : []),
-    ...(t.transactionTemplateId ? [[__("Generated by"), tpl ? `<button type="button" class="titlelink" data-open-template="${esc(tpl.id)}">${esc(tpl.name)}</button>` : esc(t.transactionTemplateId)]] : []),
-  ];
-  openDialog(txnTitle(t), `
-    ${t.state === "planned" ? `<div class="txbanner"><span>${esc(__("Expected, not confirmed yet. Edit and save it once the real charge or income arrives."))}</span></div>` : ""}
-    <div class="txhero">
-      <div class="sub"><span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span><span>${esc(lbl(TYPE_L, flow(t)))} · ${esc(fullDate(t.date))}</span></div>
-      <div class="big ${amountCls(t)}">${esc(amountText(t))}</div>
-    </div>
-    <div class="flow">${node(from)}<span class="arrow" aria-label="${esc(__("to"))}"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 12h15m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>${node(to)}</div>
-    ${t.memo ? `<div class="txmemo"><span>${esc(__("Note"))}</span><p>${esc(t.memo)}</p></div>` : ""}
-    ${facts.length ? `<dl class="txfacts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>` : ""}
-    <div class="txactions"><button type="button" class="smallbtn danger" id="paneDelete">${esc(__("Delete"))}</button><button type="button" class="smallbtn" id="paneEdit">${esc(__("Edit"))}</button></div>`);
-  const body = $("#dialogBody");
-  const go = (fn) => (b) => b.addEventListener("click", () => { $("#dialog").close(); fn(); });
-  body.querySelectorAll("[data-open-account]").forEach((b) => go(() => openAccountDetail(b.dataset.openAccount))(b));
-  body.querySelectorAll("[data-open-tag]").forEach((b) => go(() => openTagDetail(b.dataset.openTag))(b));
-  body.querySelectorAll("[data-open-template]").forEach((b) => go(() => openTemplateDetail(b.dataset.openTemplate))(b));
-  go(() => openEditTxn(id))($("#paneEdit"));
-  $("#paneDelete").addEventListener("click", async () => { if (await deleteTxn(id)) $("#dialog").close(); });
-}
-function openAccountDetail(id) {
-  const a = accById(id);
-  if (!a) return;
-  if (a.kind === "external") {
-    const n = state.data.transactions.filter((t) => t.fromAccountId === id || t.toAccountId === id).length;
-    openDialog(accName(id), detailTable([["Kind", esc(lbl(KIND_L, a.kind))], [N_("Transactions"), esc(__("{n} transaction(s)", { n }))]])
-      + `<div class="pane-actions"><button class="smallbtn" id="paneEdit">${esc(__("Edit account"))}</button></div>`);
-    $("#paneEdit").addEventListener("click", () => { $("#dialog").close(); openAccountDialog(id); });
-    return;
-  }
-  openDialog(a.name, detailTable([
-    ["Kind", esc(lbl(KIND_L, a.kind))], ["Currency", esc(a.currency)],
-    ["Balance", fmt(a.balanceMinor, a.currency)], [N_("Earmarked in money boxes"), fmt(a.allocatedMinor, a.currency)], ["Free", fmt(a.unallocatedMinor, a.currency)],
-    ...(a.creditLimitMinor ? [[N_("Credit card owed"), esc(owedText(a))]] : []),
-  ]) + `<div class="pane-actions"><button class="smallbtn" id="paneEdit">${esc(__("Edit account"))}</button></div>`);
-  $("#paneEdit").addEventListener("click", () => { $("#dialog").close(); openAccountDialog(id); });
-}
-function openTagDetail(id) {
-  const t = state.data.tags.find((x) => x.id === id);
-  if (!t) return;
-  const pairs = [["Kind", esc(lbl(TAGKIND_L, t.kind))]];
-  if (t.limitMinor !== undefined) pairs.push([N_("Budget"), fmt(t.limitMinor, t.currency)], [N_("Period"), esc(budgetPeriodText(t))], ["Spent", fmt(t.spentMinor, t.currency)], ["Remaining", fmt(t.remainingMinor, t.currency)]);
-  if (t.targetMinor !== undefined) pairs.push([N_("Money-box target"), fmt(t.targetMinor, t.currency)], [N_("Saved"), fmt(t.savedMinor, t.currency)], [N_("Target date"), esc(t.targetDate || "—")]);
-  openDialog(t.name, detailTable(pairs) + `<div class="pane-actions"><button class="smallbtn" id="paneEdit">${esc(__("Edit tag"))}</button>${t.targetMinor !== undefined ? `<button class="smallbtn" id="paneAlloc">${esc(__("Allocate"))}</button><button class="smallbtn" id="paneHistory">${esc(__("History"))}</button>` : ""}</div>`);
-  $("#paneEdit").addEventListener("click", () => { $("#dialog").close(); openTagDialog(null, id); });
-  const alloc = $("#paneAlloc"), hist = $("#paneHistory");
-  if (alloc) alloc.addEventListener("click", () => { $("#dialog").close(); openDrawer("allocate", id); });
-  if (hist) hist.addEventListener("click", () => { $("#dialog").close(); showHistory(id); });
-}
-function openTemplateDetail(id) {
-  const t = state.data.transactionTemplates.find((x) => x.id === id);
-  if (!t) return;
-  openDialog(t.name, detailTable([
-    ["Status", esc(t.enabled ? __("Enabled") : __("Paused"))],
-    ["Generates", esc(__("{type} {amount} on {account}", { type: lbl(TYPE_L, flow(t.template)), amount: fmt(t.template.amountMinor, t.template.currency), account: transferAcct(t.template) })) + (t.template.tagId ? " → " + esc(tagName(t.template.tagId)) : "")],
-    ...(t.template.expectedRangeMinor ? [[N_("Expected range (variable)"), fmt(t.template.expectedRangeMinor.min, t.template.currency) + " – " + fmt(t.template.expectedRangeMinor.max, t.template.currency)]] : []),
-    ["Schedule", esc(scheduleText(t.schedule) + " · " + __("from {date}", { date: t.schedule.startDate }))],
-    ["Next due", esc(t.nextDue || "—")], ["Title", esc(t.template.note || "—")],
-  ]) + `<div class="pane-actions"><button class="smallbtn" id="paneEdit">${esc(__("Edit template"))}</button><button class="smallbtn" id="paneToggle">${esc(t.enabled ? __("Pause") : __("Resume"))}</button><button class="smallbtn" id="paneGenerate">${esc(__("Generate due"))}</button></div>`);
-  $("#paneEdit").addEventListener("click", () => { $("#dialog").close(); openTemplateDialog(id); });
-  $("#paneToggle").addEventListener("click", async () => {
-    try { await post("/api/templates/" + id + "/toggle"); $("#dialog").close(); msg(__("Template updated.")); await load(); } catch (e) { errMsg(e); }
-  });
-  $("#paneGenerate").addEventListener("click", async () => { $("#dialog").close(); await generateDue(); });
-}
-function openMoneyboxDetail(id) {
-  openTagDetail(id);
-}
 async function generateDue() {
   try { const r = await post("/api/generate", {}); msg(__("Generated {n} due transaction(s).", { n: r.created })); await load(); }
   catch (e) { errMsg(e); }
@@ -1298,17 +1212,17 @@ function allNotifications() {
   d.tags.filter((t) => t.limitMinor > 0).forEach((t) => {
     const pct = Math.round(t.spentMinor / t.limitMinor * 100), body = __("{spent} of {limit} spent · {period}", { spent: fmt(t.spentMinor, t.currency), limit: fmt(t.limitMinor, t.currency), period: periodLabel({ start: t.periodStart, end: t.periodEnd }) });
     // keyed by period, so a dismissed alert comes back when the next period runs over
-    if (pct >= 100) out.push({ key: `budget-over:${t.id}:${t.periodStart}`, rank: 1, level: "over", icon: noteIcon("warn"), title: __("{name} is over budget", { name: t.name }), body, open: () => openTagDetail(t.id) });
-    else if (pct >= 80) out.push({ key: `budget-near:${t.id}:${t.periodStart}`, rank: 3, level: "warn", icon: noteIcon("warn"), title: __("{name} has used {pct}% of its budget", { name: t.name, pct }), body, open: () => openTagDetail(t.id) });
+    if (pct >= 100) out.push({ key: `budget-over:${t.id}:${t.periodStart}`, rank: 1, level: "over", icon: noteIcon("warn"), title: __("{name} is over budget", { name: t.name }), body, open: () => openTagDialog(null, t.id) });
+    else if (pct >= 80) out.push({ key: `budget-near:${t.id}:${t.periodStart}`, rank: 3, level: "warn", icon: noteIcon("warn"), title: __("{name} has used {pct}% of its budget", { name: t.name, pct }), body, open: () => openTagDialog(null, t.id) });
   });
   d.accounts.filter((a) => a.creditLimitMinor && (a.utilisation || 0) >= 0.8).forEach((a) => out.push({
     key: `credit:${a.id}:${month}`, rank: 2, level: a.utilisation >= 1 ? "over" : "warn", icon: noteIcon("card"),
-    title: __("{name} is at {pct}% of its credit limit", { name: a.name, pct: Math.round(a.utilisation * 100) }), body: owedText(a), open: () => openAccountDetail(a.id),
+    title: __("{name} is at {pct}% of its credit limit", { name: a.name, pct: Math.round(a.utilisation * 100) }), body: owedText(a), open: () => openAccountDialog(a.id),
   }));
   d.tags.filter((t) => t.targetMinor > 0).forEach((t) => {
     const amounts = { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency) };
-    if (t.savedMinor >= t.targetMinor) out.push({ key: `goal-reached:${t.id}:${t.targetMinor}`, rank: 5, level: "good", icon: noteIcon("check"), title: __("{name} reached its target", { name: t.name }), body: __("{saved} of {target} saved", amounts), open: () => openTagDetail(t.id) });
-    else if (t.targetDate && t.targetDate < d.today) out.push({ key: `goal-late:${t.id}:${t.targetDate}`, rank: 4, level: "warn", icon: noteIcon("clock"), title: __("{name} passed its target date", { name: t.name }), body: __("{saved} of {target} saved; target date was {date}", { ...amounts, date: t.targetDate }), open: () => openTagDetail(t.id) });
+    if (t.savedMinor >= t.targetMinor) out.push({ key: `goal-reached:${t.id}:${t.targetMinor}`, rank: 5, level: "good", icon: noteIcon("check"), title: __("{name} reached its target", { name: t.name }), body: __("{saved} of {target} saved", amounts), open: () => openTagDialog(null, t.id) });
+    else if (t.targetDate && t.targetDate < d.today) out.push({ key: `goal-late:${t.id}:${t.targetDate}`, rank: 4, level: "warn", icon: noteIcon("clock"), title: __("{name} passed its target date", { name: t.name }), body: __("{saved} of {target} saved; target date was {date}", { ...amounts, date: t.targetDate }), open: () => openTagDialog(null, t.id) });
   });
   return out.sort((a, b) => a.rank - b.rank);
 }

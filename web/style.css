@@ -42,7 +42,6 @@ a.smallbtn{text-decoration:none;display:inline-block}
 .fab:hover{background:var(--accent2)}
 .titlelink{background:none;border:0;padding:0;font:inherit;font-weight:700;color:var(--accent);cursor:pointer;text-align:left}
 .titlelink:hover{text-decoration:underline}
-.pane-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .primarybtn:hover{background:var(--accent2)} .primarybtn.big{width:100%;margin-top:14px;padding:12px}
 .ghostbtn{background:#fff;color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:9px 14px;font-weight:600;cursor:pointer}
 .iconbtn{background:none;border:0;font-size:1.1rem;cursor:pointer;color:inherit;padding:6px}
@@ -189,26 +188,6 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .feed li>.smallbtn{flex:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* transaction detail popup */
-.txbanner{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:var(--amberbg);border:1px solid #ecd9b0;border-radius:10px;padding:10px 14px;margin:12px 0 4px;color:#7a4a00;font-size:.9rem}
-.txbanner .primarybtn{padding:7px 14px}
-.txhero{display:flex;flex-direction:column;gap:6px;margin:14px 0 18px}
-.txhero .sub{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.92rem}
-.txhero .big{font-family:Georgia,"Noto Serif TC",serif;font-size:2.1rem;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
-.txhero .big.in{color:var(--pos)}
-.txhero .big.move{color:#2f5878}
-.flow{display:flex;align-items:stretch;gap:10px;margin:0 0 18px}
-.flow .node{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--soft);text-align:left;font:inherit;color:inherit}
-.flow button.node{cursor:pointer}
-.flow button.node:hover{border-color:var(--accent);background:#fff}
-.flow .node b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.flow .node small{color:var(--muted);font-size:.8rem}
-.flow .arrow{flex:none;align-self:center;color:var(--muted);display:grid}
-.txfacts{display:grid;grid-template-columns:max-content 1fr;gap:8px 20px;margin:0 0 18px;font-size:.92rem}
-.txfacts dt{color:var(--muted)}
-.txfacts dd{margin:0}
-.chip.tagchip{cursor:pointer;font:inherit;font-size:.8rem}
-.chip.tagchip:hover{border-color:var(--accent);color:var(--accent)}
-.txactions{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:14px}
 /* transaction period paging */
 .periodbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin:0 0 14px}
 .periodbar .seg{margin:0}
@@ -245,13 +224,7 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .nitem .smallbtn{flex:none}
 .nempty{margin:0;padding:18px 16px 22px;color:var(--muted)}
 .npfoot{border-top:1px solid var(--line);padding:10px 16px;text-align:center}
-.extlist{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 10px}
-.chip.extchip{cursor:pointer;font:inherit;font-size:.9rem;padding:4px 12px;color:var(--ink)}
-.chip.extchip:hover{border-color:var(--accent);color:var(--accent)}
 .fmemo{display:inline-grid;vertical-align:-2px;margin-left:6px;color:var(--muted)}
-.txmemo{margin:0 0 18px;padding:12px 14px;border-radius:10px;background:var(--soft);border:1px solid var(--line)}
-.txmemo span{display:block;font-size:.8rem;color:var(--muted);margin-bottom:4px}
-.txmemo p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 @media (max-width:800px){
   .shell{flex-direction:column}
   .sidebar{width:100%;height:auto;position:sticky;top:0;z-index:5;padding:12px 14px;gap:10px}
@@ -266,13 +239,10 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .grid2{grid-template-columns:1fr}
   .dashgrid>.dw.half{grid-column:1/-1}
   .dasheditor{grid-template-columns:minmax(0,1fr)}.dasheditor .grip{min-width:40px;min-height:40px;font-size:1.3rem}.tilebar .iconbtn,.colpick .iconbtn{min-width:40px;min-height:40px}.tilebar{padding:2px 4px}.palette li{padding:4px 8px 4px 2px}.panel.dashpane{position:static;max-height:none;order:-1}
-  .flow{flex-direction:column}
   .notifpanel{left:12px;width:auto}
   .periodnav{margin-left:0;width:100%;justify-content:space-between}
   .plabel{min-width:0}
-  .txhero .big{font-size:1.6rem}
   .dialoghead h2{font-size:1.2rem}
-  .flow .arrow{transform:rotate(90deg);justify-self:center;align-self:center}
   table thead{display:none}
   table, tbody, tr, td{display:block;width:100%}
   tr{border:1px solid var(--line);border-radius:10px;background:#fff;margin-bottom:10px;padding:8px 6px}
@@ -315,7 +285,6 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .ccard{gap:14px}
 
 /* Accounts page: totals, then accounts as cards grouped by kind */
-.pagehead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:22px;flex-wrap:wrap}
 .totals{display:flex;gap:14px;flex-wrap:wrap;flex:1;min-width:0}
 .totcard{display:flex;flex-direction:column;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px;min-width:220px}
 .totcard .lab,.totcard small{color:var(--muted);font-size:.82rem}
@@ -343,6 +312,18 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .xcard span:last-child{display:flex;flex-direction:column;min-width:0}
 .xcard b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xcard small{color:var(--muted);font-size:.8rem}
-@media (max-width:800px){.totcard{flex:1;min-width:0}.pagehead .smallbtn{order:-1}}
+@media (max-width:800px){.totcard{flex:1;min-width:0}}
 .boxlegend{display:flex;flex-wrap:wrap;gap:4px 14px}
 .gcard .stack{height:10px}
+
+/* secondary actions inside an edit form; Delete under the transaction form */
+.formactions{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.formdelete{display:block;margin:12px auto 0}
+/* "add" tile at the end of a card grid */
+.addtile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:150px;font:inherit;font-weight:600;color:var(--accent);background:transparent;border:2px dashed var(--line);border-radius:12px;cursor:pointer;transition:border-color .12s,background .12s}
+.addtile span{font-size:1.8rem;line-height:1;font-weight:400}
+.addtile:hover{border-color:var(--accent2);background:var(--accentsoft)}
+.addtile:focus-visible{outline:3px solid var(--accent2);outline-offset:2px}
+.addtile.small{min-height:0;flex-direction:row;padding:10px 12px;border-radius:10px}
+.addtile.small span{font-size:1.2rem}
+.totals{margin-bottom:22px}
