@@ -14,7 +14,7 @@ import (
 // administrators only. It counts sign-in methods and keys but never shows
 // anything from anyone's books.
 
-// appVersion is set by release builds: -ldflags "-X main.appVersion=v1.2.3".
+// appVersion is set by release builds: -ldflags "-X main.appVersion=1.2.3".
 var appVersion = "dev"
 
 // defaultSourceURL is where users of this server get its source (AGPL §13);

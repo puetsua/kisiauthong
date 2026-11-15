@@ -6,7 +6,7 @@
 # single kisiauthong executable with the web UI built in, plus LICENSE and
 # README.md, and SHA256SUMS over them all.
 #
-#   scripts/build-release.sh v1.2.3 [outdir]     (outdir defaults to dist/)
+#   scripts/build-release.sh 1.2.3 [outdir]       (outdir defaults to dist/)
 #
 # Needs Go, tar, zip and sha256sum. The server is pure Go (SQLite included),
 # so every platform cross-compiles with CGO_ENABLED=0.

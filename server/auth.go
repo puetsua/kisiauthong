@@ -386,7 +386,7 @@ func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/auth/setup: the first user. On a database from before users
 // existed this claims the owner and their books; on a new one it creates
-// the first user, an administrator, with the sample books to explore.
+// the first user, an administrator, with an empty book.
 func handleSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, "POST only")
@@ -432,7 +432,7 @@ func handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b := &Book{s: store, uid: uid}
-	if err := b.startBook(exists == 0); err != nil {
+	if err := b.startBook(false); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}

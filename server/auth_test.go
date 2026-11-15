@@ -80,8 +80,8 @@ func TestFirstRunSetupAndSignIn(t *testing.T) {
 		t.Fatalf("setup: %d %+v", code, u)
 	}
 	var state map[string]json.RawMessage
-	if code := c.do("GET", "/api/state", nil, &state); code != 200 || len(state["transactions"]) < 100 {
-		t.Fatalf("the first user gets the sample books: %d", code)
+	if code := c.do("GET", "/api/state", nil, &state); code != 200 || string(state["transactions"]) != "[]" {
+		t.Fatalf("the first user starts with an empty book: %d %s", code, state["transactions"])
 	}
 	// only once
 	other := newClient(t, srv)

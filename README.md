@@ -27,14 +27,14 @@ Then open http://localhost:8080 and create the first user, who is the administra
 
 ```powershell
 cd server
-go run .          # http://127.0.0.1:8080  (SQLite at ../data/kisiauthong.db, seeded on first run)
+go run .          # http://127.0.0.1:8080  (SQLite at ../data/kisiauthong.db)
 go test ./...     # domain tests
 node ../scripts/check-i18n.js   # every UI string translated
 ```
 
 Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. The server listens on `127.0.0.1` only; set `KISIAUTHONG_HOST=0.0.0.0` to reach it from other devices or a container, ideally behind HTTPS. Passkeys need a host name, so open the app as `http://localhost:8080` (not `127.0.0.1`) or by its domain; behind a proxy set `KISIAUTHONG_ORIGIN` (e.g. `https://books.example.org`). Settings → About links to the source (AGPL §13): this repository by default; if you run a modified version, set `KISIAUTHONG_SOURCE_URL` to yours. Desktop and Android clients are future plans.
 
-Several people can use one server, each with private books. On first visit the app asks for a username and password: on a new install that creates the first user (an administrator) with sample data; on a database from before users existed it claims the existing books. Sign out and My account (profile, password, two-step verification with an authenticator app and recovery codes, passkeys, a photo or colour for the avatar, API keys for scripts and agents with chosen permissions and expiry) are under the avatar at the top right; administrators also get an Administration area, entered from the foot of the sidebar, to add, reset and remove users and see how the server is doing (see `docs/decisions/0007-users-and-sign-in.md`).
+Several people can use one server, each with private books. On first visit the app asks for a username and password: on a new install that creates the first user (an administrator) with an empty book; on a database from before users existed it claims the existing books. Sign out and My account (profile, password, two-step verification with an authenticator app and recovery codes, passkeys, a photo or colour for the avatar, API keys for scripts and agents with chosen permissions and expiry) are under the avatar at the top right; administrators also get an Administration area, entered from the foot of the sidebar, to add, reset and remove users and see how the server is doing (see `docs/decisions/0007-users-and-sign-in.md`).
 
 An API key is sent as `Authorization: Bearer kst_…` to the REST API, or used by an AI agent through MCP at `/mcp` (Streamable HTTP), where it gets tools to list accounts, categories, money boxes, budgets, transactions and spending, and, if the key allows, to add, change and delete transactions, create accounts and tags and generate due recurring transactions. For Claude Code:
 
@@ -52,7 +52,7 @@ Settings (sidebar → Settings): language (English or 繁體中文（台灣）, 
 
 ### Releases and checks
 
-GitHub Actions run the tests (`ci.yml`) and vulnerability scans (`security.yml`: govulncheck, Trivy on the repository and the image, CodeQL) on every push and weekly. Pushing a tag such as `v0.1.0` (`v0.2.0-beta.1` for a pre-release) runs `release.yml`: tests, the downloads built by `scripts/build-release.sh`, the multi-platform image on `ghcr.io/puetsua/kisiauthong`, and the GitHub release.
+GitHub Actions run the tests (`ci.yml`) and vulnerability scans (`security.yml`: govulncheck, Trivy on the repository and the image, CodeQL) on every push and weekly. Pushing a version tag such as `0.1.0` (no `v`; `0.2.0-beta.1` for a pre-release) runs `release.yml`: tests, the downloads built by `scripts/build-release.sh`, the multi-platform image on `ghcr.io/puetsua/kisiauthong`, and the GitHub release.
 
 ## License
 

@@ -500,7 +500,7 @@ func (b *Book) reload() error {
 }
 
 // startBook gives a new user the anonymous external account; withSample also
-// loads the sample books (the first user of a new install, to explore with).
+// loads the sample books (tests and demos).
 func (b *Book) startBook(withSample bool) error {
 	if _, err := b.exec(`INSERT OR IGNORE INTO accounts(user_id,id,name,kind,currency) VALUES(?,?,?,?,?)`, ExternalAccountID, "External", "external", ""); err != nil {
 		return err

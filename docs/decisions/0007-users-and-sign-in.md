@@ -28,8 +28,8 @@ and sign them in with a password, TOTP and passkeys.
   the password signs out every other session). Writes made with the cookie
   must come from the same origin (the `Origin` header is checked).
 - **First run.** While nobody can sign in, the web app shows a setup form.
-  On a new database it creates the first user, an administrator, with the
-  sample books. On a database from before users existed, migration 8 gave
+  On a new database it creates the first user, an administrator, with an
+  empty book (only the anonymous External account), like every later user. On a database from before users existed, migration 8 gave
   every row to an owner without credentials, and setup claims that owner,
   keeping the books.
 - **TOTP** (RFC 6238: SHA-1, 6 digits, 30 s, ±1 step) is an optional

@@ -39,7 +39,7 @@ platform from one Linux runner.
   (every push and weekly): govulncheck, Trivy on the repository (dependencies,
   secrets, Dockerfile) and on the image (HIGH/CRITICAL with a fix fail the
   run), and CodeQL for Go, JavaScript and the workflows when the repository
-  is public. `release.yml` on a `v*` tag: tests and govulncheck, downloads,
+  is public. `release.yml` on a version tag (`1.2.3`, no `v` prefix): tests and govulncheck, downloads,
   image, then the GitHub release with install notes; a tag with `-` is a
   pre-release. Dependabot proposes Go module, Actions and base-image updates
   weekly.
