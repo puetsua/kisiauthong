@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
-:root{--ink:#20261f;--muted:#68736a;--bg:#f7f5ef;--panel:#fff;--line:#ddd8c8;--side:#17351f;--side2:#2a5233;--green:#14532d;--green2:#1b6b3c;--amber:#b45309;--amberbg:#fdf3e3;--red:#b3261e;--redbg:#fdecea}
+:root{--page-max:1120px;--ink:#20261f;--muted:#68736a;--bg:#f7f5ef;--panel:#fff;--line:#ddd8c8;--side:#17351f;--side2:#2a5233;--green:#14532d;--green2:#1b6b3c;--amber:#b45309;--amberbg:#fdf3e3;--red:#b3261e;--redbg:#fdecea}
 *{box-sizing:border-box}
+html[data-width="wide"]{--page-max:1440px}
+html[data-width="full"]{--page-max:none}
 body{margin:0;font-family:"Segoe UI",system-ui,"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;color:var(--ink);background:var(--bg);line-height:1.5}
 .shell{display:flex;min-height:100vh}
 .sidebar{width:218px;flex:none;background:var(--side);color:#dce8dc;padding:20px 14px;display:flex;flex-direction:column;gap:18px;position:sticky;top:0;height:100vh}
@@ -41,9 +43,9 @@ a.smallbtn{text-decoration:none;display:inline-block}
 .ghostbtn{background:#fff;color:var(--green);border:1px solid var(--green);border-radius:7px;padding:9px 14px;font-weight:600;cursor:pointer}
 .iconbtn{background:none;border:0;font-size:1.1rem;cursor:pointer;color:inherit;padding:6px}
 #menuBtn{display:none}
-.view{padding:22px 24px 96px;max-width:1120px}
-.wrapmsg{max-width:1120px;padding:10px 24px 0;color:var(--green2);font-weight:600;min-height:1.2em;margin:0}
-.foot{padding:16px 24px;color:var(--muted);font-size:.85rem;border-top:1px solid var(--line);max-width:1120px}
+.view{padding:22px 24px 96px;max-width:var(--page-max)}
+.wrapmsg{max-width:var(--page-max);padding:10px 24px 0;color:var(--green2);font-weight:600;min-height:1.2em;margin:0}
+.foot{padding:16px 24px;color:var(--muted);font-size:.85rem;border-top:1px solid var(--line);max-width:var(--page-max)}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
 .card .lab{color:var(--muted);font-size:.82rem}.card b{font-family:Georgia,serif;font-size:1.5rem;color:var(--green);display:block;margin:2px 0}

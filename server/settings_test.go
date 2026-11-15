@@ -139,12 +139,33 @@ func TestSettingsTransactionsPerPage(t *testing.T) {
 	}
 }
 
+func TestSettingsPageWidth(t *testing.T) {
+	withTestStore(t)
+	if _, s := doSettings(t, http.MethodGet, ""); s.General.PageWidth != "default" {
+		t.Fatalf("default page width: %q", s.General.PageWidth)
+	}
+	for _, w := range []string{"wide", "full", "default"} {
+		if code, s := doSettings(t, http.MethodPut, `{"general":{"pageWidth":"`+w+`"}}`); code != 200 || s.General.PageWidth != w {
+			t.Fatalf("set %s: %d %+v", w, code, s.General)
+		}
+	}
+	doSettings(t, http.MethodPut, `{"general":{"pageWidth":"wide"}}`)
+	if _, s := doSettings(t, http.MethodPut, `{"general":{"transactionsPerPage":20}}`); s.General.PageWidth != "wide" {
+		t.Fatalf("page width lost: %+v", s.General)
+	}
+	for _, bad := range []string{"huge", "Wide", "1600px"} {
+		if code, _ := doSettings(t, http.MethodPut, `{"general":{"pageWidth":"`+bad+`"}}`); code != 400 {
+			t.Errorf("pageWidth %q: want 400, got %d", bad, code)
+		}
+	}
+}
+
 func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
 	withTestStore(t)
 	if err := store.setSetting("general", `{"defaultCurrency":"JPY"}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "JPY,TWD" || s.General.TransactionsPerPage != 50 {
+	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "JPY,TWD" || s.General.TransactionsPerPage != 50 || s.General.PageWidth != "default" {
 		t.Fatalf("legacy row: %+v", s.General)
 	}
 }

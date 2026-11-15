@@ -84,6 +84,7 @@ const I18N = {
     "Expected range {min} – {max}. Edit the amount to the actual charge if it differs.": "預計範圍 {min} – {max}。實際金額不同的話，請改成實際扣款金額。",
     // settings
     "General": "一般", "Language": "語言", "Browser default": "依瀏覽器設定", "Language saved.": "語言已儲存。",
+    "Page width": "頁面寬度", "Default": "預設", "Wide": "加寬", "Page width saved.": "頁面寬度已儲存。",
     "Transactions per page": "每頁交易筆數", "Transactions per page saved.": "每頁交易筆數已儲存。",
     "Default currency": "預設幣別", "Default currency saved.": "預設幣別已儲存。", "Frequently used currencies": "常用幣別",
     "Add currency": "新增幣別", "+ Add currency…": "＋ 新增幣別…", "Remove {currency}": "移除 {currency}", "All currencies": "所有幣別",

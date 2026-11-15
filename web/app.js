@@ -8,6 +8,9 @@ const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
 const PER_PAGE_CHOICES = [20, 50, 100, 200];
 const perPage = () => (state.general && state.general.transactionsPerPage) || 50;
+const WIDTH_L = { default: N_("Default"), wide: N_("Wide"), full: N_("Full width") };
+const pageWidth = () => (state.general && WIDTH_L[state.general.pageWidth] ? state.general.pageWidth : "default");
+const applyPageWidth = () => { document.documentElement.dataset.width = pageWidth(); };
 // The default currency is always in the frequently used list, first.
 const favCurs = () => { const d = defCur(), l = (state.general && state.general.currencies) || []; return [d, ...l.filter((c) => c !== d)]; };
 const ALL_CURRENCIES = (() => { try { return Intl.supportedValuesOf("currency"); } catch (e) { return []; } })();
@@ -436,6 +439,7 @@ function screenSettings(v) {
   v.innerHTML = `<section class="panel"><h3>${esc(__("General"))}</h3>
       <div class="setrow"><label>${esc(__("Language"))} <select id="setLang">${langOpts}</select></label>
         <label>${esc(__("Default currency"))} <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label>
+        <label>${esc(__("Page width"))} <select id="setWidth">${enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())}</select></label>
         <label>${esc(__("Transactions per page"))} <select id="setPerPage">${[...new Set([...PER_PAGE_CHOICES, perPage()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === perPage() ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
       <div class="setlabel">${esc(__("Frequently used currencies"))}</div>
       <div class="curchips">${favCurs().map((c) => `<span class="chip cur${c === defCur() ? " def" : ""}" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="${esc(__("Remove {currency}", { currency: c }))}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}</div>
@@ -455,12 +459,14 @@ function screenSettings(v) {
       const s = await put("/api/settings", { general: patch });
       state.general = s.general;
       setLang(pickLang(state.general.language));
+      applyPageWidth();
       msg(done());
     } catch (err) { errMsg(err); }
     render();
   };
   $("#setLang").addEventListener("change", (e) => saveGeneral({ language: e.target.value }, () => __("Language saved.")));
   $("#setDefCur").addEventListener("change", (e) => saveGeneral({ defaultCurrency: e.target.value }, () => __("Default currency saved.")));
+  $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
   $("#setPerPage").addEventListener("change", (e) => { state.page = 0; saveGeneral({ transactionsPerPage: parseInt(e.target.value, 10) }, () => __("Transactions per page saved.")); });
   $("#setAddCur").addEventListener("change", (e) => { const c = e.target.value; if (c) saveGeneral({ currencies: [...favCurs(), c] }, () => __("{currency} added.", { currency: c })); });
   v.querySelectorAll("[data-cur-del]").forEach((b) => b.addEventListener("click", () => {
@@ -739,6 +745,7 @@ async function load() {
     state.about = s.about;
   } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message })); }
   setLang(pickLang(state.general && state.general.language));
+  applyPageWidth();
   render();
 }
 setLang(pickLang(""));

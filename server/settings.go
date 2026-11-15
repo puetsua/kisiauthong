@@ -45,7 +45,11 @@ type GeneralSettings struct {
 	Language string `json:"language"`
 	// TransactionsPerPage is how many rows the transaction list shows per page.
 	TransactionsPerPage int `json:"transactionsPerPage"`
+	// PageWidth caps the content width: "default", "wide" or "full".
+	PageWidth string `json:"pageWidth"`
 }
+
+var pageWidths = map[string]bool{"default": true, "wide": true, "full": true}
 
 const (
 	defaultTransactionsPerPage = 50
@@ -74,7 +78,7 @@ var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 func defaultSettings() Settings {
 	return Settings{
 		Dashboard: DashboardSettings{Order: append([]string{}, dashboardWidgets...), Hidden: []string{}},
-		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, TransactionsPerPage: defaultTransactionsPerPage},
+		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, TransactionsPerPage: defaultTransactionsPerPage, PageWidth: "default"},
 	}
 }
 
@@ -138,6 +142,12 @@ func (g *GeneralSettings) validate() error {
 	}
 	if g.TransactionsPerPage < minTransactionsPerPage || g.TransactionsPerPage > maxTransactionsPerPage {
 		return fmt.Errorf("transactionsPerPage must be %d-%d", minTransactionsPerPage, maxTransactionsPerPage)
+	}
+	if g.PageWidth == "" { // rows saved before this setting existed
+		g.PageWidth = "default"
+	}
+	if !pageWidths[g.PageWidth] {
+		return fmt.Errorf("pageWidth must be default, wide or full")
 	}
 	if g.Language != "" && !uiLanguages[g.Language] {
 		return fmt.Errorf("language must be empty (browser default), en or zh-TW")
