@@ -289,7 +289,8 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .moneyrow{display:flex;gap:8px;margin-top:4px}
 .moneyrow select{flex:0 0 8.5em;width:8.5em;margin-top:0;text-overflow:ellipsis}
 .moneyrow input{flex:1;min-width:0;margin-top:0}
-.checkline{display:flex!important;align-items:center;gap:8px;flex-direction:row!important;grid-column:1/-1;color:var(--ink)!important;font-size:.95rem!important}
+.checkline:not([hidden]){display:flex!important;}
+.checkline{align-items:center;gap:8px;flex-direction:row!important;grid-column:1/-1;color:var(--ink)!important;font-size:.95rem!important}
 .checkline input{width:auto;margin:0}
 
 /* Tags page: budgets, categories and money boxes as cards */
