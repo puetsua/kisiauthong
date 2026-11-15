@@ -446,3 +446,24 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .useradd b{flex-basis:100%;font-size:.92rem}
 .useradd input:not([type=checkbox]){flex:1 1 140px}
 .useradd .checkline{margin:0;font-size:.9rem}
+
+/* API keys */
+.newkey{margin:14px 20px;padding:14px 16px;border-radius:10px;background:var(--amberbg);border:1px solid #ecd9b0;display:flex;flex-direction:column;gap:8px}
+.newkey p{margin:0}
+.keyrow{display:flex;gap:8px;align-items:center}
+.keyrow code{flex:1;min-width:0;overflow-wrap:anywhere;font-family:ui-monospace,Consolas,monospace;font-size:.92rem;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.newkey code{font-family:ui-monospace,Consolas,monospace}
+.keylist{list-style:none;margin:0;padding:0}
+.keylist li{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--rule)}
+.kmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.kmain code{font-family:ui-monospace,Consolas,monospace;font-size:.85rem;color:var(--muted)}
+.kscopes{display:flex;gap:6px;flex-wrap:wrap}
+.kscopes .pill{background:var(--accentsoft);color:var(--accent)}
+.keyadd{display:flex;flex-direction:column;gap:10px;padding:14px 20px}
+.keyadd input[name=name]{padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:.95rem}
+.keyadd fieldset{border:0;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 16px}
+.keyadd legend{font-size:.86rem;color:var(--muted);margin-bottom:6px;padding:0}
+.keyadd .checkline{margin:0;font-size:.92rem}
+.kexp{display:flex;align-items:center;gap:8px;font-size:.9rem}
+.kexp select{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.keyadd .primarybtn{align-self:flex-start}

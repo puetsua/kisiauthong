@@ -1517,10 +1517,12 @@ function screenAccount(v) {
         ${row("", `<button class="smallbtn" type="submit">${esc(__("Change password"))}</button>`)}
       </form>
     </div></section>
+    <section class="ssec"><h3>${esc(__("API keys"))}</h3><div class="scard" id="keysCard"></div></section>
     ${u.isAdmin ? `<section class="ssec"><h3>${esc(__("Users"))}</h3><div class="scard" id="usersCard"></div></section>` : ""}
   </div></div>`;
   drawTotp();
   drawPasskeys();
+  drawKeys();
   if (u.isAdmin) drawUsers();
   $("#avatarFile").addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -1707,6 +1709,49 @@ async function drawUsers() {
     try { await post("/api/users", { username: f.username.trim(), displayName: f.displayName, password: f.password, isAdmin: !!f.isAdmin }); msg(__("User added.")); drawUsers(); } catch (err) { errMsg(err); }
   });
 }
+
+// API keys: for scripts and AI agents, each with only the permissions it needs (ADR 0008)
+const SCOPE_L = { read: N_("Read your books"), "transactions:write": N_("Add and edit transactions"), "accounts:write": N_("Add and edit accounts"),
+  "tags:write": N_("Add and edit categories and money boxes"), "templates:write": N_("Add and edit templates, generate due ones"), "settings:write": N_("Change settings") };
+const SCOPE_SHORT = { read: N_("Read"), "transactions:write": N_("Transactions"), "accounts:write": N_("Accounts"), "tags:write": N_("Tags"), "templates:write": N_("Templates"), "settings:write": N_("Settings") };
+const EXPIRY_L = { 0: N_("Never"), 30: N_("30 days"), 90: N_("90 days"), 365: N_("1 year") };
+async function drawKeys(created) {
+  const card = $("#keysCard");
+  if (!card) return;
+  let list = [];
+  try { list = await api("/api/me/keys"); } catch (e) { errMsg(e); return; }
+  const when = (iso) => (iso ? dayLabel(zoneParts(new Date(iso), displayTZ()).date) : "");
+  const fresh = created ? `<div class="newkey" role="status"><b>${esc(__("Copy this key now. It will not be shown again."))}</b>
+      <div class="keyrow"><code id="newKeyText">${esc(created.key)}</code><button class="smallbtn" type="button" id="newKeyCopy">${esc(__("Copy"))}</button></div>
+      <p class="muted small">${esc(__("Send it as a header:"))} <code>Authorization: Bearer ${esc(created.key.slice(0, 8))}…</code></p>
+      ${mcpHint()}</div>` : "";
+  card.innerHTML = fresh + (list.length ? `<ul class="keylist">${list.map((k) => {
+      const expired = k.expiresAt && k.expiresAt < new Date().toISOString();
+      return `<li><span class="kmain"><b>${esc(k.name)}</b><code>${esc(k.hint)}</code>
+        <span class="kscopes">${k.scopes.map((sc) => `<span class="pill">${esc(lbl(SCOPE_SHORT, sc))}</span>`).join("")}</span>
+        <small class="muted">${esc(__("Created {date}", { date: when(k.createdAt) }))}${k.lastUsedAt ? " · " + esc(__("Last used {date}", { date: when(k.lastUsedAt) })) : " · " + esc(__("Never used"))}${k.expiresAt ? " · " + esc(expired ? __("Expired {date}", { date: when(k.expiresAt) }) : __("Expires {date}", { date: when(k.expiresAt) })) : ""}</small></span>
+        <button class="smallbtn danger" type="button" data-key-del="${esc(k.id)}">${esc(__("Revoke"))}</button></li>`;
+    }).join("")}</ul>` : "")
+    + `<form id="keyAdd" class="keyadd"><b>${esc(__("Create a key"))}</b>
+      <input name="name" required maxlength="60" placeholder="${esc(__("Name, e.g. Budget agent"))}" aria-label="${esc(__("Key name"))}">
+      <fieldset><legend>${esc(__("Permissions"))}</legend>${Object.keys(SCOPE_L).map((sc) => `<label class="checkline"><input type="checkbox" name="scope" value="${esc(sc)}" ${sc === "read" ? "checked" : ""}> ${esc(__(SCOPE_L[sc]))}</label>`).join("")}</fieldset>
+      <label class="kexp">${esc(__("Expires"))} <select name="expires">${Object.entries(EXPIRY_L).map(([d, l]) => `<option value="${d}" ${d === "90" ? "selected" : ""}>${esc(__(l))}</option>`).join("")}</select></label>
+      <button class="primarybtn" type="submit">${esc(__("Create key"))}</button></form>`;
+  const copy = $("#newKeyCopy");
+  if (copy) copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(created.key); msg(__("Copied.")); } catch (e) { getSelection().selectAllChildren($("#newKeyText")); } });
+  card.querySelectorAll("[data-key-del]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm(__("Revoke this key? Anything using it stops working at once."))) return;
+    try { await api("/api/me/keys/" + encodeURIComponent(b.dataset.keyDel), { method: "DELETE" }); msg(__("Key revoked.")); drawKeys(); } catch (e) { errMsg(e); }
+  }));
+  $("#keyAdd").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target, scopes = [...f.querySelectorAll("[name=scope]:checked")].map((x) => x.value);
+    if (!scopes.length) { msg(__("Choose at least one permission."), "error"); return; }
+    try { drawKeys(await post("/api/me/keys", { name: f.elements.name.value.trim(), scopes, expiresInDays: parseInt(f.elements.expires.value, 10) })); }
+    catch (err) { errMsg(err); }
+  });
+}
+const mcpHint = () => "";
 
 /* ---------- routing ---------- */
 const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount] };

@@ -588,8 +588,3 @@ func handleChangePassword(w http.ResponseWriter, r *http.Request, u *User) {
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
-
-// keyPrincipal resolves an "Authorization: Bearer <key>" header (ADR 0008).
-func (s *Store) keyPrincipal(h string) (*Principal, error) {
-	return nil, errUnauthorized
-}
