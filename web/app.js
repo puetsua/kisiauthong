@@ -773,15 +773,6 @@ function screenAccounts(v) {
   bindDetails(v);
 }
 
-function screenMoneyboxes(v) {
-  const goals = state.data.tags.filter((t) => t.targetMinor !== undefined);
-  v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Money boxes"))}</h3><button class="smallbtn" id="newBox">${esc(__("+ New money box"))}</button></div>
-    ${goals.length ? goals.map(goalCard).join("") : `<div class="empty">${esc(__("No money boxes yet. Create a goal tag, then allocate money to it from any account."))}</div>`}</section>
-    <p class="muted">${esc(__("Allocating records a decision and never moves cash: the account balance stays the same and its free amount drops. A negative allocation takes money back out. Every allocation is listed in History."))}</p>`;
-  $("#newBox").addEventListener("click", () => openTagDialog("goal"));
-  bindActions(v);
-}
-
 const scheduleText = (s) => lbl(FREQ_L, s.frequency) + (s.dayOfMonth ? " · " + __("day {n}", { n: s.dayOfMonth }) : "");
 function screenTemplates(v) {
   const rows = state.data.transactionTemplates.map((t) => row([
@@ -824,12 +815,17 @@ function categoryCard(t) {
     <span class="thead"><b>${esc(t.name)}</b><small>${esc(__("{n} transaction(s)", { n }))}</small></span>
     <span class="tfoot"><span>${spent ? esc(__("{amount} this month", { amount: spent })) : `<small>${esc(__("Nothing spent this month"))}</small>`}</span></span></button>`;
 }
+// One money box: saved of target, with the bar split by the accounts holding the money.
+const BOX_COLORS = ["#5b2a86", "#8a5cb8", "#b79ad6", "#c9a86a", "#7d6f99"];
 function boxCard(t) {
-  const p = t.targetMinor > 0 ? t.savedMinor / t.targetMinor * 100 : 0;
+  const allocs = goalAllocations(t.id), scale = Math.max(t.targetMinor, t.savedMinor) || 1;
+  const segs = allocs.map(([, val], i) => `<i style="width:${val / scale * 100}%;background:${BOX_COLORS[i % BOX_COLORS.length]}"></i>`).join("");
+  const legend = allocs.map(([id, val], i) => `<small><b class="dot" style="background:${BOX_COLORS[i % BOX_COLORS.length]}"></b>${esc(accName(id))} ${fmt(val, t.currency)}</small>`).join("");
   return `<button type="button" class="tcard gcard" data-detail-goal="${esc(t.id)}">
     <span class="thead"><b>${esc(t.name)}</b><small>${esc(t.targetDate ? __("by {date}", { date: dayLabel(t.targetDate) }) : "")}</small></span>
     <span class="bamount"><b>${fmt(t.savedMinor, t.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(t.targetMinor, t.currency) }))}</small></span>
-    <span class="bar"><i style="width:${Math.min(100, p)}%"></i></span></button>`;
+    <span class="stack">${segs}</span>
+    <span class="boxlegend">${legend || `<small>${esc(__("No allocations yet"))}</small>`}</span></button>`;
 }
 function screenTags(v) {
   const tags = state.data.tags;
@@ -1362,10 +1358,10 @@ window.addEventListener("resize", () => { if (state.notifOpen) renderBell(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.notifOpen) { state.notifOpen = false; renderBell(); $("#bellBtn").focus(); } });
 
 /* ---------- routing ---------- */
-const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], moneyboxes: ["Money boxes", screenMoneyboxes], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings] };
+const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings] };
 function currentScreen() {
   const h = location.hash.replace("#", "");
-  if (h === "budgets") return "tags"; // budgets live on the Tags page now
+  if (h === "budgets" || h === "moneyboxes") return "tags"; // budgets and money boxes live on the Tags page now
   return SCREENS[h] ? h : "dashboard";
 }
 function render() {

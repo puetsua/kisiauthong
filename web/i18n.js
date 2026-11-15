@@ -56,7 +56,7 @@ const I18N = {
     "Expected, not confirmed yet. Edit and save it once the real charge or income arrives.": "預計中，尚未確認。實際扣款或入帳後，編輯並儲存即可確認。", "Has a note": "有備註",
     "Details worth remembering: who, why, receipt number…": "值得記下的細節：和誰、為什麼、收據號碼…", "A negative amount takes money back out of the money box.": "輸入負數可以把錢從存錢筒撥回帳戶。", "Enter an amount other than zero.": "金額不能是 0。",
     "{box} holds {amount} in {account}; you can take out at most that.": "{box}在{account}只有 {amount}，最多只能撥回這個金額。",
-    "Allocating records a decision and never moves cash: the account balance stays the same and its free amount drops. A negative allocation takes money back out. Every allocation is listed in History.": "分配只是記錄一個決定，不會真的移動現金：帳戶餘額不變，可用金額減少。負數的分配會把錢撥回帳戶。所有分配都會列在紀錄中。", "External": "外部", "External accounts": "外部帳戶", "+ New external account": "＋ 新增外部帳戶", "New external account": "新增外部帳戶",
+    "External": "外部", "External accounts": "外部帳戶", "+ New external account": "＋ 新增外部帳戶", "New external account": "新增外部帳戶",
     "Paid to": "付給", "Received from": "收自", "Employer": "雇主", "Notifications": "通知", "Notifications ({n})": "通知（{n}）", "Dismiss": "清除", "Dismiss all": "全部清除",
     "You're all caught up.": "沒有新通知。", "Open in Transactions": "到交易頁查看", "Waiting for confirmation · {date} · {amount}": "等待確認 · {date} · {amount}",
     "{name} is over budget": "{name}超出預算",
@@ -80,7 +80,6 @@ const I18N = {
     "History": "紀錄", "History — {name}": "紀錄：{name}",
     // money boxes
     "+ New money box": "＋ 新增存錢筒",
-    "No money boxes yet. Create a goal tag, then allocate money to it from any account.": "還沒有存錢筒。先建立目標標籤，再從任一帳戶分配金額。",
     // templates
     "Transaction templates": "交易範本", "Generate due": "產生到期項目", "+ New template": "＋ 新增範本", "No templates yet.": "還沒有範本。",
     "Click a template name for its pane (Edit, Pause, Generate). On its date a template generates one unconfirmed transaction — never twice. Open it and save (adjusting the amount for variable bills) to confirm it.":

@@ -344,3 +344,5 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .xcard b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xcard small{color:var(--muted);font-size:.8rem}
 @media (max-width:800px){.totcard{flex:1;min-width:0}.pagehead .smallbtn{order:-1}}
+.boxlegend{display:flex;flex-wrap:wrap;gap:4px 14px}
+.gcard .stack{height:10px}
