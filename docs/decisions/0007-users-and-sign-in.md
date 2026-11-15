@@ -56,9 +56,11 @@ and sign them in with a password, TOTP and passkeys.
   passwords (ending that user's sessions), grant or remove admin rights
   (one administrator always remains) and delete users with all their
   books, sessions, passkeys and API keys. Nobody can delete themselves.
-- Administrators have an **Administration** page (in the side navigation,
-  shown to administrators only) with the user list and a server overview
-  (`GET /api/admin/server`): version, start time, runtime, database path,
+- Administrators have an **Administration** area, entered from the foot of
+  the sidebar (shown to administrators only). Inside it the sidebar lists
+  only its pages, and the same foot link leads back to the books. **Users**
+  (`#admin/users`) manages users; **Server** (`#admin`, from
+  `GET /api/admin/server`) shows version, start time, runtime, database path,
   size and schema version, and counts of users, administrators, two-step
   users, passkeys, live sessions and unexpired API keys. It never shows
   anything from anyone's books.

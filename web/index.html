@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#2a1740">
 <title>記數通 KiSiauThong</title>
-<link rel="stylesheet" href="style.css?v=66">
+<link rel="stylesheet" href="style.css?v=67">
 </head>
 <body>
 <div id="authScreen" class="authscreen" hidden></div>
@@ -20,8 +20,13 @@
       <a href="#templates" data-screen="templates" data-i18n="Templates">Templates</a>
       <a href="#tags" data-screen="tags" data-i18n="Tags">Tags</a>
       <a href="#settings" data-screen="settings" data-i18n="Settings">Settings</a>
-      <a href="#admin" data-screen="admin" data-i18n="Administration" class="navadmin" hidden>Administration</a>
     </nav>
+    <nav id="adminNav" data-i18n-aria="Administration" hidden>
+      <div class="navhead" data-i18n="Administration">Administration</div>
+      <a href="#admin" data-screen="admin" data-i18n="Server">Server</a>
+      <a href="#admin/users" data-screen="admin/users" data-i18n="Users">Users</a>
+    </nav>
+    <a id="sideAdmin" class="sideadmin" href="#admin" hidden></a>
     <div class="sidefoot"><a href="#settings">記數通 · AGPL-3.0-or-later</a></div>
   </aside>
 
@@ -76,7 +81,7 @@
   <div id="dialogBody"></div>
 </dialog>
 
-<script src="i18n.js?v=66"></script>
-<script src="app.js?v=66"></script>
+<script src="i18n.js?v=67"></script>
+<script src="app.js?v=67"></script>
 </body>
 </html>

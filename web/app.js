@@ -1471,7 +1471,7 @@ function renderUserBtn() {
   if (!u) return;
   $("#userBtn").innerHTML = avatarHTML(u, 32);
   $("#userBtn").setAttribute("aria-label", __("{name}: account menu", { name: u.displayName || u.username }));
-  $("#nav .navadmin").hidden = !u.isAdmin;
+  drawSideAdmin();
 }
 function toggleUserMenu(open) {
   const menu = $("#userMenu"), u = state.me;
@@ -1839,13 +1839,26 @@ const mcpHint = (key) => {
       <div class="keyrow"><code id="mcpCmd">claude mcp add --transport http kisiauthong ${esc(url)} --header "Authorization: Bearer ${esc(key)}"</code><button class="smallbtn" type="button" id="mcpCopy">${esc(__("Copy"))}</button></div>`;
 };
 
-// Administration (administrators only): how the server is doing, and who can sign in
+// Administration (administrators only): its own pages, with the sidebar switched to them
+const isAdminScreen = (key) => key === "admin" || key.startsWith("admin/");
 function screenAdmin(v) {
-  v.innerHTML = `<div class="settings narrow"><div class="sbody">
-    <section class="ssec"><h3>${esc(__("Server"))}</h3><div class="scard" id="serverCard"></div></section>
-    <section class="ssec"><h3>${esc(__("Users"))}</h3><div class="scard" id="usersCard"></div></section>
-  </div></div>`;
-  drawUsers(); // redraws the server counts too
+  v.innerHTML = `<div class="settings narrow"><div class="sbody"><div class="scard" id="serverCard"></div></div></div>`;
+  drawServer();
+}
+function screenAdminUsers(v) {
+  v.innerHTML = `<div class="settings narrow"><div class="sbody"><div class="scard" id="usersCard"></div></div></div>`;
+  drawUsers();
+}
+const ADMIN_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`;
+const BACK_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+// the link at the foot of the sidebar: into Administration, or back to the page you came from
+function drawSideAdmin() {
+  const a = $("#sideAdmin");
+  if (!a) return;
+  a.hidden = !(state.me && state.me.isAdmin);
+  const inAdmin = isAdminScreen(currentScreen());
+  a.href = inAdmin ? "#" + (state.lastBookScreen || "dashboard") : "#admin";
+  a.innerHTML = inAdmin ? `${BACK_ICON}<span>${esc(__("Back to my books"))}</span>` : `${ADMIN_ICON}<span>${esc(__("Administration"))}</span>`;
 }
 const fmtBytes = (n) => (n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB");
 async function drawServer() {
@@ -1866,19 +1879,23 @@ async function drawServer() {
 }
 
 /* ---------- routing ---------- */
-const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Administration"), screenAdmin] };
+const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
 function currentScreen() {
   const h = location.hash.replace("#", "");
   if (h === "budgets" || h === "moneyboxes") return "tags"; // budgets and money boxes live on the Tags page now
-  if (h === "admin" && !(state.me && state.me.isAdmin)) return "dashboard";
+  if (isAdminScreen(h) && !(state.me && state.me.isAdmin)) return "dashboard";
   return SCREENS[h] ? h : "dashboard";
 }
 function render() {
   const key = currentScreen();
   $("#pageTitle").textContent = __(SCREENS[key][0]);
-  document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === key));
+  const admin = isAdminScreen(key);
+  if (!admin) state.lastBookScreen = key;
+  $("#nav").hidden = admin; $("#adminNav").hidden = !admin;
+  document.querySelectorAll("#nav a, #adminNav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === key));
+  drawSideAdmin();
   renderBell();
-  $("#addBtn").hidden = key === "dashboard" && state.customizing; // it would cover widgets being edited
+  $("#addBtn").hidden = admin || (key === "dashboard" && state.customizing); // nothing to add there; it would cover widgets being edited
   SCREENS[key][1]($("#view"));
 }
 window.addEventListener("hashchange", render);

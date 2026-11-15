@@ -16,8 +16,14 @@ body{margin:0;font-family:"Segoe UI",system-ui,"Microsoft JhengHei","PingFang TC
 .sidebar nav a{color:var(--sidetext);text-decoration:none;padding:9px 11px;border-radius:7px;font-size:.95rem}
 .sidebar nav a:hover{background:var(--sidehover)}
 .sidebar nav a.on{background:var(--side2);color:#fff;font-weight:600}
-.sidebar nav .navadmin{margin-top:14px}
+.sidebar nav[hidden]{display:none}
+.navhead{font-size:.74rem;letter-spacing:.06em;text-transform:uppercase;color:var(--sidemuted);padding:0 11px 6px}
+.sideadmin{margin-top:auto;display:flex;align-items:center;gap:8px;color:var(--sidetext);text-decoration:none;padding:9px 11px;border-radius:7px;font-size:.92rem;border:1px solid rgba(255,255,255,.14)}
+.sideadmin[hidden]{display:none}
+.sideadmin:hover{background:var(--sidehover)}
+.sideadmin svg{flex:none;opacity:.85}
 .sidefoot{margin-top:auto;font-size:.78rem;color:var(--sidemuted)}
+.sideadmin:not([hidden])+.sidefoot{margin-top:0}
 .sidefoot a{color:inherit;text-decoration:none}.sidefoot a:hover{text-decoration:underline}
 .setrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .setrow label{display:flex;flex-direction:column;font-size:.86rem;color:var(--muted);gap:4px}
@@ -232,7 +238,10 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .brand small{display:none}
   .sidebar nav{flex-direction:row;overflow-x:auto;padding-bottom:4px}
   .sidebar nav a{white-space:nowrap;padding:8px 10px}
-  .sidebar nav .navadmin{margin-top:0}
+  .sidebar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
+  .sidebar nav{grid-column:1/-1}
+  .navhead{display:none}
+  .sideadmin{grid-row:1;grid-column:2;margin-top:0;padding:6px 10px;font-size:.86rem}
   .sidefoot{display:none}
   #menuBtn{display:none}
   .view{padding:16px 14px 110px}.toast{bottom:88px}
