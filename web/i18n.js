@@ -14,9 +14,9 @@ const I18N = {
     "Bank": "銀行", "Savings": "儲蓄", "Cash": "現金", "Credit card": "信用卡", "E-wallet": "電子錢包", "Investment": "投資", "Loan": "貸款",
     "Category": "分類", "Goal": "目標", "Label": "一般標籤", "Payee": "收付對象",
     "Daily": "每日", "Weekly": "每週", "Monthly": "每月", "Quarterly": "每季", "Yearly": "每年",
-    "UNCONFIRMED": "待確認", "Posted": "已入帳", "Expected (planned)": "預計（尚未發生）",
+    "UNCONFIRMED": "待確認",
     // common columns and fields
-    "Account": "帳戶", "Amount": "金額", "Date": "日期", "Tag": "標籤", "Note": "備註", "State": "狀態", "Status": "狀態", "Kind": "類型",
+    "Account": "帳戶", "Amount": "金額", "Date": "日期", "Tag": "標籤", "Note": "備註", "Status": "狀態", "Kind": "類型",
     "Name": "名稱", "Currency": "幣別", "Balance": "餘額", "Earmarked": "已預留", "Free": "可用", "Expected": "預計",
     "Budget": "預算", "Spent": "已花費", "Progress": "進度", "Remaining": "剩餘", "Per day left": "每日可用", "Share": "佔比",
     "Template": "範本", "Generates": "產生", "Schedule": "排程", "Next due": "下次到期", "Decision": "決定",
@@ -36,7 +36,9 @@ const I18N = {
     "No allocations yet": "還沒有分配",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型",
-    "Clear": "清除", "Today": "今天", "Has a note": "有備註",
+    "Clear": "清除", "Today": "今天", "Expected range {min} – {max}.": "預計範圍 {min} – {max}。",
+    "Expected on {date}, not confirmed yet. Check the amount and save to confirm it.": "預計在 {date}，尚未確認。核對金額後儲存即可確認。",
+    "Expected, not confirmed yet. Edit and save it once the real charge or income arrives.": "預計中，尚未確認。實際扣款或入帳後，編輯並儲存即可確認。", "Has a note": "有備註",
     "Details worth remembering: who, why, receipt number…": "值得記下的細節：和誰、為什麼、收據號碼…", "A negative amount takes money back out of the money box.": "輸入負數可以把錢從存錢筒撥回帳戶。", "Enter an amount other than zero.": "金額不能是 0。",
     "{box} holds {amount} in {account}; you can take out at most that.": "{box}在{account}只有 {amount}，最多只能撥回這個金額。",
     "Allocating records a decision and never moves cash: the account balance stays the same and its free amount drops. A negative allocation takes money back out. Every allocation is listed in History.": "分配只是記錄一個決定，不會真的移動現金：帳戶餘額不變，可用金額減少。負數的分配會把錢撥回帳戶。所有分配都會列在紀錄中。", "External": "外部", "External accounts": "外部帳戶", "+ New external account": "＋ 新增外部帳戶", "New external account": "新增外部帳戶",
@@ -47,8 +49,7 @@ const I18N = {
     "{name} has used {pct}% of its budget": "{name}已用掉預算的 {pct}%", "{name} is at {pct}% of its credit limit": "{name}已用到信用額度的 {pct}%",
     "{name} reached its target": "{name}已達成目標", "{saved} of {target} saved": "已存 {saved}／{target}",
     "{name} passed its target date": "{name}已過目標日期", "{saved} of {target} saved; target date was {date}": "已存 {saved}／{target}，目標日期是 {date}", "Week": "週", "Month": "月", "Custom": "自訂", "Period": "期間", "Back to today": "回到今天", "End date": "結束日期",
-    "No transactions in this period.": "這段期間沒有交易。", "A range can be at most {n} days.": "日期範圍最多 {n} 天。", "Spending": "支出", "From outside": "外部來源", "Tags": "標籤", "to": "到",
-    "Expected, not confirmed yet. Confirm it when the real charge or income arrives.": "預計中，尚未確認。實際扣款或入帳後再確認。", "{n} transaction(s)": "{n} 筆交易", "Days open by default": "預設展開天數", "Days open by default saved.": "預設展開天數已儲存。", "Yesterday": "昨天", "No transactions yet.": "還沒有交易。", "Search note, tag, account…": "搜尋備註、標籤、帳戶…", "‹ Previous": "‹ 上一頁", "Next ›": "下一頁 ›",
+    "No transactions in this period.": "這段期間沒有交易。", "A range can be at most {n} days.": "日期範圍最多 {n} 天。", "Spending": "支出", "From outside": "外部來源", "Tags": "標籤", "to": "到", "{n} transaction(s)": "{n} 筆交易", "Days open by default": "預設展開天數", "Days open by default saved.": "預設展開天數已儲存。", "Yesterday": "昨天", "No transactions yet.": "還沒有交易。", "Search note, tag, account…": "搜尋備註、標籤、帳戶…", "‹ Previous": "‹ 上一頁", "Next ›": "下一頁 ›",
     "Delete this transaction? This cannot be undone.": "要刪除這筆交易嗎？刪除後無法復原。", "Deleted.": "已刪除。",
     "Add transaction": "新增交易", "Edit transaction": "編輯交易", "Save transaction": "儲存交易", "Transaction editor": "交易編輯器",
     "Transaction updated.": "交易已更新。", "Saved.": "已儲存。", "Groceries": "買菜", "Close": "關閉",
@@ -78,8 +79,8 @@ const I18N = {
     "No money boxes yet. Create a goal tag, then allocate money to it from any account.": "還沒有存錢筒。先建立目標標籤，再從任一帳戶分配金額。",
     // templates
     "Transaction templates": "交易範本", "Generate due": "產生到期項目", "+ New template": "＋ 新增範本", "No templates yet.": "還沒有範本。",
-    "Click a template name for its pane (Edit, Pause, Generate). On its date a template generates one unconfirmed transaction — never twice. Confirm it (editing the amount for variable bills) to post it.":
-      "點範本名稱可開啟詳細資料（編輯、暫停、產生）。到了日期，範本會產生一筆待確認的交易，而且只會產生一次。確認後才會入帳（金額不固定的帳單可在確認時修改金額）。",
+    "Click a template name for its pane (Edit, Pause, Generate). On its date a template generates one unconfirmed transaction — never twice. Open it and save (adjusting the amount for variable bills) to confirm it.":
+      "點範本名稱可開啟詳細資料（編輯、暫停、產生）。到了日期，範本會產生一筆待確認的交易，而且只會產生一次。打開它並儲存即可確認（金額不固定的帳單可先修改金額）。",
     "Enabled": "啟用中", "Paused": "已暫停", "Pause": "暫停", "Resume": "繼續", "Edit template": "編輯範本",
     "Template added.": "範本已新增。", "Template updated.": "範本已更新。", "Add template": "新增範本",
     "New transaction template": "新增交易範本", "Edit transaction template": "編輯交易範本", "Streaming": "影音串流", "Frequency": "頻率", "Day of month": "每月日期", "Start date": "開始日期",
@@ -87,9 +88,7 @@ const I18N = {
     "Expected range (variable)": "預計範圍（金額不固定）", "variable {min}–{max}": "不固定 {min}–{max}", "day {n}": "{n} 日", "from {date}": "自 {date} 起",
     "{type} {amount} on {account}": "{account}：{type} {amount}", "Generated {n} due transaction(s).": "已產生 {n} 筆到期交易。",
     // confirm
-    "Confirm expected transaction": "確認預計交易", "Confirm and post": "確認並入帳", "Actual amount": "實際金額", "Posted.": "已入帳。",
-    "Confirm…": "確認…", "Edit": "編輯", "Delete": "刪除",
-    "Expected range {min} – {max}. Edit the amount to the actual charge if it differs.": "預計範圍 {min} – {max}。實際金額不同的話，請改成實際扣款金額。",
+    "Confirm expected transaction": "確認預計交易", "Edit": "編輯", "Delete": "刪除",
     // settings
     "General": "一般", "Language": "語言", "Browser default": "依瀏覽器設定", "Language saved.": "語言已儲存。",
     "Page width": "頁面寬度", "Default": "預設", "Wide": "加寬", "Page width saved.": "頁面寬度已儲存。",

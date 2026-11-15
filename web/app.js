@@ -198,7 +198,7 @@ function screenDashboardEditor(v) {
   v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Customize dashboard"))}</h3><span><button class="smallbtn" id="dashReset">${esc(__("Reset to default"))}</button> <button class="smallbtn" id="dashCancel">${esc(__("Cancel"))}</button> <button class="smallbtn" id="dashSave">${esc(__("Save"))}</button></span></div>
       <ol class="dashedit">${draft.order.map((id, i) => dashEditorRow(id, i, draft)).join("")}</ol></section>
     <h3 class="previewhead">${esc(__("Preview"))}</h3><div id="dashPreview"></div>`;
-  const preview = () => { $("#dashPreview").innerHTML = dashGrid(draft); bindConfirm($("#dashPreview")); };
+  const preview = () => { $("#dashPreview").innerHTML = dashGrid(draft); bindActions($("#dashPreview")); };
   const each = (sel, ev, fn) => v.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, () => fn(el)));
   each("[data-dash-vis]", "change", (c) => {
     const id = c.dataset.dashVis;
@@ -286,7 +286,7 @@ function screenDashboard(v) {
     state.customizing = true;
     render();
   });
-  bindConfirm(v);
+  bindActions(v);
 }
 function goalAllocations(tagId) {
   const byAcc = {};
@@ -307,8 +307,8 @@ function goalCard(t) {
   return `<div style="margin-bottom:18px"><div class="panelhead"><button class="titlelink" data-detail-goal="${esc(t.id)}">${esc(t.name)}</button><span>${esc(head)}</span></div>
     <div class="stack" style="margin:8px 0">${stack}</div><span class="muted">${where || esc(__("No allocations yet"))}</span></div>`;
 }
-function bindConfirm(root) {
-  root.querySelectorAll("[data-confirm]").forEach((b) => b.addEventListener("click", () => openConfirm(b.dataset.confirm)));
+function bindActions(root) {
+  root.querySelectorAll("[data-edit-txn]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.editTxn)));
   root.querySelectorAll("[data-alloc]").forEach((b) => b.addEventListener("click", () => openDrawer("allocate", b.dataset.alloc)));
   root.querySelectorAll("[data-history]").forEach((b) => b.addEventListener("click", () => showHistory(b.dataset.history)));
   bindDetails(root);
@@ -360,10 +360,10 @@ function dayNet(list) {
 }
 function feedRow(t, opts = {}) {
   const sub = txnSubtitle(t) + (opts.withDate ? " · " + dayLabel(t.date) : "");
-  return `<li><button type="button" class="feedrow" data-detail-txn="${esc(t.id)}">
+  return `<li><button type="button" class="feedrow" ${opts.edit ? "data-edit-txn" : "data-detail-txn"}="${esc(t.id)}">
       <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span>
       <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub"><span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
-      <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button>${opts.confirm ? `<button type="button" class="smallbtn" data-confirm="${esc(t.id)}">${esc(__("Confirm…"))}</button>` : ""}</li>`;
+      <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button></li>`;
 }
 /* ---------- transaction periods (the list pages by calendar period, not by entry count) ---------- */
 const MAX_RANGE_DAYS = 180;
@@ -473,7 +473,7 @@ function screenTransactions(v) {
     const modes = Object.keys(PERIOD_L).map((m) => `<button type="button" data-mode="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(PERIOD_L[m]))}</button>`).join("");
     const custom = p.mode === "custom" ? `<span class="prange"><input type="date" id="pStart" value="${esc(p.start)}" aria-label="${esc(__("Start date"))}"> – <input type="date" id="pEnd" value="${esc(p.end)}" aria-label="${esc(__("End date"))}"></span>` : "";
     const head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p, "top")}</div>`;
-    const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, confirm: true })).join("")}</ul></section>` : "";
+    const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, edit: true })).join("")}</ul></section>` : "";
     const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(list, openDays())}</section>` + nav(p, "bottom")
       : `<div class="empty">${esc(__("No transactions in this period."))}</div>`;
     $("#txnResults").innerHTML = expectedHTML + head + postedHTML;
@@ -505,7 +505,7 @@ function screenTransactions(v) {
       drawResults();
     };
     if ($("#pStart")) { $("#pStart").addEventListener("change", onRange); $("#pEnd").addEventListener("change", onRange); }
-    bindConfirm(box);
+    bindActions(box);
     bindDays(box);
   };
   const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value }; drawResults(); };
@@ -553,7 +553,7 @@ function screenMoneyboxes(v) {
     ${goals.length ? goals.map(goalCard).join("") : `<div class="empty">${esc(__("No money boxes yet. Create a goal tag, then allocate money to it from any account."))}</div>`}</section>
     <p class="muted">${esc(__("Allocating records a decision and never moves cash: the account balance stays the same and its free amount drops. A negative allocation takes money back out. Every allocation is listed in History."))}</p>`;
   $("#newBox").addEventListener("click", () => openTagDialog("goal"));
-  bindConfirm(v);
+  bindActions(v);
 }
 
 const scheduleText = (s) => lbl(FREQ_L, s.frequency) + (s.dayOfMonth ? " · " + __("day {n}", { n: s.dayOfMonth }) : "");
@@ -567,7 +567,7 @@ function screenTemplates(v) {
   ])).join("");
   v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Transaction templates"))}</h3><span><button class="smallbtn" id="genBtn">${esc(__("Generate due"))}</button> <button class="smallbtn" id="newTpl">${esc(__("+ New template"))}</button></span></div>
     ${rows ? table([{ t: "Template" }, { t: "Generates" }, { t: "Schedule" }, { t: "Next due" }, { t: "Status" }], rows) : `<div class="empty">${esc(__("No templates yet."))}</div>`}
-    <p class="muted">${esc(__("Click a template name for its pane (Edit, Pause, Generate). On its date a template generates one unconfirmed transaction — never twice. Confirm it (editing the amount for variable bills) to post it."))}</p></section>`;
+    <p class="muted">${esc(__("Click a template name for its pane (Edit, Pause, Generate). On its date a template generates one unconfirmed transaction — never twice. Open it and save (adjusting the amount for variable bills) to confirm it."))}</p></section>`;
   $("#newTpl").addEventListener("click", () => openTemplateDialog());
   $("#genBtn").addEventListener("click", generateDue);
   bindDetails(v);
@@ -686,7 +686,6 @@ function setTxnType(type, tagId) {
   const keep = tagId !== undefined ? tagId : $("#fTag").value;
   $("#fTag").innerHTML = decision ? tagOptions(keep, isGoal, false) : tagOptions(keep, (t) => !isGoal(t));
   $("#fTag").required = decision;
-  $("#fStateWrap").hidden = decision;
   const amount = $("#txnForm").elements.amount;
   if (decision) amount.removeAttribute("min"); else amount.min = "0.01";
   $("#fAmtNote").hidden = !decision;
@@ -698,6 +697,7 @@ function openDrawer(type, tagId) {
   $("#txnForm").reset();
   $("#txnForm").elements.date.value = new Date().toISOString().slice(0, 10);
   setTxnType(type || "expense", tagId);
+  $("#fPlannedNote").hidden = true;
   $("#drawerTitle").textContent = type === "allocate" ? __("Allocate to money box") : __("Add transaction");
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
 }
@@ -718,8 +718,13 @@ function openEditTxn(id) {
   form.elements.date.value = t.date;
   form.elements.note.value = t.note || "";
   form.elements.memo.value = t.memo || "";
-  form.elements.state.value = t.state;
-  $("#drawerTitle").textContent = __("Edit transaction");
+  // an expected transaction is confirmed by saving it here
+  const tpl = t.state === "planned" && state.data.transactionTemplates.find((x) => x.id === t.transactionTemplateId);
+  const range = tpl && tpl.template.expectedRangeMinor;
+  $("#fPlannedNote").hidden = t.state !== "planned";
+  $("#fPlannedNote").textContent = t.state !== "planned" ? "" : __("Expected on {date}, not confirmed yet. Check the amount and save to confirm it.", { date: dayLabel(t.date) })
+    + (range ? " " + __("Expected range {min} – {max}.", { min: fmt(range.min, t.currency), max: fmt(range.max, t.currency) }) : "");
+  $("#drawerTitle").textContent = t.state === "planned" ? __("Confirm expected transaction") : __("Edit transaction");
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
 }
 function closeDrawer() { $("#drawer").hidden = true; $("#drawerBackdrop").hidden = true; }
@@ -739,7 +744,7 @@ $("#txnForm").addEventListener("submit", async (e) => {
     const held = state.data.transactions.filter((t) => t.id !== state.editingTxn && t.type === "allocate" && t.state === "posted" && t.accountId === f.accountId && t.tagId === f.tagId).reduce((n, t) => n + t.amountMinor, 0);
     if (held + toMinor(f.amount, cur) < 0) { msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: tagName(f.tagId), amount: fmt(Math.max(0, held), cur), account: accName(f.accountId) })); return; }
   }
-  const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", memo: f.memo || "", state: isDecision(type) ? "posted" : f.state };
+  const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", memo: f.memo || "", state: "posted" }; // saving confirms an expected transaction
   if (type === "expense" || type === "income") { // stored as a transfer with an external side
     const ext = f.extAccountId || EXT_ID;
     Object.assign(body, { type: "transfer", accountId: "", fromAccountId: type === "expense" ? f.accountId : ext, toAccountId: type === "expense" ? ext : f.accountId });
@@ -875,21 +880,6 @@ function openTemplateDialog(editId) {
     } catch (err) { errMsg(err); }
   });
 }
-function openConfirm(id) {
-  const t = state.data.transactions.find((x) => x.id === id);
-  if (!t) return;
-  const tpl = state.data.transactionTemplates.find((x) => x.id === t.transactionTemplateId);
-  const range = tpl && tpl.template.expectedRangeMinor ? `<p class="muted">${esc(__("Expected range {min} – {max}. Edit the amount to the actual charge if it differs.", { min: fmt(tpl.template.expectedRangeMinor.min, t.currency), max: fmt(tpl.template.expectedRangeMinor.max, t.currency) }))}</p>` : "";
-  openDialog(__("Confirm expected transaction"), `${range}<p><strong>${esc(txnTitle(t))}</strong> · ${esc(transferAcct(t))} · ${esc(t.date)}</p>` + dialogForm(
-    field(N_("Actual amount"), `<input name="amount" type="number" step="0.01" min="0.01" required value="${decimal(t.amountMinor, t.currency)}">`, "wide"),
-    __("Confirm and post")));
-  $("#dialogForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.target).entries());
-    try { await post("/api/transactions/" + id + "/post", { amountMinor: toMinor(f.amount, t.currency) }); $("#dialog").close(); msg(__("Posted.")); await load(); }
-    catch (err) { errMsg(err); }
-  });
-}
 function showHistory(tagId) {
   const list = state.data.transactions.filter((t) => t.tagId === tagId && t.type === "allocate")
     .sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
@@ -931,7 +921,7 @@ function openTxnDetail(id) {
     ...(t.transactionTemplateId ? [[__("Generated by"), tpl ? `<button type="button" class="titlelink" data-open-template="${esc(tpl.id)}">${esc(tpl.name)}</button>` : esc(t.transactionTemplateId)]] : []),
   ];
   openDialog(txnTitle(t), `
-    ${t.state === "planned" ? `<div class="txbanner"><span>${esc(__("Expected, not confirmed yet. Confirm it when the real charge or income arrives."))}</span><button type="button" class="primarybtn" id="paneConfirm">${esc(__("Confirm…"))}</button></div>` : ""}
+    ${t.state === "planned" ? `<div class="txbanner"><span>${esc(__("Expected, not confirmed yet. Edit and save it once the real charge or income arrives."))}</span></div>` : ""}
     <div class="txhero">
       <div class="sub"><span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span><span>${esc(lbl(TYPE_L, flow(t)))} · ${esc(fullDate(t.date))}</span></div>
       <div class="big ${amountCls(t)}">${esc(amountText(t))}</div>
@@ -945,8 +935,6 @@ function openTxnDetail(id) {
   body.querySelectorAll("[data-open-account]").forEach((b) => go(() => openAccountDetail(b.dataset.openAccount))(b));
   body.querySelectorAll("[data-open-tag]").forEach((b) => go(() => openTagDetail(b.dataset.openTag))(b));
   body.querySelectorAll("[data-open-template]").forEach((b) => go(() => openTemplateDetail(b.dataset.openTemplate))(b));
-  const confirmBtn = $("#paneConfirm");
-  if (confirmBtn) go(() => openConfirm(id))(confirmBtn);
   go(() => openEditTxn(id))($("#paneEdit"));
   $("#paneDelete").addEventListener("click", async () => { if (await deleteTxn(id)) $("#dialog").close(); });
 }
@@ -1014,7 +1002,7 @@ function allNotifications() {
   d.transactions.filter((t) => t.state === "planned").sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id)).forEach((t) => out.push({
     key: "expected:" + t.id, rank: 0, level: "due", fixed: true, icon: typeIcon(t.type), title: txnTitle(t),
     body: __("Waiting for confirmation · {date} · {amount}", { date: dayLabel(t.date), amount: amountText(t) }),
-    open: () => openTxnDetail(t.id), action: [__("Confirm…"), () => openConfirm(t.id)],
+    open: () => openEditTxn(t.id),
   }));
   d.tags.filter((t) => t.limitMinor > 0).forEach((t) => {
     const pct = Math.round(t.spentMinor / t.limitMinor * 100), body = __("{spent} of {limit} spent this month", { spent: fmt(t.spentMinor, t.currency), limit: fmt(t.limitMinor, t.currency) });
