@@ -21,7 +21,7 @@ or `docker compose -f deploy/docker-compose.yml up -d`. Your books live in the `
 
 **Download**: each [release](https://github.com/puetsua/kisiauthong/releases) has one archive per system (Windows, macOS, Linux; Intel/AMD and ARM). Unpack it and run `kisiauthong` (`kisiauthong.exe` on Windows): it is a single file with the web UI built in and keeps its data in `data/` under the folder you start it from. `kisiauthong version` prints the version.
 
-Then open http://localhost:8080 and create the first user, who is the administrator. Settings are environment variables, listed in `.env.example`. To reach it from other devices, put it behind an HTTPS reverse proxy and set `KISIAUTHONG_ORIGIN`.
+Then open http://localhost:8080 and create the first user, who is the administrator. Settings are environment variables, listed in `.env.example`. To reach it from other devices, put it behind an HTTPS reverse proxy and set `KISIAUTHONG_ORIGIN`; to share a host name with other apps, set `KISIAUTHONG_BASE_PATH` (e.g. `/kisiauthong`) and proxy that path unchanged.
 
 ## Develop
 

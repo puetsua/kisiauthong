@@ -79,8 +79,11 @@ function msg(t, kind) {
 }
 const errMsg = (e) => msg(__("Error: {message}", { message: e.message }), "error");
 $("#toast").addEventListener("click", () => msg(""));
+// "/api/x" → "api/x": relative to the page, so the app also works under a
+// path prefix such as https://example.org/kisiauthong/ (KISIAUTHONG_BASE_PATH)
+const rel = (path) => (path.startsWith("/") ? path.slice(1) : path);
 async function api(path, opts) {
-  const r = await fetch(path, opts);
+  const r = await fetch(rel(path), opts);
   const d = await r.json().catch(() => ({}));
   // the session ended (signed out elsewhere, expired): back to the sign-in screen
   if (r.status === 401 && !path.startsWith("/api/auth/")) { showAuth("login"); throw new Error(__("Please sign in again.")); }
@@ -963,7 +966,7 @@ function screenSettings(v) {
       row(__("Layout"), `<div class="sbtns"><button class="smallbtn" id="setCustomize">${esc(__("Customize dashboard"))}</button><button class="smallbtn" id="setDashReset">${esc(__("Reset to default"))}</button></div>`),
     ]],
     ["data", __("Data"), [
-      row(__("Export all data"), `<div class="sbtns"><a class="smallbtn" href="/api/export" download>${esc(__("Export JSON"))}</a></div>`),
+      row(__("Export all data"), `<div class="sbtns"><a class="smallbtn" href="api/export" download>${esc(__("Export JSON"))}</a></div>`),
     ]],
     ["about", __("About"), [
       `<div class="sabout"><span class="slogo" lang="nan-Hant-TW">記數通</span><span><b>KiSiauThong</b></span></div>`,
@@ -1391,7 +1394,7 @@ const AVATAR_COLORS = ["#5b2a86", "#8a3b7a", "#2f6f73", "#3d5a99", "#9a5b13", "#
 const initials = (u) => { const n = (u.displayName || u.username || "?").trim(); const parts = n.split(/\s+/); return (parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : [...n].slice(0, 2).join("")).toUpperCase(); };
 const avatarColor = (u) => u.avatarColor || AVATAR_COLORS[[...(u.username || "")].reduce((n, c) => n + c.codePointAt(0), 0) % AVATAR_COLORS.length];
 function avatarHTML(u, size = 32) {
-  const inner = u.hasAvatar ? `<img src="/api/users/${esc(u.id)}/avatar?v=${esc(u.avatarVersion || "")}" alt="">` : esc(initials(u));
+  const inner = u.hasAvatar ? `<img src="api/users/${esc(u.id)}/avatar?v=${esc(u.avatarVersion || "")}" alt="">` : esc(initials(u));
   return `<span class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px;background:${u.hasAvatar ? "transparent" : esc(avatarColor(u))}" aria-hidden="true">${inner}</span>`;
 }
 async function boot() {
@@ -1611,7 +1614,7 @@ function requestOptions(o) {
   return { publicKey: pk };
 }
 async function postRaw(path, body) {
-  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(rel(path), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || r.statusText);
   return d;
@@ -1834,7 +1837,7 @@ async function drawKeys(created) {
 }
 // how an AI agent reaches the books through MCP with this key
 const mcpHint = (key) => {
-  const url = location.origin + "/mcp";
+  const url = new URL("mcp", document.baseURI).href;
   return `<p class="muted small">${esc(__("For AI agents (MCP):"))} <code>${esc(url)}</code></p>
       <div class="keyrow"><code id="mcpCmd">claude mcp add --transport http kisiauthong ${esc(url)} --header "Authorization: Bearer ${esc(key)}"</code><button class="smallbtn" type="button" id="mcpCopy">${esc(__("Copy"))}</button></div>`;
 };

@@ -170,13 +170,13 @@ func (s *Store) startSession(w http.ResponseWriter, r *http.Request, uid string)
 		tokenHash(tok), uid, now.Format(time.RFC3339), now.Add(sessionTTL).Format(time.RFC3339)); err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: tok, Path: "/", MaxAge: int(sessionTTL.Seconds()),
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: tok, Path: basePath, MaxAge: int(sessionTTL.Seconds()),
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isSecure(r)})
 	return nil
 }
 
 func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isSecure(r)})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: basePath, MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isSecure(r)})
 }
 
 // sessionUserID is the signed-in user of a request's session cookie, if any.

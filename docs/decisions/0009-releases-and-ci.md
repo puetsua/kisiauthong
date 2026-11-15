@@ -43,5 +43,10 @@ platform from one Linux runner.
   image, then the GitHub release with install notes; a tag with `-` is a
   pre-release. Dependabot proposes Go module, Actions and base-image updates
   weekly.
+- **Path prefix.** The web UI uses URLs relative to its page, and
+  `KISIAUTHONG_BASE_PATH` (e.g. `/kisiauthong`) makes the server answer
+  under that prefix (redirecting `/kisiauthong` to `/kisiauthong/`, keeping
+  `/healthz` at the root) and scope its session cookie to it, so one host
+  name can carry several apps behind a reverse proxy.
 - **AGPL §13.** Settings → About links to this repository unless
   `KISIAUTHONG_SOURCE_URL` names the source of a modified version.

@@ -177,8 +177,44 @@ func main() {
 	if web == "" && embeddedWeb != nil {
 		web = "built in"
 	}
-	log.Printf("kisiauthong %s listening on http://%s (db %s, web %s)", appVersion, addr, dbPath, web)
-	log.Fatal(http.ListenAndServe(addr, newMux(webDir)))
+	basePath = normBasePath(os.Getenv("KISIAUTHONG_BASE_PATH"))
+	log.Printf("kisiauthong %s listening on http://%s%s (db %s, web %s)", appVersion, addr, basePath, dbPath, web)
+	log.Fatal(http.ListenAndServe(addr, withBasePath(newMux(webDir), basePath)))
+}
+
+// basePath is where the app lives on its host: "/" or e.g. "/kisiauthong/"
+// behind a reverse proxy that serves several apps on one name.
+var basePath = "/"
+
+// normBasePath turns "kisiauthong", "/kisiauthong" or "/kisiauthong/" into "/kisiauthong/".
+func normBasePath(p string) string {
+	p = strings.Trim(strings.TrimSpace(p), "/")
+	if p == "" {
+		return "/"
+	}
+	return "/" + p + "/"
+}
+
+// withBasePath serves h under base: /kisiauthong/api/x reaches h as /api/x,
+// /kisiauthong redirects to /kisiauthong/, and /healthz stays at the root
+// for health checks. Anything else is not ours.
+func withBasePath(h http.Handler, base string) http.Handler {
+	if base == "/" {
+		return h
+	}
+	strip := http.StripPrefix(strings.TrimSuffix(base, "/"), h)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == strings.TrimSuffix(base, "/"):
+			http.Redirect(w, r, base, http.StatusMovedPermanently)
+		case strings.HasPrefix(r.URL.Path, base):
+			strip.ServeHTTP(w, r)
+		case r.URL.Path == "/healthz":
+			h.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
 }
 
 // healthcheck asks the server on addr for /healthz: 0 when it answers ok.
