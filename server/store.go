@@ -94,7 +94,95 @@ func openStore(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	if err := s.migrate(); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	return s, nil
+}
+
+// migrations are numbered by position and append-only: never edit or
+// reorder a released one. PRAGMA user_version records how many have run.
+var migrations = []func(tx *sql.Tx) error{
+	migrateExpenseIncomeToTransfers, // 1
+}
+
+func (s *Store) migrate() error {
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return err
+	}
+	if version >= len(migrations) {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i := version; i < len(migrations); i++ {
+		if err := migrations[i](tx); err != nil {
+			return fmt.Errorf("migration %d: %w", i+1, err)
+		}
+	}
+	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations))); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return s.reload()
+}
+
+// Migration 1 (ADR 0002): expense and income stop being stored types. An
+// expense becomes a transfer from its account to the anonymous external
+// account, an income a transfer from it; templates are converted the same way.
+func migrateExpenseIncomeToTransfers(tx *sql.Tx) error {
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO accounts(id,name,kind,currency,opening_balance_minor,allow_negative) VALUES(?,?,?,?,0,0)`, ExternalAccountID, "External", "external", ""); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE transactions SET type='transfer', from_account_id=account_id, to_account_id=?, account_id='' WHERE type='expense'`, ExternalAccountID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE transactions SET type='transfer', from_account_id=?, to_account_id=account_id, account_id='' WHERE type='income'`, ExternalAccountID); err != nil {
+		return err
+	}
+	rows, err := tx.Query(`SELECT id, template_json FROM transaction_templates`)
+	if err != nil {
+		return err
+	}
+	type tplRow struct{ id, js string }
+	var tpls []tplRow
+	for rows.Next() {
+		var r tplRow
+		if err := rows.Scan(&r.id, &r.js); err != nil {
+			rows.Close()
+			return err
+		}
+		tpls = append(tpls, r)
+	}
+	rows.Close()
+	for _, r := range tpls {
+		var b TemplateBody
+		if err := json.Unmarshal([]byte(r.js), &b); err != nil {
+			return err
+		}
+		switch b.Type {
+		case "expense":
+			b.Type, b.FromAccountID, b.ToAccountID, b.AccountID = "transfer", b.AccountID, ExternalAccountID, ""
+		case "income":
+			b.Type, b.FromAccountID, b.ToAccountID, b.AccountID = "transfer", ExternalAccountID, b.AccountID, ""
+		default:
+			continue
+		}
+		js, err := json.Marshal(b)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE transaction_templates SET template_json=? WHERE id=?`, string(js), r.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) reload() error {
@@ -279,8 +367,8 @@ func (s *Store) updateTransaction(t Transaction) error {
 	if err != nil {
 		return err
 	}
-	// refresh category links: replace with the single tagId link for expense/income, keep others for allocate/release
-	if t.Type == "expense" || t.Type == "income" {
+	// refresh category links: replace with the single tagId link for transfers, keep others for allocate/release
+	if t.Type == "transfer" {
 		if _, err := s.db.Exec(`DELETE FROM transaction_tags WHERE transaction_id=?`, t.ID); err != nil {
 			return err
 		}

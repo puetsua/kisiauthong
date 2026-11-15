@@ -129,14 +129,22 @@ func main() {
 			return
 		}
 		a.ID = parts[2]
-		if a.Name == "" || a.Currency == "" {
-			writeErr(w, 400, "name and currency required")
+		if a.ID == ExternalAccountID {
+			a.Kind = "external" // the anonymous external account can be renamed, not turned into an own account
+		}
+		if err := validateAccount(&a); err != nil {
+			writeErr(w, 400, err.Error())
 			return
 		}
 		store.mu.Lock()
 		defer store.mu.Unlock()
-		if store.data.accountByID(a.ID) == nil {
+		old := store.data.accountByID(a.ID)
+		if old == nil {
 			writeErr(w, 404, "account not found")
+			return
+		}
+		if old.IsExternal() != a.IsExternal() && store.data.accountHasTransactions(a.ID) {
+			writeErr(w, 400, "an account with transactions cannot switch between your own and external")
 			return
 		}
 		if err := store.updateAccount(a); err != nil {
@@ -187,13 +195,13 @@ func main() {
 		if !decode(w, r, &a) {
 			return
 		}
-		if a.Name == "" || a.Currency == "" {
-			writeErr(w, 400, "name and currency required")
-			return
-		}
 		a.ID = newID("acc")
 		if a.Kind == "" {
 			a.Kind = "bank"
+		}
+		if err := validateAccount(&a); err != nil {
+			writeErr(w, 400, err.Error())
+			return
 		}
 		store.mu.Lock()
 		defer store.mu.Unlock()
@@ -281,7 +289,7 @@ func main() {
 			// also honour a single category tag passed via tagId on expense/income
 			_ = tt
 		}
-		if t.TagID != "" && (t.Type == "expense" || t.Type == "income") {
+		if t.TagID != "" && t.Type == "transfer" {
 			tt := TransactionTag{TransactionID: t.ID, TagID: t.TagID}
 			if _, err := store.db.Exec(`INSERT OR IGNORE INTO transaction_tags(transaction_id,tag_id) VALUES(?,?)`, tt.TransactionID, tt.TagID); err == nil {
 				store.data.TransactionTags = append(store.data.TransactionTags, tt)
@@ -411,6 +419,10 @@ func main() {
 		}
 		store.mu.Lock()
 		defer store.mu.Unlock()
+		if err := store.data.normalizeTemplate(&tp.Template); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
 		if err := store.insertTemplate(tp); err != nil {
 			writeErr(w, 500, err.Error())
 			return
@@ -443,6 +455,10 @@ func main() {
 			}
 			if !found {
 				writeErr(w, 404, "template not found")
+				return
+			}
+			if err := store.data.normalizeTemplate(&tp.Template); err != nil {
+				writeErr(w, 400, err.Error())
 				return
 			}
 			if err := store.updateTemplate(tp); err != nil {

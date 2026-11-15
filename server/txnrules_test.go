@@ -20,6 +20,7 @@ func seededData(t *testing.T) *Data {
 
 func TestNormalizeTransactionRejects(t *testing.T) {
 	d := seededData(t)
+	d.Accounts = append(d.Accounts, Account{ID: "acc-shop", Name: "Shop", Kind: "external"})
 	cases := map[string]Transaction{
 		"unknown type":            {Type: "refund", AccountID: "acc-a"},
 		"expense without account": {Type: "expense"},
@@ -29,10 +30,12 @@ func TestNormalizeTransactionRejects(t *testing.T) {
 		"transfer missing to":     {Type: "transfer", FromAccountID: "acc-a"},
 		"transfer same account":   {Type: "transfer", FromAccountID: "acc-a", ToAccountID: "acc-a"},
 		"transfer across TWD/JPY": {Type: "transfer", FromAccountID: "acc-a", ToAccountID: "acc-jpy"},
+		"external to external":    {Type: "transfer", FromAccountID: ExternalAccountID, ToAccountID: "acc-shop"},
 		"allocate without box":    {Type: "allocate", AccountID: "acc-a"},
 		"allocate to a category":  {Type: "allocate", AccountID: "acc-a", TagID: "tag-food"},
+		"allocate on external":    {Type: "allocate", AccountID: ExternalAccountID, TagID: "tag-house"},
 		"release unknown account": {Type: "release", AccountID: "acc-nope", TagID: "tag-house"},
-		"bad state":               {Type: "expense", AccountID: "acc-b", State: "maybe"},
+		"bad state":               {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID, State: "maybe"},
 	}
 	for name, tx := range cases {
 		if err := d.normalizeTransaction(&tx); err == nil {
@@ -45,28 +48,57 @@ func TestNormalizeTransactionRejects(t *testing.T) {
 	}
 }
 
-func TestNormalizeTransactionClearsUnusedFields(t *testing.T) {
+func TestExpenseAndIncomeBecomeTransfers(t *testing.T) {
 	d := seededData(t)
-	exp := Transaction{Type: "expense", AccountID: "acc-jpy", FromAccountID: "acc-a", ToAccountID: "acc-b", Currency: "TWD", TagID: "tag-travel"}
+	d.Accounts = append(d.Accounts, Account{ID: "acc-shop", Name: "Shop", Kind: "external"})
+	exp := Transaction{Type: "expense", AccountID: "acc-jpy", Currency: "TWD", TagID: "tag-travel"}
 	if err := d.normalizeTransaction(&exp); err != nil {
 		t.Fatal(err)
 	}
-	if exp.FromAccountID != "" || exp.ToAccountID != "" || exp.Currency != "JPY" || exp.State != "posted" {
-		t.Errorf("expense not normalised: %+v", exp)
+	if exp.Type != "transfer" || exp.FromAccountID != "acc-jpy" || exp.ToAccountID != ExternalAccountID || exp.AccountID != "" || exp.Currency != "JPY" || exp.TagID != "tag-travel" {
+		t.Errorf("expense shorthand: %+v", exp)
 	}
-	tr := Transaction{Type: "transfer", AccountID: "acc-c", FromAccountID: "acc-a", ToAccountID: "acc-b", TagID: "tag-food", Currency: "JPY", State: "planned"}
-	if err := d.normalizeTransaction(&tr); err != nil {
-		t.Fatal(err)
+	named := Transaction{Type: "expense", AccountID: "acc-b", ToAccountID: "acc-shop"}
+	if err := d.normalizeTransaction(&named); err != nil || named.ToAccountID != "acc-shop" || named.Currency != "TWD" {
+		t.Errorf("expense to a named external account: %v %+v", err, named)
 	}
-	if tr.AccountID != "" || tr.TagID != "" || tr.Currency != "TWD" || tr.State != "planned" {
-		t.Errorf("transfer not normalised: %+v", tr)
+	inc := Transaction{Type: "income", AccountID: "acc-a", FromAccountID: "acc-b"} // from must be external; an own account is ignored
+	if err := d.normalizeTransaction(&inc); err != nil || inc.FromAccountID != ExternalAccountID || inc.ToAccountID != "acc-a" {
+		t.Errorf("income shorthand: %v %+v", err, inc)
+	}
+	// an external account has no currency: the own side decides, so JPY spending can go to the same external account
+	tr := Transaction{Type: "transfer", FromAccountID: "acc-jpy", ToAccountID: "acc-shop", Currency: "TWD"}
+	if err := d.normalizeTransaction(&tr); err != nil || tr.Currency != "JPY" {
+		t.Errorf("own JPY -> external: %v %+v", err, tr)
 	}
 	al := Transaction{Type: "allocate", AccountID: "acc-a", TagID: "tag-house", State: "planned"}
-	if err := d.normalizeTransaction(&al); err != nil {
-		t.Fatal(err)
+	if err := d.normalizeTransaction(&al); err != nil || al.State != "posted" || al.Currency != "TWD" {
+		t.Errorf("allocate: %v %+v", err, al)
 	}
-	if al.State != "posted" || al.Currency != "TWD" {
-		t.Errorf("allocate not normalised: %+v", al)
+}
+
+func TestNormalizeTemplate(t *testing.T) {
+	d := seededData(t)
+	b := TemplateBody{Type: "income", AccountID: "acc-a", AmountMinor: 100}
+	if err := d.normalizeTemplate(&b); err != nil || b.Type != "transfer" || b.FromAccountID != ExternalAccountID || b.ToAccountID != "acc-a" || b.Currency != "TWD" {
+		t.Errorf("income template: %v %+v", err, b)
+	}
+	bad := TemplateBody{Type: "allocate", AccountID: "acc-a", TagID: "tag-food"}
+	if err := d.normalizeTemplate(&bad); err == nil {
+		t.Errorf("allocate template to a category accepted")
+	}
+}
+
+func TestValidateAccount(t *testing.T) {
+	limit := int64(5)
+	ext := Account{Name: "Shop", Kind: "external", Currency: "TWD", OpeningBalanceMinor: 100, CreditLimitMinor: &limit}
+	if err := validateAccount(&ext); err != nil || ext.Currency != "" || ext.OpeningBalanceMinor != 0 || ext.CreditLimitMinor != nil {
+		t.Errorf("external account not cleared: %v %+v", err, ext)
+	}
+	for _, a := range []Account{{Kind: "bank", Currency: "TWD"}, {Name: "x", Kind: "bank"}} {
+		if err := validateAccount(&a); err == nil {
+			t.Errorf("accepted %+v", a)
+		}
 	}
 }
 
@@ -77,6 +109,9 @@ func TestSeedTransactionsFollowRules(t *testing.T) {
 		c := tx
 		if err := d.normalizeTransaction(&c); err != nil {
 			t.Errorf("%s: %v", tx.ID, err)
+		}
+		if tx.Type != "transfer" && tx.Type != "allocate" && tx.Type != "release" {
+			t.Errorf("%s: stored type %q", tx.ID, tx.Type)
 		}
 	}
 }

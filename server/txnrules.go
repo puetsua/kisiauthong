@@ -4,22 +4,45 @@ package main
 
 import "fmt"
 
-// normalizeTransaction checks which fields a transaction type uses, clears the
-// ones it does not, and sets the currency from the account(s), so a client
-// cannot store a combination the domain rules forbid:
-//   - expense / income: one account; tag optional but never a money box
-//   - transfer: two different accounts in the same currency (converting
-//     currency is spending in one and income in the other); no tag
-//   - allocate / release: one account and a money box (goal tag); always posted
-func (d *Data) normalizeTransaction(t *Transaction) error {
-	tagByID := func(id string) *Tag {
-		for i := range d.Tags {
-			if d.Tags[i].ID == id {
-				return &d.Tags[i]
-			}
+// ExternalAccountID is the anonymous external account: the other side of an
+// expense or income when the user does not name a payee or payer.
+const ExternalAccountID = "acc-external"
+
+// IsExternal reports whether money in this account is outside the user's books.
+func (a *Account) IsExternal() bool { return a.Kind == "external" }
+
+// IsSpending: money leaves the user's books (an own account pays an external one).
+func (d *Data) IsSpending(t Transaction) bool {
+	from, to := d.accountByID(t.FromAccountID), d.accountByID(t.ToAccountID)
+	return t.Type == "transfer" && from != nil && to != nil && !from.IsExternal() && to.IsExternal()
+}
+
+// IsIncome: money enters the user's books from an external account.
+func (d *Data) IsIncome(t Transaction) bool {
+	from, to := d.accountByID(t.FromAccountID), d.accountByID(t.ToAccountID)
+	return t.Type == "transfer" && from != nil && to != nil && from.IsExternal() && !to.IsExternal()
+}
+
+func (d *Data) tagByID(id string) *Tag {
+	for i := range d.Tags {
+		if d.Tags[i].ID == id {
+			return &d.Tags[i]
 		}
-		return nil
 	}
+	return nil
+}
+
+// normalizeTransaction stores only three types: transfer, allocate, release.
+// "expense" and "income" are accepted as shorthands and become transfers to
+// or from an external account (the anonymous one unless the client names
+// another external account). It clears unused fields, takes the currency
+// from the user's own account, and rejects combinations the rules forbid:
+//   - transfer: two different accounts, at least one of them the user's own;
+//     between two own accounts the currency must match (converting currency
+//     is spending in one and income in the other); tag optional, never a
+//     money box
+//   - allocate / release: one own account and a money box (goal tag); posted
+func (d *Data) normalizeTransaction(t *Transaction) error {
 	if t.State == "" {
 		t.State = "posted"
 	}
@@ -27,21 +50,30 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 		return fmt.Errorf("state must be posted or planned")
 	}
 	switch t.Type {
-	case "expense", "income", "allocate", "release":
+	case "expense", "income":
+		if err := d.expandShorthand(&t.Type, &t.AccountID, &t.FromAccountID, &t.ToAccountID); err != nil {
+			return err
+		}
+		return d.normalizeTransaction(t)
+	case "allocate", "release":
 		a := d.accountByID(t.AccountID)
-		if a == nil {
-			return fmt.Errorf("accountId must be an existing account")
+		if a == nil || a.IsExternal() {
+			return fmt.Errorf("accountId must be one of your own accounts")
+		}
+		tag := d.tagByID(t.TagID)
+		if tag == nil || tag.Kind != "goal" {
+			return fmt.Errorf("%s needs tagId of a money box (goal tag)", t.Type)
 		}
 		t.FromAccountID, t.ToAccountID = "", ""
 		t.Currency = a.Currency
-		if t.Type == "allocate" || t.Type == "release" {
-			tag := tagByID(t.TagID)
-			if tag == nil || tag.Kind != "goal" {
-				return fmt.Errorf("%s needs tagId of a money box (goal tag)", t.Type)
-			}
-			t.State = "posted" // a decision moves no cash, there is nothing to confirm
-		} else if t.TagID != "" {
-			tag := tagByID(t.TagID)
+		t.State = "posted" // a decision moves no cash, there is nothing to confirm
+	case "transfer":
+		cur, err := d.transferCurrency(t.FromAccountID, t.ToAccountID)
+		if err != nil {
+			return err
+		}
+		if t.TagID != "" {
+			tag := d.tagByID(t.TagID)
 			if tag == nil {
 				return fmt.Errorf("tagId must be an existing tag")
 			}
@@ -49,21 +81,126 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 				return fmt.Errorf("a money box tag is only for allocate/release")
 			}
 		}
-	case "transfer":
-		from, to := d.accountByID(t.FromAccountID), d.accountByID(t.ToAccountID)
-		if from == nil || to == nil {
-			return fmt.Errorf("transfer needs existing fromAccountId and toAccountId")
-		}
-		if from.ID == to.ID {
-			return fmt.Errorf("transfer needs two different accounts")
-		}
-		if from.Currency != to.Currency {
-			return fmt.Errorf("transfer accounts must share a currency; record spending in %s and income in %s instead", from.Currency, to.Currency)
-		}
-		t.AccountID, t.TagID = "", ""
-		t.Currency = from.Currency
+		t.AccountID = ""
+		t.Currency = cur
 	default:
-		return fmt.Errorf("type must be expense, income, transfer, allocate or release")
+		return fmt.Errorf("type must be transfer, allocate or release (expense and income are accepted as shorthands)")
+	}
+	return nil
+}
+
+// expandShorthand turns expense/income into a transfer with an external side.
+// accountId (or the own side given as from/to) is the user's account; the
+// other side defaults to the anonymous external account.
+func (d *Data) expandShorthand(typ, accountID, fromID, toID *string) error {
+	isExt := func(id string) bool { a := d.accountByID(id); return a != nil && a.IsExternal() }
+	if *typ == "expense" {
+		own := *accountID
+		if own == "" {
+			own = *fromID
+		}
+		ext := ExternalAccountID
+		if *toID != "" && isExt(*toID) {
+			ext = *toID
+		}
+		*fromID, *toID = own, ext
+	} else {
+		own := *accountID
+		if own == "" {
+			own = *toID
+		}
+		ext := ExternalAccountID
+		if *fromID != "" && isExt(*fromID) {
+			ext = *fromID
+		}
+		*fromID, *toID = ext, own
+	}
+	*typ, *accountID = "transfer", ""
+	return nil
+}
+
+// transferCurrency validates the two sides of a transfer and returns the
+// currency it is recorded in (the user's own account decides).
+func (d *Data) transferCurrency(fromID, toID string) (string, error) {
+	from, to := d.accountByID(fromID), d.accountByID(toID)
+	if from == nil || to == nil {
+		return "", fmt.Errorf("transfer needs existing fromAccountId and toAccountId")
+	}
+	if from.ID == to.ID {
+		return "", fmt.Errorf("transfer needs two different accounts")
+	}
+	switch {
+	case from.IsExternal() && to.IsExternal():
+		return "", fmt.Errorf("a transfer needs at least one of your own accounts")
+	case from.IsExternal():
+		return to.Currency, nil
+	case to.IsExternal():
+		return from.Currency, nil
+	}
+	if from.Currency != to.Currency {
+		return "", fmt.Errorf("transfer accounts must share a currency; record spending in %s and income in %s instead", from.Currency, to.Currency)
+	}
+	return from.Currency, nil
+}
+
+// normalizeTemplate applies the same rules to what a template generates.
+func (d *Data) normalizeTemplate(b *TemplateBody) error {
+	switch b.Type {
+	case "expense", "income":
+		if err := d.expandShorthand(&b.Type, &b.AccountID, &b.FromAccountID, &b.ToAccountID); err != nil {
+			return err
+		}
+		return d.normalizeTemplate(b)
+	case "allocate":
+		a := d.accountByID(b.AccountID)
+		if a == nil || a.IsExternal() {
+			return fmt.Errorf("template accountId must be one of your own accounts")
+		}
+		if tag := d.tagByID(b.TagID); tag == nil || tag.Kind != "goal" {
+			return fmt.Errorf("an allocate template needs a money box (goal tag)")
+		}
+		b.FromAccountID, b.ToAccountID, b.ExpectedRangeMinor = "", "", nil
+		b.Currency = a.Currency
+	case "transfer":
+		cur, err := d.transferCurrency(b.FromAccountID, b.ToAccountID)
+		if err != nil {
+			return err
+		}
+		if b.TagID != "" {
+			if tag := d.tagByID(b.TagID); tag == nil || tag.Kind == "goal" {
+				return fmt.Errorf("template tagId must be an existing non-money-box tag")
+			}
+		}
+		b.AccountID = ""
+		b.Currency = cur
+	default:
+		return fmt.Errorf("a template generates a transfer or an allocate (expense and income are accepted as shorthands)")
+	}
+	return nil
+}
+
+func (d *Data) accountHasTransactions(id string) bool {
+	for _, t := range d.Transactions {
+		if t.AccountID == id || t.FromAccountID == id || t.ToAccountID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// validateAccount checks kind-specific fields. External accounts have no
+// currency or balance of their own; their transfers take the other side's.
+func validateAccount(a *Account) error {
+	if a.Name == "" {
+		return fmt.Errorf("name required")
+	}
+	if a.IsExternal() {
+		a.Currency, a.OpeningBalanceMinor, a.AllowNegative = "", 0, false
+		a.CreditLimitMinor, a.StatementCloseDay, a.PaymentDueDay = nil, nil, nil
+		return nil
+	}
+	if a.Currency == "" {
+		return fmt.Errorf("currency required")
 	}
 	return nil
 }

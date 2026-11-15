@@ -21,32 +21,23 @@ func (d *Data) accountByID(id string) *Account {
 	return nil
 }
 
-// Balance ignores planned and allocate/release transactions.
+// Balance ignores planned and allocate/release transactions. Every money
+// movement is a transfer; spending and income are transfers to / from an
+// external account.
 func (d *Data) Balance(accountID string) int64 {
 	var bal int64
 	if a := d.accountByID(accountID); a != nil {
 		bal = a.OpeningBalanceMinor
 	}
 	for _, t := range d.Transactions {
-		if t.State != "posted" {
+		if t.State != "posted" || t.Type != "transfer" {
 			continue
 		}
-		switch t.Type {
-		case "income":
-			if t.AccountID == accountID {
-				bal += t.AmountMinor
-			}
-		case "expense":
-			if t.AccountID == accountID {
-				bal -= t.AmountMinor
-			}
-		case "transfer":
-			if t.FromAccountID == accountID {
-				bal -= t.AmountMinor
-			}
-			if t.ToAccountID == accountID {
-				bal += t.AmountMinor
-			}
+		if t.FromAccountID == accountID {
+			bal -= t.AmountMinor
+		}
+		if t.ToAccountID == accountID {
+			bal += t.AmountMinor
 		}
 	}
 	return bal
@@ -100,7 +91,7 @@ func (d *Data) TagSaved(tagID string) int64 {
 	return total
 }
 
-// BudgetSpent sums posted expenses linked to the tag in the month of ref (YYYY-MM-DD).
+// BudgetSpent sums posted spending (own account -> external) linked to the tag in the month of ref (YYYY-MM-DD).
 func (d *Data) BudgetSpent(tagID, ref string) int64 {
 	month := ref[:7]
 	linked := map[string]bool{}
@@ -111,7 +102,7 @@ func (d *Data) BudgetSpent(tagID, ref string) int64 {
 	}
 	var total int64
 	for _, t := range d.Transactions {
-		if t.State == "posted" && t.Type == "expense" && linked[t.ID] && len(t.Date) >= 7 && t.Date[:7] == month {
+		if t.State == "posted" && d.IsSpending(t) && linked[t.ID] && len(t.Date) >= 7 && t.Date[:7] == month {
 			total += t.AmountMinor
 		}
 	}
@@ -146,7 +137,7 @@ func (d *Data) SpendingByCategory(ref string) []TagSpend {
 	type key struct{ tag, cur string }
 	sums := map[key]int64{}
 	for _, t := range d.Transactions {
-		if t.State != "posted" || t.Type != "expense" || len(t.Date) < 7 || t.Date[:7] != month {
+		if t.State != "posted" || !d.IsSpending(t) || len(t.Date) < 7 || t.Date[:7] != month {
 			continue
 		}
 		tags := cats[t.ID]
@@ -277,6 +268,12 @@ func (s *Store) GenerateDue(today string) (int, error) {
 				return created, err
 			}
 			s.data.Transactions = append(s.data.Transactions, t)
+			if t.Type == "transfer" && t.TagID != "" { // category link, as for hand-entered transactions
+				if _, err := s.db.Exec(`INSERT OR IGNORE INTO transaction_tags(transaction_id,tag_id) VALUES(?,?)`, t.ID, t.TagID); err != nil {
+					return created, err
+				}
+				s.data.TransactionTags = append(s.data.TransactionTags, TransactionTag{TransactionID: t.ID, TagID: t.TagID})
+			}
 			created++
 		}
 	}

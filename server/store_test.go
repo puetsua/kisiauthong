@@ -121,6 +121,9 @@ func TestSeedRespectsBalanceInvariants(t *testing.T) {
 		t.Fatalf("seed should hold more than one page of transactions, got %d", len(s.data.Transactions))
 	}
 	for _, a := range s.data.Accounts {
+		if a.IsExternal() {
+			continue // outside the books: no balance of its own
+		}
 		bal, alloc := s.data.Balance(a.ID), s.data.AllocatedForAccount(a.ID)
 		if !a.AllowNegative && bal < 0 {
 			t.Errorf("%s balance %d < 0", a.ID, bal)
@@ -137,5 +140,53 @@ func TestSeedRespectsBalanceInvariants(t *testing.T) {
 		if !found {
 			t.Errorf("tag link to unknown transaction %s", tt.TransactionID)
 		}
+	}
+}
+
+// Migration 1 converts a database written before ADR 0002 in place.
+func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	s, err := openStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// rewind to a pre-migration database: old-style rows and templates, version 0
+	mustExec := func(q string, args ...interface{}) {
+		if _, err := s.db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	mustExec(`DELETE FROM accounts WHERE id=?`, ExternalAccountID)
+	mustExec(`INSERT INTO transactions(id,account_id,type,state,amount_minor,currency,date,note) VALUES('old-exp','acc-b','expense','posted',500,'TWD','2026-11-01','Lunch'),('old-inc','acc-a','income','posted',900,'TWD','2026-11-02','Pay')`)
+	mustExec(`UPDATE transaction_templates SET template_json='{"accountId":"acc-a","type":"income","amountMinor":8000000,"currency":"TWD","note":"Salary"}' WHERE id='tpl-salary'`)
+	mustExec(`PRAGMA user_version = 0`)
+	s.db.Close()
+
+	s, err = openStore(path) // runs the migration
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.db.Close()
+	if a := s.data.accountByID(ExternalAccountID); a == nil || !a.IsExternal() {
+		t.Fatalf("anonymous external account missing after migration")
+	}
+	byID := map[string]Transaction{}
+	for _, tx := range s.data.Transactions {
+		byID[tx.ID] = tx
+	}
+	if e := byID["old-exp"]; e.Type != "transfer" || e.FromAccountID != "acc-b" || e.ToAccountID != ExternalAccountID || e.AccountID != "" {
+		t.Errorf("expense not converted: %+v", e)
+	}
+	if i := byID["old-inc"]; i.Type != "transfer" || i.FromAccountID != ExternalAccountID || i.ToAccountID != "acc-a" {
+		t.Errorf("income not converted: %+v", i)
+	}
+	for _, tp := range s.data.TransactionTemplates {
+		if tp.ID == "tpl-salary" && (tp.Template.Type != "transfer" || tp.Template.FromAccountID != ExternalAccountID || tp.Template.ToAccountID != "acc-a") {
+			t.Errorf("template not converted: %+v", tp.Template)
+		}
+	}
+	var v int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil || v != len(migrations) {
+		t.Errorf("user_version = %d, %v", v, err)
 	}
 }

@@ -36,7 +36,9 @@ const I18N = {
     "No allocations yet": "還沒有撥入",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型",
-    "Clear": "清除", "Today": "今天", "Notifications": "通知", "Notifications ({n})": "通知（{n}）", "Dismiss": "清除", "Dismiss all": "全部清除",
+    "Clear": "清除", "Today": "今天", "External": "外部", "External accounts": "外部帳戶", "+ New external account": "＋ 新增外部帳戶", "New external account": "新增外部帳戶",
+    "Paid to": "付給", "Received from": "收自", "Employer": "雇主",
+    "Places outside your books, such as an employer or a shop. They have no balance: money moved to one is spending, money from one is income. Expenses and income use “External” unless you pick another.": "帳本以外的對象，例如雇主或商店。外部帳戶沒有餘額：轉給外部帳戶就是支出，從外部帳戶轉入就是收入。支出和收入預設使用「外部」，也可以改選其他外部帳戶。", "Notifications": "通知", "Notifications ({n})": "通知（{n}）", "Dismiss": "清除", "Dismiss all": "全部清除",
     "You're all caught up.": "沒有新通知。", "Open in Transactions": "到交易頁查看", "Waiting for confirmation · {date} · {amount}": "等待確認 · {date} · {amount}",
     "{name} is over budget": "{name}超出預算", "{spent} of {limit} spent this month": "本月已花費 {spent}／{limit}",
     "{name} has used {pct}% of its budget": "{name}已用掉預算的 {pct}%", "{name} is at {pct}% of its credit limit": "{name}已用到信用額度的 {pct}%",
