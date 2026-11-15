@@ -320,8 +320,8 @@ func (g *GeneralSettings) validate() error {
 	return nil
 }
 
-// loadSettings reads stored settings over the defaults. Caller holds store.mu.
-func (s *Store) loadSettings() (Settings, error) {
+// loadSettings reads the user's stored settings over the defaults. Caller holds store.mu.
+func (s *Book) loadSettings() (Settings, error) {
 	out := defaultSettings()
 	if v, ok, err := s.getSetting("dashboard"); err != nil {
 		return out, err
@@ -360,7 +360,7 @@ func (s *Store) loadSettings() (Settings, error) {
 	return out, nil
 }
 
-func (s *Store) saveJSONSetting(key string, v interface{}) error {
+func (s *Book) saveJSONSetting(key string, v interface{}) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -371,9 +371,7 @@ func (s *Store) saveJSONSetting(key string, v interface{}) error {
 // handleSettings serves GET/PUT /api/settings. PUT accepts any subset of
 // {dashboard, general}; omitted sections are left unchanged, and fields
 // omitted inside general keep their stored value.
-func handleSettings(w http.ResponseWriter, r *http.Request) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
+func handleSettings(w http.ResponseWriter, r *http.Request, b *Book) {
 	switch r.Method {
 	case http.MethodGet:
 	case http.MethodPut:
@@ -387,7 +385,7 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		var general *GeneralSettings
 		if len(body.General) > 0 && string(body.General) != "null" {
-			cur, err := store.loadSettings()
+			cur, err := b.loadSettings()
 			if err != nil {
 				writeErr(w, 500, err.Error())
 				return
@@ -421,19 +419,19 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if body.Dashboard != nil {
-			if err := store.saveJSONSetting("dashboard", body.Dashboard); err != nil {
+			if err := b.saveJSONSetting("dashboard", body.Dashboard); err != nil {
 				writeErr(w, 500, err.Error())
 				return
 			}
 		}
 		if general != nil {
-			if err := store.saveJSONSetting("general", general); err != nil {
+			if err := b.saveJSONSetting("general", general); err != nil {
 				writeErr(w, 500, err.Error())
 				return
 			}
 		}
 		if body.Notifications != nil {
-			if err := store.saveJSONSetting("notifications", body.Notifications); err != nil {
+			if err := b.saveJSONSetting("notifications", body.Notifications); err != nil {
 				writeErr(w, 500, err.Error())
 				return
 			}
@@ -442,7 +440,7 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 405, "GET or PUT only")
 		return
 	}
-	out, err := store.loadSettings()
+	out, err := b.loadSettings()
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -452,14 +450,12 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 
 // handleExport serves GET /api/export: the whole book as plain JSON (the
 // seed/import/export format), offered as a file download.
-func handleExport(w http.ResponseWriter, r *http.Request) {
+func handleExport(w http.ResponseWriter, r *http.Request, b *Book) {
 	if r.Method != http.MethodGet {
 		writeErr(w, 405, "GET only")
 		return
 	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kisiauthong-export-%s.json"`, time.Now().Format("2006-01-02")))
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, store.data)
+	writeJSON(w, 200, b.data)
 }

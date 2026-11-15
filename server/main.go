@@ -16,6 +16,7 @@ var store *Store
 
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
@@ -24,8 +25,7 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 }
 func newID(prefix string) string { return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano()) }
 
-func stateView() map[string]interface{} {
-	d := store.data
+func stateView(d *Data) map[string]interface{} {
 	today := time.Now().Format("2006-01-02")
 	accounts := []map[string]interface{}{}
 	for _, a := range d.Accounts {
@@ -83,9 +83,17 @@ func stateView() map[string]interface{} {
 			"id": tp.ID, "name": tp.Name, "enabled": tp.Enabled, "template": tp.Template, "schedule": tp.Schedule, "nextDue": next,
 		})
 	}
+	txns := d.Transactions
+	if txns == nil {
+		txns = []Transaction{}
+	}
+	links := d.TransactionTags
+	if links == nil {
+		links = []TransactionTag{}
+	}
 	return map[string]interface{}{
-		"accounts": accounts, "transactions": d.Transactions, "tags": tags,
-		"transactionTags": d.TransactionTags, "transactionTemplates": templates, "today": today,
+		"accounts": accounts, "transactions": txns, "tags": tags,
+		"transactionTags": links, "transactionTemplates": templates, "today": today,
 		"spendingThisMonth": d.SpendingByCategory(today),
 	}
 }
@@ -96,6 +104,18 @@ func decode(w http.ResponseWriter, r *http.Request, v interface{}) bool {
 		return false
 	}
 	return true
+}
+
+// pathID is the {id} of /api/<things>/{id}[/<action>]; action is "" when absent.
+func pathID(r *http.Request) (id, action string, ok bool) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	switch len(parts) {
+	case 3:
+		return parts[2], "", true
+	case 4:
+		return parts[2], parts[3], true
+	}
+	return "", "", false
 }
 
 func main() {
@@ -116,396 +136,6 @@ func main() {
 		log.Fatalf("open store: %v", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
-	mux.HandleFunc("/api/settings", handleSettings)
-	mux.HandleFunc("/api/export", handleExport)
-	mux.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		writeJSON(w, 200, stateView())
-	})
-	mux.HandleFunc("/api/accounts/", func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if len(parts) != 3 || r.Method != http.MethodPut {
-			writeErr(w, 404, "not found")
-			return
-		}
-		var a Account
-		if !decode(w, r, &a) {
-			return
-		}
-		a.ID = parts[2]
-		if a.ID == ExternalAccountID {
-			a.Kind = "external" // the anonymous external account can be renamed, not turned into an own account
-		}
-		if err := validateAccount(&a); err != nil {
-			writeErr(w, 400, err.Error())
-			return
-		}
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		old := store.data.accountByID(a.ID)
-		if old == nil {
-			writeErr(w, 404, "account not found")
-			return
-		}
-		if old.IsExternal() != a.IsExternal() && store.data.accountHasTransactions(a.ID) {
-			writeErr(w, 400, "an account with transactions cannot switch between your own and external")
-			return
-		}
-		if err := store.updateAccount(a); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		writeJSON(w, 200, a)
-	})
-	mux.HandleFunc("/api/tags/", func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if len(parts) != 3 || r.Method != http.MethodPut {
-			writeErr(w, 404, "not found")
-			return
-		}
-		var t Tag
-		if !decode(w, r, &t) {
-			return
-		}
-		t.ID = parts[2]
-		t.Name = strings.TrimSpace(t.Name)
-		if t.Name == "" {
-			writeErr(w, 400, "name required")
-			return
-		}
-		if err := normalizeTag(&t); err != nil {
-			writeErr(w, 400, err.Error())
-			return
-		}
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		old := store.data.tagByID(t.ID)
-		if old == nil {
-			writeErr(w, 404, "tag not found")
-			return
-		}
-		if old.Kind != t.Kind && store.data.tagInUse(t.ID) {
-			writeErr(w, 400, "this tag is used by transactions, so it cannot switch between category and money box")
-			return
-		}
-		if err := store.updateTag(t); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		writeJSON(w, 200, t)
-	})
-	mux.HandleFunc("/api/accounts", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeErr(w, 405, "POST only")
-			return
-		}
-		var a Account
-		if !decode(w, r, &a) {
-			return
-		}
-		a.ID = newID("acc")
-		if err := validateAccount(&a); err != nil {
-			writeErr(w, 400, err.Error())
-			return
-		}
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		if err := store.insertAccount(a); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		store.data.Accounts = append(store.data.Accounts, a)
-		writeJSON(w, 201, a)
-	})
-	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeErr(w, 405, "POST only")
-			return
-		}
-		var t Tag
-		if !decode(w, r, &t) {
-			return
-		}
-		if t.Name == "" {
-			writeErr(w, 400, "name required")
-			return
-		}
-		t.ID = newID("tag")
-		t.Name = strings.TrimSpace(t.Name)
-		if err := normalizeTag(&t); err != nil {
-			writeErr(w, 400, err.Error())
-			return
-		}
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		if err := store.insertTag(t); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		store.data.Tags = append(store.data.Tags, t)
-		writeJSON(w, 201, t)
-	})
-	mux.HandleFunc("/api/transactions", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeErr(w, 405, "POST only")
-			return
-		}
-		var body struct {
-			Transaction
-			TagIDs []string `json:"tagIds"`
-		}
-		if !decode(w, r, &body) {
-			return
-		}
-		t := body.Transaction
-		if t.Date == "" {
-			t.Date = time.Now().Format("2006-01-02")
-		}
-		if t.State == "" {
-			t.State = "posted"
-		}
-		if t.Type == "" {
-			writeErr(w, 400, "type required")
-			return
-		}
-		t.ID = newID("txn")
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		if err := store.data.normalizeTransaction(&t); err != nil {
-			writeErr(w, 400, err.Error())
-			return
-		}
-		if err := store.insertTransaction(t); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		store.data.Transactions = append(store.data.Transactions, t)
-		for _, tagID := range body.TagIDs {
-			tt := TransactionTag{TransactionID: t.ID, TagID: tagID}
-			if _, err := store.db.Exec(`INSERT OR IGNORE INTO transaction_tags(transaction_id,tag_id) VALUES(?,?)`, tt.TransactionID, tt.TagID); err == nil {
-				store.data.TransactionTags = append(store.data.TransactionTags, tt)
-			}
-			// also honour a single category tag passed via tagId on expense/income
-			_ = tt
-		}
-		if t.TagID != "" && t.Type == "transfer" {
-			tt := TransactionTag{TransactionID: t.ID, TagID: t.TagID}
-			if _, err := store.db.Exec(`INSERT OR IGNORE INTO transaction_tags(transaction_id,tag_id) VALUES(?,?)`, tt.TransactionID, tt.TagID); err == nil {
-				store.data.TransactionTags = append(store.data.TransactionTags, tt)
-			}
-		}
-		writeJSON(w, 201, t)
-	})
-	mux.HandleFunc("/api/transactions/", func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if r.Method == http.MethodPut && len(parts) == 3 {
-			var body struct {
-				Transaction
-				TagIDs []string `json:"tagIds"`
-			}
-			if !decode(w, r, &body) {
-				return
-			}
-			t := body.Transaction
-			t.ID = parts[2]
-			if t.Type == "" || t.Date == "" {
-				writeErr(w, 400, "type and date required")
-				return
-			}
-			store.mu.Lock()
-			defer store.mu.Unlock()
-			exists := false
-			for _, x := range store.data.Transactions {
-				if x.ID == t.ID {
-					exists = true
-					// preserve generator identity unless explicitly supplied
-					if t.TransactionTemplateID == "" {
-						t.TransactionTemplateID = x.TransactionTemplateID
-						t.OccurrenceDate = x.OccurrenceDate
-					}
-				}
-			}
-			if !exists {
-				writeErr(w, 404, "transaction not found")
-				return
-			}
-			if err := store.data.normalizeTransaction(&t); err != nil {
-				writeErr(w, 400, err.Error())
-				return
-			}
-			if err := store.updateTransaction(t); err != nil {
-				writeErr(w, 500, err.Error())
-				return
-			}
-			writeJSON(w, 200, t)
-			return
-		}
-		if r.Method == http.MethodDelete && len(parts) == 3 {
-			store.mu.Lock()
-			defer store.mu.Unlock()
-			if _, err := store.db.Exec(`DELETE FROM transaction_tags WHERE transaction_id=?`, parts[2]); err != nil {
-				writeErr(w, 500, err.Error())
-				return
-			}
-			res, err := store.db.Exec(`DELETE FROM transactions WHERE id=?`, parts[2])
-			if err != nil {
-				writeErr(w, 500, err.Error())
-				return
-			}
-			if n, _ := res.RowsAffected(); n == 0 {
-				writeErr(w, 404, "transaction not found")
-				return
-			}
-			if err := store.reload(); err != nil {
-				writeErr(w, 500, err.Error())
-				return
-			}
-			writeJSON(w, 200, map[string]string{"deleted": parts[2]})
-			return
-		}
-		if len(parts) != 4 || parts[3] != "post" || r.Method != http.MethodPost {
-			writeErr(w, 404, "not found")
-			return
-		}
-		id := parts[2]
-		var body struct {
-			AmountMinor *int64 `json:"amountMinor"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		for i := range store.data.Transactions {
-			if store.data.Transactions[i].ID == id {
-				if body.AmountMinor != nil && *body.AmountMinor > 0 {
-					store.data.Transactions[i].AmountMinor = *body.AmountMinor
-				}
-				store.data.Transactions[i].State = "posted"
-				_, err := store.db.Exec(`UPDATE transactions SET state='posted', amount_minor=? WHERE id=?`, store.data.Transactions[i].AmountMinor, id)
-				if err != nil {
-					writeErr(w, 500, err.Error())
-					return
-				}
-				writeJSON(w, 200, store.data.Transactions[i])
-				return
-			}
-		}
-		writeErr(w, 404, "transaction not found")
-	})
-	mux.HandleFunc("/api/templates", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeErr(w, 405, "POST only")
-			return
-		}
-		var tp TransactionTemplate
-		if !decode(w, r, &tp) {
-			return
-		}
-		if tp.Name == "" || tp.Template.AmountMinor <= 0 {
-			writeErr(w, 400, "name and template amount required")
-			return
-		}
-		tp.ID = newID("tpl")
-		tp.Enabled = true
-		if tp.Schedule.Interval < 1 {
-			tp.Schedule.Interval = 1
-		}
-		if tp.Schedule.Frequency == "" {
-			tp.Schedule.Frequency = "monthly"
-		}
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		if err := store.data.normalizeTemplate(&tp.Template); err != nil {
-			writeErr(w, 400, err.Error())
-			return
-		}
-		if err := store.insertTemplate(tp); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		store.data.TransactionTemplates = append(store.data.TransactionTemplates, tp)
-		writeJSON(w, 201, tp)
-	})
-	mux.HandleFunc("/api/templates/", func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if r.Method == http.MethodPut && len(parts) == 3 {
-			var tp TransactionTemplate
-			if !decode(w, r, &tp) {
-				return
-			}
-			tp.ID = parts[2]
-			if tp.Name == "" || tp.Template.AmountMinor <= 0 {
-				writeErr(w, 400, "name and template amount required")
-				return
-			}
-			if tp.Schedule.Interval < 1 {
-				tp.Schedule.Interval = 1
-			}
-			store.mu.Lock()
-			defer store.mu.Unlock()
-			found := false
-			for _, x := range store.data.TransactionTemplates {
-				if x.ID == tp.ID {
-					found = true
-				}
-			}
-			if !found {
-				writeErr(w, 404, "template not found")
-				return
-			}
-			if err := store.data.normalizeTemplate(&tp.Template); err != nil {
-				writeErr(w, 400, err.Error())
-				return
-			}
-			if err := store.updateTemplate(tp); err != nil {
-				writeErr(w, 500, err.Error())
-				return
-			}
-			writeJSON(w, 200, tp)
-			return
-		}
-		if len(parts) != 4 || parts[3] != "toggle" || r.Method != http.MethodPost {
-			writeErr(w, 404, "not found")
-			return
-		}
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		for i := range store.data.TransactionTemplates {
-			if store.data.TransactionTemplates[i].ID == parts[2] {
-				store.data.TransactionTemplates[i].Enabled = !store.data.TransactionTemplates[i].Enabled
-				_, err := store.db.Exec(`UPDATE transaction_templates SET enabled=? WHERE id=?`, b2i(store.data.TransactionTemplates[i].Enabled), parts[2])
-				if err != nil {
-					writeErr(w, 500, err.Error())
-					return
-				}
-				writeJSON(w, 200, store.data.TransactionTemplates[i])
-				return
-			}
-		}
-		writeErr(w, 404, "template not found")
-	})
-	mux.HandleFunc("/api/generate", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeErr(w, 405, "POST only")
-			return
-		}
-		var body struct {
-			Date string `json:"date"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body.Date == "" {
-			body.Date = time.Now().Format("2006-01-02")
-		}
-		n, err := store.GenerateDue(body.Date)
-		if err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		writeJSON(w, 200, map[string]interface{}{"created": n})
-	})
-
 	webDir := os.Getenv("KISIAUTHONG_WEB")
 	if webDir == "" {
 		for _, c := range []string{"../web", "web"} {
@@ -515,16 +145,406 @@ func main() {
 			}
 		}
 	}
-	mux.Handle("/", http.FileServer(http.Dir(webDir)))
-
 	addr := listenAddr(os.Getenv("KISIAUTHONG_HOST"), os.Getenv("PORT"))
 	log.Printf("kisiauthong listening on http://%s (db %s, web %s)", addr, dbPath, webDir)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	log.Fatal(http.ListenAndServe(addr, newMux(webDir)))
 }
 
-// listenAddr defaults to loopback only: there is no login yet, so the books
-// must not be reachable from the network unless the host opts in with
-// KISIAUTHONG_HOST (e.g. 0.0.0.0 in a container or for LAN access).
+// newMux wires every route; tests use it too.
+func newMux(webDir string) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
+
+	// sign-in and the signed-in user's own account (ADR 0007)
+	mux.HandleFunc("/api/auth/status", handleAuthStatus)
+	mux.HandleFunc("/api/auth/setup", handleSetup)
+	mux.HandleFunc("/api/auth/login", handleLogin)
+	mux.HandleFunc("/api/auth/logout", handleLogout)
+	mux.HandleFunc("/api/me", sessionOnly(handleMe))
+	mux.HandleFunc("/api/me/password", sessionOnly(handleChangePassword))
+
+	// the books: every handler sees only the caller's own data
+	mux.HandleFunc("/api/settings", apiRW(ScopeSettings, handleSettings))
+	mux.HandleFunc("/api/export", api(ScopeRead, handleExport))
+	mux.HandleFunc("/api/state", api(ScopeRead, func(w http.ResponseWriter, r *http.Request, b *Book) {
+		writeJSON(w, 200, stateView(b.data))
+	}))
+	mux.HandleFunc("/api/accounts", api(ScopeAccounts, handleCreateAccount))
+	mux.HandleFunc("/api/accounts/", api(ScopeAccounts, handleUpdateAccount))
+	mux.HandleFunc("/api/tags", api(ScopeTags, handleCreateTag))
+	mux.HandleFunc("/api/tags/", api(ScopeTags, handleUpdateTag))
+	mux.HandleFunc("/api/transactions", api(ScopeTransactions, handleCreateTransaction))
+	mux.HandleFunc("/api/transactions/", api(ScopeTransactions, handleTransaction))
+	mux.HandleFunc("/api/templates", api(ScopeTemplates, handleCreateTemplate))
+	mux.HandleFunc("/api/templates/", api(ScopeTemplates, handleTemplate))
+	mux.HandleFunc("/api/generate", api(ScopeTemplates, handleGenerate))
+
+	if webDir != "" {
+		mux.Handle("/", http.FileServer(http.Dir(webDir)))
+	}
+	return mux
+}
+
+func handleCreateAccount(w http.ResponseWriter, r *http.Request, b *Book) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "POST only")
+		return
+	}
+	var a Account
+	if !decode(w, r, &a) {
+		return
+	}
+	a.ID = newID("acc")
+	if err := validateAccount(&a); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if err := b.insertAccount(a); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	if err := b.reload(); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 201, a)
+}
+
+func handleUpdateAccount(w http.ResponseWriter, r *http.Request, b *Book) {
+	id, action, ok := pathID(r)
+	if !ok || action != "" || r.Method != http.MethodPut {
+		writeErr(w, 404, "not found")
+		return
+	}
+	var a Account
+	if !decode(w, r, &a) {
+		return
+	}
+	a.ID = id
+	if a.ID == ExternalAccountID {
+		a.Kind = "external" // the anonymous external account can be renamed, not turned into an own account
+	}
+	if err := validateAccount(&a); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	old := b.data.accountByID(a.ID)
+	if old == nil {
+		writeErr(w, 404, "account not found")
+		return
+	}
+	if old.IsExternal() != a.IsExternal() && b.data.accountHasTransactions(a.ID) {
+		writeErr(w, 400, "an account with transactions cannot switch between your own and external")
+		return
+	}
+	if err := b.updateAccount(a); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, a)
+}
+
+func handleCreateTag(w http.ResponseWriter, r *http.Request, b *Book) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "POST only")
+		return
+	}
+	var t Tag
+	if !decode(w, r, &t) {
+		return
+	}
+	t.ID = newID("tag")
+	t.Name = strings.TrimSpace(t.Name)
+	if t.Name == "" {
+		writeErr(w, 400, "name required")
+		return
+	}
+	if err := normalizeTag(&t); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if err := b.insertTag(t); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	if err := b.reload(); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 201, t)
+}
+
+func handleUpdateTag(w http.ResponseWriter, r *http.Request, b *Book) {
+	id, action, ok := pathID(r)
+	if !ok || action != "" || r.Method != http.MethodPut {
+		writeErr(w, 404, "not found")
+		return
+	}
+	var t Tag
+	if !decode(w, r, &t) {
+		return
+	}
+	t.ID = id
+	t.Name = strings.TrimSpace(t.Name)
+	if t.Name == "" {
+		writeErr(w, 400, "name required")
+		return
+	}
+	if err := normalizeTag(&t); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	old := b.data.tagByID(t.ID)
+	if old == nil {
+		writeErr(w, 404, "tag not found")
+		return
+	}
+	if old.Kind != t.Kind && b.data.tagInUse(t.ID) {
+		writeErr(w, 400, "this tag is used by transactions, so it cannot switch between category and money box")
+		return
+	}
+	if err := b.updateTag(t); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, t)
+}
+
+func handleCreateTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "POST only")
+		return
+	}
+	var body struct {
+		Transaction
+		TagIDs []string `json:"tagIds"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	t, err := b.addTransaction(body.Transaction, body.TagIDs)
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 201, t)
+}
+
+// addTransaction validates and stores a new transaction with its tag links.
+func (b *Book) addTransaction(t Transaction, tagIDs []string) (Transaction, error) {
+	if t.Date == "" {
+		t.Date = time.Now().Format("2006-01-02")
+	}
+	if t.State == "" {
+		t.State = "posted"
+	}
+	if t.Type == "" {
+		return t, fmt.Errorf("type required")
+	}
+	t.ID = newID("txn")
+	if err := b.data.normalizeTransaction(&t); err != nil {
+		return t, err
+	}
+	if err := b.insertTransaction(t); err != nil {
+		return t, err
+	}
+	for _, tagID := range tagIDs {
+		if b.data.tagByID(tagID) == nil {
+			continue // only the caller's own tags
+		}
+		if err := b.linkTag(t.ID, tagID); err != nil {
+			return t, err
+		}
+	}
+	if t.TagID != "" && t.Type == "transfer" {
+		if err := b.linkTag(t.ID, t.TagID); err != nil {
+			return t, err
+		}
+	}
+	return t, b.reload()
+}
+
+func handleTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
+	id, action, ok := pathID(r)
+	if !ok {
+		writeErr(w, 404, "not found")
+		return
+	}
+	switch {
+	case r.Method == http.MethodPut && action == "":
+		var body struct {
+			Transaction
+			TagIDs []string `json:"tagIds"`
+		}
+		if !decode(w, r, &body) {
+			return
+		}
+		t := body.Transaction
+		t.ID = id
+		if t.Type == "" || t.Date == "" {
+			writeErr(w, 400, "type and date required")
+			return
+		}
+		old := b.data.transactionByID(id)
+		if old == nil {
+			writeErr(w, 404, "transaction not found")
+			return
+		}
+		if t.TransactionTemplateID == "" { // keep the generator identity unless explicitly supplied
+			t.TransactionTemplateID, t.OccurrenceDate = old.TransactionTemplateID, old.OccurrenceDate
+		}
+		if err := b.data.normalizeTransaction(&t); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		if err := b.updateTransaction(t); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, t)
+	case r.Method == http.MethodDelete && action == "":
+		found, err := b.deleteTransaction(id)
+		if err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		if !found {
+			writeErr(w, 404, "transaction not found")
+			return
+		}
+		writeJSON(w, 200, map[string]string{"deleted": id})
+	case r.Method == http.MethodPost && action == "post":
+		// confirm an expected transaction, optionally with the actual amount
+		var body struct {
+			AmountMinor *int64 `json:"amountMinor"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		old := b.data.transactionByID(id)
+		if old == nil {
+			writeErr(w, 404, "transaction not found")
+			return
+		}
+		t := *old
+		if body.AmountMinor != nil && *body.AmountMinor > 0 {
+			t.AmountMinor = *body.AmountMinor
+		}
+		t.State = "posted"
+		if err := b.updateTransaction(t); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, t)
+	default:
+		writeErr(w, 404, "not found")
+	}
+}
+
+func handleCreateTemplate(w http.ResponseWriter, r *http.Request, b *Book) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "POST only")
+		return
+	}
+	var tp TransactionTemplate
+	if !decode(w, r, &tp) {
+		return
+	}
+	if tp.Name == "" || tp.Template.AmountMinor <= 0 {
+		writeErr(w, 400, "name and template amount required")
+		return
+	}
+	tp.ID = newID("tpl")
+	tp.Enabled = true
+	if tp.Schedule.Interval < 1 {
+		tp.Schedule.Interval = 1
+	}
+	if tp.Schedule.Frequency == "" {
+		tp.Schedule.Frequency = "monthly"
+	}
+	if err := b.data.normalizeTemplate(&tp.Template); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if err := b.insertTemplate(tp); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	if err := b.reload(); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 201, tp)
+}
+
+func handleTemplate(w http.ResponseWriter, r *http.Request, b *Book) {
+	id, action, ok := pathID(r)
+	if !ok {
+		writeErr(w, 404, "not found")
+		return
+	}
+	old := b.data.templateByID(id)
+	if old == nil {
+		writeErr(w, 404, "template not found")
+		return
+	}
+	switch {
+	case r.Method == http.MethodPut && action == "":
+		var tp TransactionTemplate
+		if !decode(w, r, &tp) {
+			return
+		}
+		tp.ID = id
+		if tp.Name == "" || tp.Template.AmountMinor <= 0 {
+			writeErr(w, 400, "name and template amount required")
+			return
+		}
+		if tp.Schedule.Interval < 1 {
+			tp.Schedule.Interval = 1
+		}
+		if err := b.data.normalizeTemplate(&tp.Template); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		if err := b.updateTemplate(tp); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, tp)
+	case r.Method == http.MethodPost && action == "toggle":
+		tp := *old
+		tp.Enabled = !tp.Enabled
+		if err := b.updateTemplate(tp); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, tp)
+	default:
+		writeErr(w, 404, "not found")
+	}
+}
+
+func handleGenerate(w http.ResponseWriter, r *http.Request, b *Book) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "POST only")
+		return
+	}
+	var body struct {
+		Date string `json:"date"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if body.Date == "" {
+		body.Date = time.Now().Format("2006-01-02")
+	}
+	n, err := b.GenerateDue(body.Date)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{"created": n})
+}
+
+// listenAddr defaults to loopback only; set KISIAUTHONG_HOST (e.g. 0.0.0.0
+// in a container or for LAN access) to serve other machines, ideally behind
+// HTTPS so sign-in cookies and passkeys stay safe.
 func listenAddr(host, port string) string {
 	if host == "" {
 		host = "127.0.0.1"

@@ -2,7 +2,7 @@
 // All user-visible strings go through __() / N_() from i18n.js (English source strings).
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashSel: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
+const state = { me: null, data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashSel: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
 // Money is stored in minor units at each currency's ISO 4217 precision (JPY 0, USD 2, KWD 3…).
 const EXP = {};
 const expOf = (c) => {
@@ -82,6 +82,8 @@ $("#toast").addEventListener("click", () => msg(""));
 async function api(path, opts) {
   const r = await fetch(path, opts);
   const d = await r.json().catch(() => ({}));
+  // the session ended (signed out elsewhere, expired): back to the sign-in screen
+  if (r.status === 401 && !path.startsWith("/api/auth/")) { showAuth("login"); throw new Error(__("Please sign in again.")); }
   if (!r.ok) throw new Error(d.error || r.statusText);
   return d;
 }
@@ -1384,8 +1386,117 @@ document.addEventListener("click", (e) => { if (state.notifOpen && !e.composedPa
 window.addEventListener("resize", () => { if (state.notifOpen) renderBell(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.notifOpen) { state.notifOpen = false; renderBell(); $("#bellBtn").focus(); } });
 
+/* ---------- users: sign-in, the user menu, My account (ADR 0007) ---------- */
+const AVATAR_COLORS = ["#5b2a86", "#8a3b7a", "#2f6f73", "#3d5a99", "#9a5b13", "#7a4a2a", "#2f7a46", "#6b6578"];
+const initials = (u) => { const n = (u.displayName || u.username || "?").trim(); const parts = n.split(/\s+/); return (parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : [...n].slice(0, 2).join("")).toUpperCase(); };
+const avatarColor = (u) => u.avatarColor || AVATAR_COLORS[[...(u.username || "")].reduce((n, c) => n + c.codePointAt(0), 0) % AVATAR_COLORS.length];
+function avatarHTML(u, size = 32) {
+  const inner = u.hasAvatar ? `<img src="/api/users/${esc(u.id)}/avatar?v=${esc(u.avatarVersion || "")}" alt="">` : esc(initials(u));
+  return `<span class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px;background:${u.hasAvatar ? "transparent" : esc(avatarColor(u))}" aria-hidden="true">${inner}</span>`;
+}
+async function boot() {
+  try {
+    const st = await api("/api/auth/status");
+    if (!st.user) { showAuth(st.needsSetup ? "setup" : "login"); return; }
+    state.me = st.user;
+    $("#authScreen").hidden = true; $(".shell").hidden = false;
+    renderUserBtn();
+    await load();
+  } catch (e) { msg(__("Failed to load: {message}", { message: e.message }), "error"); }
+}
+// the sign-in screen replaces the app until someone is signed in
+function showAuth(mode) {
+  state.me = null; state.data = null;
+  $(".shell").hidden = true; $("#addBtn").hidden = true; $("#notifPanel").hidden = true; $("#userMenu").hidden = true;
+  const box = $("#authScreen");
+  box.hidden = false;
+  const setup = mode === "setup";
+  box.innerHTML = `<form class="authcard" id="authForm">
+      <div class="authbrand"><span lang="nan-Hant-TW">記數通</span><small>KiSiauThong</small></div>
+      <h1>${esc(setup ? __("Create your account") : __("Sign in"))}</h1>
+      ${setup ? `<p class="muted">${esc(__("You are the first user and will manage this server."))}</p>` : ""}
+      <label><span>${esc(__("Username"))}</span><input name="username" autocomplete="username" required autocapitalize="none" spellcheck="false"></label>
+      ${setup ? `<label><span>${esc(__("Display name"))}</span><input name="displayName" autocomplete="name" placeholder="${esc(__("Optional"))}"></label>` : ""}
+      <label><span>${esc(__("Password"))}</span><input name="password" type="password" autocomplete="${setup ? "new-password" : "current-password"}" required minlength="${setup ? 8 : 1}"></label>
+      <p class="autherr" id="authErr" role="alert" hidden></p>
+      <button class="primarybtn big" type="submit">${esc(setup ? __("Create account") : __("Sign in"))}</button>
+    </form>`;
+  const form = $("#authForm");
+  form.elements.username.focus();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(form).entries()), err = $("#authErr");
+    err.hidden = true;
+    try {
+      await post(setup ? "/api/auth/setup" : "/api/auth/login", f);
+      await boot();
+    } catch (x) { err.textContent = x.message; err.hidden = false; }
+  });
+}
+function renderUserBtn() {
+  const u = state.me;
+  if (!u) return;
+  $("#userBtn").innerHTML = avatarHTML(u, 32);
+  $("#userBtn").setAttribute("aria-label", __("{name}: account menu", { name: u.displayName || u.username }));
+}
+function toggleUserMenu(open) {
+  const menu = $("#userMenu"), u = state.me;
+  const show = open ?? menu.hidden;
+  $("#userBtn").setAttribute("aria-expanded", String(show));
+  if (!show || !u) { menu.hidden = true; return; }
+  const rb = $("#userBtn").getBoundingClientRect();
+  menu.style.top = Math.round(rb.bottom + 8) + "px";
+  menu.style.right = Math.max(12, Math.round(window.innerWidth - rb.right)) + "px";
+  menu.innerHTML = `<div class="umhead">${avatarHTML(u, 40)}<span><b>${esc(u.displayName || u.username)}</b><small>@${esc(u.username)}</small></span></div>
+    <button type="button" role="menuitem" data-um="account">${esc(__("My account"))}</button>
+    <button type="button" role="menuitem" data-um="signout">${esc(__("Sign out"))}</button>`;
+  menu.hidden = false;
+  menu.querySelector("[data-um=account]").addEventListener("click", () => { toggleUserMenu(false); location.hash = "#account"; });
+  menu.querySelector("[data-um=signout]").addEventListener("click", signOut);
+}
+async function signOut() {
+  toggleUserMenu(false);
+  try { await post("/api/auth/logout"); } catch (e) { /* signed out either way */ }
+  showAuth("login");
+}
+$("#userBtn").addEventListener("click", (e) => { e.stopPropagation(); toggleUserMenu(); });
+document.addEventListener("click", (e) => { if (!$("#userMenu").hidden && !e.composedPath().includes($("#userMenu"))) toggleUserMenu(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#userMenu").hidden) { toggleUserMenu(false); $("#userBtn").focus(); } });
+
+// My account: profile and sign-in methods (later: two-step, passkeys, API keys, users)
+function screenAccount(v) {
+  const u = state.me;
+  const row = (label, control) => `<div class="srow"><span class="sl">${esc(label)}</span><div class="sc">${control}</div></div>`;
+  v.innerHTML = `<div class="settings narrow"><div class="sbody">
+    <section class="ssec"><h3>${esc(__("Profile"))}</h3><div class="scard">
+      <div class="sabout">${avatarHTML(u, 56)}<span><b>${esc(u.displayName || u.username)}</b><small class="muted">@${esc(u.username)}${u.isAdmin ? " · " + esc(__("Administrator")) : ""}</small></span></div>
+      <form id="profileForm">${row(__("Display name"), `<div class="inline"><input name="displayName" maxlength="60" value="${esc(u.displayName || "")}"><button class="smallbtn" type="submit">${esc(__("Save"))}</button></div>`)}</form>
+    </div></section>
+    <section class="ssec"><h3>${esc(__("Password"))}</h3><div class="scard">
+      <form id="pwForm">
+        ${row(__("Current password"), `<input name="current" type="password" autocomplete="current-password" required>`)}
+        ${row(__("New password"), `<input name="new" type="password" autocomplete="new-password" minlength="8" required>`)}
+        ${row(__("Confirm new password"), `<input name="confirm" type="password" autocomplete="new-password" minlength="8" required>`)}
+        ${row("", `<button class="smallbtn" type="submit">${esc(__("Change password"))}</button>`)}
+      </form>
+    </div></section>
+  </div></div>`;
+  $("#profileForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try { state.me = await put("/api/me", { displayName: e.target.elements.displayName.value }); renderUserBtn(); msg(__("Profile saved.")); render(); }
+    catch (err) { errMsg(err); }
+  });
+  $("#pwForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target).entries());
+    if (f.new !== f.confirm) { msg(__("The new passwords do not match."), "error"); return; }
+    try { await post("/api/me/password", { current: f.current, new: f.new }); e.target.reset(); msg(__("Password changed. Other devices were signed out.")); }
+    catch (err) { errMsg(err); }
+  });
+}
+
 /* ---------- routing ---------- */
-const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings] };
+const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount] };
 function currentScreen() {
   const h = location.hash.replace("#", "");
   if (h === "budgets" || h === "moneyboxes") return "tags"; // budgets and money boxes live on the Tags page now
@@ -1418,4 +1529,4 @@ async function load() {
   render();
 }
 setLang(pickLang(""));
-load().catch((e) => { msg(__("Failed to load: {message}", { message: e.message }), "error"); });
+boot();

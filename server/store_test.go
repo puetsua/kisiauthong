@@ -2,250 +2,256 @@
 package main
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestManualTransactionsDoNotCollideOnTemplateKey(t *testing.T) {
-	s, err := openStore(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer s.db.Close()
+	b := sampleBook(t)
 	// seed already contains several manual transactions; adding two more must succeed
 	for _, id := range []string{"manual-1", "manual-2"} {
 		tx := Transaction{ID: id, AccountID: "acc-a", Type: "expense", State: "posted", AmountMinor: 100, Currency: "TWD", Date: "2026-10-20", Note: "manual"}
-		if err := s.insertTransaction(tx); err != nil {
+		if err := b.insertTransaction(tx); err != nil {
 			t.Fatalf("insert %s: %v", id, err)
 		}
 	}
 	// a duplicate generated occurrence must be rejected
 	dup := Transaction{ID: "dup-1", AccountID: "acc-a", Type: "expense", State: "planned", AmountMinor: 100, Currency: "TWD", Date: "2026-10-12", TransactionTemplateID: "tpl-streaming", OccurrenceDate: "2026-10-12"}
-	if err := s.insertTransaction(dup); err == nil {
+	if err := b.insertTransaction(dup); err == nil {
 		t.Fatalf("duplicate generated occurrence was accepted")
 	}
 }
 
 func TestSettingsPersist(t *testing.T) {
-	s, err := openStore(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer s.db.Close()
-	if _, ok, _ := s.getSetting("dashboard"); ok {
+	b := sampleBook(t)
+	if _, ok, _ := b.getSetting("dashboard"); ok {
 		t.Fatalf("dashboard setting should start unset")
 	}
 	want := `{"order":["moneyboxes","balances"],"hidden":["recent"]}`
-	if err := s.setSetting("dashboard", want); err != nil {
+	if err := b.setSetting("dashboard", want); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	got, ok, err := s.getSetting("dashboard")
+	got, ok, err := b.getSetting("dashboard")
 	if err != nil || !ok || got != want {
 		t.Fatalf("get = %q ok=%v err=%v, want %q", got, ok, err, want)
 	}
-	if err := s.setSetting("dashboard", `{"order":[],"hidden":[]}`); err != nil {
+	if err := b.setSetting("dashboard", `{"order":[],"hidden":[]}`); err != nil {
 		t.Fatalf("overwrite: %v", err)
 	}
-	got, _, _ = s.getSetting("dashboard")
+	got, _, _ = b.getSetting("dashboard")
 	if got != `{"order":[],"hidden":[]}` {
 		t.Fatalf("overwrite not stored: %q", got)
 	}
 }
 
 func TestUpdatesPersist(t *testing.T) {
-	s, err := openStore(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer s.db.Close()
-
-	a := s.data.Accounts[0]
+	b := sampleBook(t)
+	a := b.data.Accounts[0]
 	a.Name = "Renamed account"
-	if err := s.updateAccount(a); err != nil {
+	if err := b.updateAccount(a); err != nil {
 		t.Fatalf("update account: %v", err)
 	}
-	if got := s.data.accountByID(a.ID); got == nil || got.Name != "Renamed account" {
+	if got := b.data.accountByID(a.ID); got == nil || got.Name != "Renamed account" {
 		t.Fatalf("account not updated: %+v", got)
 	}
 
-	tag := s.data.Tags[0]
+	tag := b.data.Tags[0]
 	tag.Name = "Renamed tag"
-	if err := s.updateTag(tag); err != nil {
+	if err := b.updateTag(tag); err != nil {
 		t.Fatalf("update tag: %v", err)
 	}
-	found := false
-	for _, x := range s.data.Tags {
-		if x.ID == tag.ID && x.Name == "Renamed tag" {
-			found = true
-		}
-	}
-	if !found {
+	if got := b.data.tagByID(tag.ID); got == nil || got.Name != "Renamed tag" {
 		t.Fatalf("tag not updated")
 	}
 
-	tx := s.data.Transactions[0]
+	tx := b.data.Transactions[0]
 	old := tx.AmountMinor
 	tx.AmountMinor = old + 500
 	tx.Note = "Edited note"
-	if err := s.updateTransaction(tx); err != nil {
+	if err := b.updateTransaction(tx); err != nil {
 		t.Fatalf("update transaction: %v", err)
 	}
-	for _, x := range s.data.Transactions {
-		if x.ID == tx.ID && (x.AmountMinor != old+500 || x.Note != "Edited note") {
-			t.Fatalf("transaction not updated: %+v", x)
-		}
+	if got := b.data.transactionByID(tx.ID); got == nil || got.AmountMinor != old+500 || got.Note != "Edited note" {
+		t.Fatalf("transaction not updated: %+v", got)
 	}
 
-	tpl := s.data.TransactionTemplates[0]
+	tpl := b.data.TransactionTemplates[0]
 	tpl.Name = "Renamed template"
 	tpl.Template.AmountMinor += 100
-	if err := s.updateTemplate(tpl); err != nil {
+	if err := b.updateTemplate(tpl); err != nil {
 		t.Fatalf("update template: %v", err)
 	}
-	for _, x := range s.data.TransactionTemplates {
-		if x.ID == tpl.ID && x.Name != "Renamed template" {
-			t.Fatalf("template not updated: %+v", x)
-		}
+	if got := b.data.templateByID(tpl.ID); got == nil || got.Name != "Renamed template" {
+		t.Fatalf("template not updated: %+v", got)
 	}
 }
 
-// The sample data must respect the money-box invariants: no non-credit
-// account below zero, and allocations never exceed an account's balance.
+// The sample data must respect the money-box invariants: no account without
+// a limit below zero, and allocations never exceed an account's balance.
 func TestSeedRespectsBalanceInvariants(t *testing.T) {
-	s, err := openStore(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
+	d := sampleBook(t).data
+	if len(d.Transactions) <= 50 {
+		t.Fatalf("seed should hold more than one page of transactions, got %d", len(d.Transactions))
 	}
-	defer s.db.Close()
-	if len(s.data.Transactions) <= 50 {
-		t.Fatalf("seed should hold more than one page of transactions, got %d", len(s.data.Transactions))
-	}
-	for _, a := range s.data.Accounts {
+	for _, a := range d.Accounts {
 		if a.IsExternal() {
 			continue // outside the books: no balance of its own
 		}
-		bal, alloc := s.data.Balance(a.ID), s.data.AllocatedForAccount(a.ID)
-		if a.LimitMinor == nil && bal < 0 { // sample accounts without a limit stay positive
+		bal, alloc := d.Balance(a.ID), d.AllocatedForAccount(a.ID)
+		if a.LimitMinor == nil && bal < 0 {
 			t.Errorf("%s balance %d < 0", a.ID, bal)
 		}
 		if alloc > bal {
 			t.Errorf("%s allocated %d > balance %d", a.ID, alloc, bal)
 		}
 	}
-	for _, tt := range s.data.TransactionTags {
-		found := false
-		for _, tx := range s.data.Transactions {
-			found = found || tx.ID == tt.TransactionID
-		}
-		if !found {
+	for _, tt := range d.TransactionTags {
+		if d.transactionByID(tt.TransactionID) == nil {
 			t.Errorf("tag link to unknown transaction %s", tt.TransactionID)
 		}
 	}
 }
 
-// Migration 1 converts a database written before ADR 0002 in place.
-func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
+// Two users' books never mix, even with the same ids.
+func TestBooksAreSeparatePerUser(t *testing.T) {
+	s := openTestStore(t)
+	alice := addTestUser(t, s, "alice", true)
+	bob := addTestUser(t, s, "bob", false)
+	if len(bob.data.Transactions) != 0 || len(bob.data.Accounts) != 1 || bob.data.Accounts[0].ID != ExternalAccountID {
+		t.Fatalf("a new user starts with only the External account: %+v", bob.data.Accounts)
+	}
+	// the same id in both books
+	if err := bob.insertAccount(Account{ID: "acc-a", Name: "Bob's wallet", Kind: "own", Currency: "USD"}); err != nil {
+		t.Fatalf("same id for another user: %v", err)
+	}
+	if err := bob.reload(); err != nil {
+		t.Fatal(err)
+	}
+	if a := alice.data.accountByID("acc-a"); a == nil || a.Name != "Savings A" {
+		t.Fatalf("alice's acc-a changed: %+v", a)
+	}
+	if a := bob.data.accountByID("acc-a"); a == nil || a.Name != "Bob's wallet" {
+		t.Fatalf("bob's acc-a: %+v", a)
+	}
+	// deleting in one book leaves the other alone
+	victim := alice.data.Transactions[0].ID
+	if found, err := bob.deleteTransaction(victim); err != nil || found {
+		t.Fatalf("bob deleted alice's transaction: %v %v", found, err)
+	}
+	if alice.data.transactionByID(victim) == nil {
+		t.Fatalf("alice lost a transaction")
+	}
+}
+
+// A single-user database from before migration 1, as the very first
+// version created it, upgrades through every migration to the owner's books.
+func TestMigrationsUpgradeTheFirstSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
-	s, err := openStore(path)
+	db, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// rewind to a pre-migration database: old-style rows and templates, version 0
-	mustExec := func(q string, args ...interface{}) {
-		if _, err := s.db.Exec(q, args...); err != nil {
+	for _, q := range []string{
+		`CREATE TABLE accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, currency TEXT NOT NULL,
+		  opening_balance_minor INTEGER NOT NULL DEFAULT 0, allow_negative INTEGER NOT NULL DEFAULT 0,
+		  credit_limit_minor INTEGER, statement_close_day INTEGER, payment_due_day INTEGER)`,
+		`CREATE TABLE transactions (id TEXT PRIMARY KEY, account_id TEXT NOT NULL DEFAULT '', from_account_id TEXT NOT NULL DEFAULT '',
+		  to_account_id TEXT NOT NULL DEFAULT '', tag_id TEXT NOT NULL DEFAULT '', type TEXT NOT NULL,
+		  state TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL,
+		  note TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT,
+		  UNIQUE(transaction_template_id, occurrence_date))`,
+		`CREATE TABLE tags (id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, limit_minor INTEGER,
+		  cycle TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT '', target_minor INTEGER, target_date TEXT NOT NULL DEFAULT '')`,
+		`CREATE TABLE transaction_tags (transaction_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY(transaction_id, tag_id))`,
+		`CREATE TABLE transaction_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+		  template_json TEXT NOT NULL, schedule_json TEXT NOT NULL)`,
+		`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`INSERT INTO accounts(id,name,kind,currency,opening_balance_minor) VALUES('acc-a','Savings A','savings','TWD',100000),('acc-b','Bank B','bank','TWD',50000)`,
+		`INSERT INTO accounts(id,name,kind,currency,opening_balance_minor,allow_negative,credit_limit_minor) VALUES('old-card','Visa','credit_card','TWD',0,1,5000000)`,
+		`INSERT INTO tags(id,name,kind,limit_minor,cycle,currency) VALUES('tag-food','Food','category',1200000,'monthly','TWD')`,
+		`INSERT INTO tags(id,name,kind,currency,target_minor) VALUES('tag-furniture','Furniture','goal','TWD',8000000)`,
+		`INSERT INTO tags(id,name,kind) VALUES('old-label','trip-2026','label'),('old-payee','7-Eleven','payee')`,
+		`INSERT INTO transactions(id,account_id,type,state,amount_minor,currency,date,note) VALUES('old-exp','acc-b','expense','posted',500,'TWD','2026-11-01','Lunch'),('old-inc','acc-a','income','posted',900,'TWD','2026-11-02','Pay')`,
+		`INSERT INTO transactions(id,account_id,tag_id,type,state,amount_minor,currency,date,note) VALUES('old-alloc','acc-a','tag-furniture','allocate','posted',2000,'TWD','2026-11-02','Save'),('old-rel','acc-a','tag-furniture','release','posted',700,'TWD','2026-11-03','Back out')`,
+		`INSERT INTO transaction_tags(transaction_id,tag_id) VALUES('old-exp','tag-food')`,
+		`INSERT INTO transaction_templates(id,name,enabled,template_json,schedule_json) VALUES('tpl-salary','Salary',1,'{"accountId":"acc-a","type":"income","amountMinor":8000000,"currency":"TWD","note":"Salary"}','{"frequency":"monthly","interval":1,"dayOfMonth":5,"startDate":"2026-01-05"}')`,
+		`INSERT INTO settings(key,value) VALUES('general','{"defaultCurrency":"JPY"}')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
-	mustExec(`DELETE FROM accounts WHERE id=?`, ExternalAccountID)
-	mustExec(`INSERT INTO transactions(id,account_id,type,state,amount_minor,currency,date,note) VALUES('old-exp','acc-b','expense','posted',500,'TWD','2026-11-01','Lunch'),('old-inc','acc-a','income','posted',900,'TWD','2026-11-02','Pay')`)
-	mustExec(`UPDATE transaction_templates SET template_json='{"accountId":"acc-a","type":"income","amountMinor":8000000,"currency":"TWD","note":"Salary"}' WHERE id='tpl-salary'`)
-	mustExec(`INSERT INTO transactions(id,account_id,tag_id,type,state,amount_minor,currency,date,note) VALUES('old-rel','acc-a','tag-furniture','release','posted',700,'TWD','2026-11-03','Back out')`)
-	mustExec(`PRAGMA user_version = 0`)
-	// a database from before migration 3 has no memo column
-	mustExec(`ALTER TABLE transactions DROP COLUMN memo`)
-	// before migration 7 transactions had no time
-	mustExec(`ALTER TABLE transactions DROP COLUMN time`)
-	mustExec(`ALTER TABLE transactions DROP COLUMN tz`)
-	// before migration 4 tags could be labels and payees; before 5 budgets had no period columns
-	mustExec(`INSERT INTO tags(id,name,kind) VALUES('old-label','trip-2026','label'),('old-payee','7-Eleven','payee')`)
-	for _, c := range []string{"cycle_every", "cycle_start", "cycle_end"} {
-		mustExec(`ALTER TABLE tags DROP COLUMN ` + c)
-	}
-	// before migration 6 own accounts had a type and no icon
-	mustExec(`ALTER TABLE accounts DROP COLUMN icon`)
-	mustExec(`UPDATE accounts SET kind='savings' WHERE id='acc-a'`)
-	mustExec(`INSERT INTO accounts(id,name,kind,currency,opening_balance_minor,allow_negative,credit_limit_minor) VALUES('old-card','Visa','credit_card','TWD',0,1,5000000)`)
-	s.db.Close()
+	db.Close()
 
-	s, err = openStore(path) // runs the migration
+	s, err := openStore(path) // runs every migration
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.db.Close()
-	if a := s.data.accountByID(ExternalAccountID); a == nil || !a.IsExternal() {
-		t.Fatalf("anonymous external account missing after migration")
-	}
-	for _, id := range []string{"old-label", "old-payee"} {
-		if tg := s.data.tagByID(id); tg == nil || tg.Kind != "category" {
-			t.Errorf("migration 4: %s should be a category: %+v", id, tg)
-		}
-	}
-	for id, icon := range map[string]string{"acc-a": "savings", "old-card": "card"} {
-		if a := s.data.accountByID(id); a == nil || a.Kind != "own" || a.Icon != icon {
-			t.Errorf("migration 6: %s should be own with icon %s: %+v", id, icon, a)
-		}
-	}
-	if a := s.data.accountByID("old-card"); a == nil || a.LimitMinor == nil || *a.LimitMinor != 5000000 {
-		t.Errorf("migration 6: the card keeps its limit: %+v", a)
-	}
-	if a := s.data.accountByID(ExternalAccountID); a == nil || a.Kind != "external" {
-		t.Errorf("migration 6: external stays external: %+v", a)
-	}
-	if food := s.data.tagByID("tag-food"); food == nil || food.Cycle != "monthly" || food.CycleEvery != 0 || food.CycleStart != "" {
-		t.Errorf("migration 5: monthly budget should keep its period: %+v", food)
-	}
-	byID := map[string]Transaction{}
-	for _, tx := range s.data.Transactions {
-		byID[tx.ID] = tx
-	}
-	if e := byID["old-exp"]; e.Type != "transfer" || e.FromAccountID != "acc-b" || e.ToAccountID != ExternalAccountID || e.AccountID != "" {
-		t.Errorf("expense not converted: %+v", e)
-	}
-	if i := byID["old-inc"]; i.Type != "transfer" || i.FromAccountID != ExternalAccountID || i.ToAccountID != "acc-a" {
-		t.Errorf("income not converted: %+v", i)
-	}
-	if r := byID["old-rel"]; r.Type != "allocate" || r.AmountMinor != -700 || r.AccountID != "acc-a" || r.TagID != "tag-furniture" {
-		t.Errorf("release not converted (migration 2): %+v", r)
-	}
-	for _, tp := range s.data.TransactionTemplates {
-		if tp.ID == "tpl-salary" && (tp.Template.Type != "transfer" || tp.Template.FromAccountID != ExternalAccountID || tp.Template.ToAccountID != "acc-a") {
-			t.Errorf("template not converted: %+v", tp.Template)
-		}
-	}
-	// migration 3 added the memo column back, and it round-trips
-	tx := byID["old-exp"]
-	tx.Memo = "Paid in cash"
-	if err := s.updateTransaction(tx); err != nil {
-		t.Fatalf("update with memo: %v", err)
-	}
-	for _, x := range s.data.Transactions {
-		if x.ID == "old-exp" && x.Memo != "Paid in cash" {
-			t.Errorf("memo not stored: %+v", x)
-		}
-	}
-	// migration 7: a time and zone round-trip and give an instant
-	timed := byID["old-inc"]
-	timed.Time, timed.TZ = "08:15", "Asia/Taipei"
-	if err := s.updateTransaction(timed); err != nil {
-		t.Fatalf("update with time: %v", err)
-	}
-	for _, x := range s.data.Transactions {
-		if x.ID == "old-inc" && (x.Time != "08:15" || x.At != "2026-11-02T00:15:00Z") {
-			t.Errorf("time not stored: %+v", x)
-		}
-	}
 	var v int
 	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil || v != len(migrations) {
 		t.Errorf("user_version = %d, %v", v, err)
+	}
+	// migration 8: everything belongs to the owner, who still has to be claimed
+	if setup, _ := s.needsSetup(); !setup {
+		t.Errorf("the owner should still need setting up")
+	}
+	b, err := s.book(OwnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := b.data
+	if a := d.accountByID(ExternalAccountID); a == nil || !a.IsExternal() {
+		t.Fatalf("migration 1: anonymous external account missing")
+	}
+	byID := map[string]Transaction{}
+	for _, tx := range d.Transactions {
+		byID[tx.ID] = tx
+	}
+	if e := byID["old-exp"]; e.Type != "transfer" || e.FromAccountID != "acc-b" || e.ToAccountID != ExternalAccountID || e.AccountID != "" {
+		t.Errorf("migration 1: expense not converted: %+v", e)
+	}
+	if i := byID["old-inc"]; i.Type != "transfer" || i.FromAccountID != ExternalAccountID || i.ToAccountID != "acc-a" {
+		t.Errorf("migration 1: income not converted: %+v", i)
+	}
+	if tp := d.templateByID("tpl-salary"); tp == nil || tp.Template.Type != "transfer" || tp.Template.FromAccountID != ExternalAccountID || tp.Template.ToAccountID != "acc-a" {
+		t.Errorf("migration 1: template not converted: %+v", tp)
+	}
+	if r := byID["old-rel"]; r.Type != "allocate" || r.AmountMinor != -700 || r.AccountID != "acc-a" || r.TagID != "tag-furniture" {
+		t.Errorf("migration 2: release not converted: %+v", r)
+	}
+	for _, id := range []string{"old-label", "old-payee"} {
+		if tg := d.tagByID(id); tg == nil || tg.Kind != "category" {
+			t.Errorf("migration 4: %s should be a category: %+v", id, tg)
+		}
+	}
+	if food := d.tagByID("tag-food"); food == nil || food.Cycle != "monthly" || food.CycleEvery != 0 || food.CycleStart != "" {
+		t.Errorf("migration 5: monthly budget should keep its period: %+v", food)
+	}
+	for id, icon := range map[string]string{"acc-a": "savings", "old-card": "card"} {
+		if a := d.accountByID(id); a == nil || a.Kind != "own" || a.Icon != icon {
+			t.Errorf("migration 6: %s should be own with icon %s: %+v", id, icon, a)
+		}
+	}
+	if a := d.accountByID("old-card"); a == nil || a.LimitMinor == nil || *a.LimitMinor != 5000000 {
+		t.Errorf("migration 6: the card keeps its limit: %+v", a)
+	}
+	if len(d.TransactionTags) != 1 || d.TransactionTags[0].TagID != "tag-food" {
+		t.Errorf("migration 8: tag links kept: %+v", d.TransactionTags)
+	}
+	if v, ok, _ := b.getSetting("general"); !ok || v != `{"defaultCurrency":"JPY"}` {
+		t.Errorf("migration 8: settings kept: %q", v)
+	}
+	// migrations 3 and 7: memo, time and zone round-trip
+	tx := byID["old-exp"]
+	tx.Memo, tx.Time, tx.TZ = "Paid in cash", "08:15", "Asia/Taipei"
+	if err := b.updateTransaction(tx); err != nil {
+		t.Fatalf("update with memo and time: %v", err)
+	}
+	if got := b.data.transactionByID("old-exp"); got.Memo != "Paid in cash" || got.At != "2026-11-01T00:15:00Z" {
+		t.Errorf("memo/time not stored: %+v", got)
 	}
 }

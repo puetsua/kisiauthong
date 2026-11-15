@@ -3,19 +3,13 @@
 package main
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func seededData(t *testing.T) *Data {
 	t.Helper()
-	s, err := openStore(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { s.db.Close() })
-	return &s.data
+	return sampleBook(t).data
 }
 
 func TestNormalizeTransactionRejects(t *testing.T) {

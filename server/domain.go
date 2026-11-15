@@ -231,16 +231,14 @@ func (d *Data) existingOccurrence(tplID, date string) bool {
 }
 
 // GenerateDue materialises occurrences up to today (inclusive). allocate posts immediately, others planned.
-func (s *Store) GenerateDue(today string) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (b *Book) GenerateDue(today string) (int, error) {
 	created := 0
-	for _, tpl := range s.data.TransactionTemplates {
+	for _, tpl := range b.data.TransactionTemplates {
 		if !tpl.Enabled {
 			continue
 		}
 		for _, occ := range Occurrences(tpl, tpl.Schedule.StartDate, today) {
-			if s.data.existingOccurrence(tpl.ID, occ) {
+			if b.data.existingOccurrence(tpl.ID, occ) {
 				continue
 			}
 			state := "planned"
@@ -255,15 +253,15 @@ func (s *Store) GenerateDue(today string) (int, error) {
 				Currency: tpl.Template.Currency, Date: occ, Note: tpl.Template.Note,
 				TransactionTemplateID: tpl.ID, OccurrenceDate: occ,
 			}
-			if err := s.insertTransaction(t); err != nil {
+			if err := b.insertTransaction(t); err != nil {
 				return created, err
 			}
-			s.data.Transactions = append(s.data.Transactions, t)
+			b.data.Transactions = append(b.data.Transactions, t)
 			if t.Type == "transfer" && t.TagID != "" { // category link, as for hand-entered transactions
-				if _, err := s.db.Exec(`INSERT OR IGNORE INTO transaction_tags(transaction_id,tag_id) VALUES(?,?)`, t.ID, t.TagID); err != nil {
+				if err := b.linkTag(t.ID, t.TagID); err != nil {
 					return created, err
 				}
-				s.data.TransactionTags = append(s.data.TransactionTags, TransactionTag{TransactionID: t.ID, TagID: t.TagID})
+				b.data.TransactionTags = append(b.data.TransactionTags, TransactionTag{TransactionID: t.ID, TagID: t.TagID})
 			}
 			created++
 		}

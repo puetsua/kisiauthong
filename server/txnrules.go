@@ -33,6 +33,24 @@ func (d *Data) IsIncome(t Transaction) bool {
 	return t.Type == "transfer" && from != nil && to != nil && from.IsExternal() && !to.IsExternal()
 }
 
+func (d *Data) transactionByID(id string) *Transaction {
+	for i := range d.Transactions {
+		if d.Transactions[i].ID == id {
+			return &d.Transactions[i]
+		}
+	}
+	return nil
+}
+
+func (d *Data) templateByID(id string) *TransactionTemplate {
+	for i := range d.TransactionTemplates {
+		if d.TransactionTemplates[i].ID == id {
+			return &d.TransactionTemplates[i]
+		}
+	}
+	return nil
+}
+
 func (d *Data) tagByID(id string) *Tag {
 	for i := range d.Tags {
 		if d.Tags[i].ID == id {

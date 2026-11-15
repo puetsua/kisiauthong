@@ -6,27 +6,27 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
+// testBook is the signed-in user's books for the settings handler tests.
+var testBook *Book
+
 func withTestStore(t *testing.T) {
 	t.Helper()
-	s, err := openStore(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	s := openTestStore(t)
 	prev := store
 	store = s
-	t.Cleanup(func() { store = prev; s.db.Close() })
+	testBook = addTestUser(t, s, "alice", true)
+	t.Cleanup(func() { store = prev })
 }
 
 func doSettings(t *testing.T, method, body string) (int, Settings) {
 	t.Helper()
 	req := httptest.NewRequest(method, "/api/settings", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	handleSettings(rec, req)
+	handleSettings(rec, req, testBook)
 	var out Settings
 	if rec.Code == 200 {
 		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
@@ -181,7 +181,7 @@ func TestSettingsDismissedNotifications(t *testing.T) {
 
 func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
 	withTestStore(t)
-	if err := store.setSetting("general", `{"defaultCurrency":"JPY","transactionsPerPage":20}`); err != nil {
+	if err := testBook.setSetting("general", `{"defaultCurrency":"JPY","transactionsPerPage":20}`); err != nil {
 		t.Fatal(err)
 	}
 	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "JPY,TWD" || s.General.PageWidth != "default" || s.General.OpenDays != 7 {
@@ -264,7 +264,7 @@ func TestSettingsLegacyDashboardBecomesItems(t *testing.T) {
 	withTestStore(t)
 	// saved before widgets were reusable: one per type, hidden ones off the dashboard,
 	// types missing from order shown at the end, retired types dropped
-	if err := store.setSetting("dashboard", `{"order":["recent","expected","balances","budgets"],"hidden":["budgets","expected"],"widgets":{"recent":{"rows":3},"expected":{"rows":3}}}`); err != nil {
+	if err := testBook.setSetting("dashboard", `{"order":["recent","expected","balances","budgets"],"hidden":["budgets","expected"],"widgets":{"recent":{"rows":3},"expected":{"rows":3}}}`); err != nil {
 		t.Fatal(err)
 	}
 	_, s := doSettings(t, http.MethodGet, "")
@@ -277,7 +277,7 @@ func TestSettingsLegacyDashboardBecomesItems(t *testing.T) {
 		t.Fatalf("PUT old shape: %d %s", code, itemList(s.Dashboard))
 	}
 	// a stored layout that no longer validates falls back to the default instead of breaking settings
-	if err := store.setSetting("dashboard", `{"items":[{"id":"x","type":"nope"}]}`); err != nil {
+	if err := testBook.setSetting("dashboard", `{"items":[{"id":"x","type":"nope"}]}`); err != nil {
 		t.Fatal(err)
 	}
 	if code, s = doSettings(t, http.MethodGet, ""); code != 200 || itemList(s.Dashboard) != strings.Join(dashboardWidgets, ",") {
@@ -349,7 +349,7 @@ func TestSettingsRejectsInvalid(t *testing.T) {
 func TestExportDownloadsData(t *testing.T) {
 	withTestStore(t)
 	rec := httptest.NewRecorder()
-	handleExport(rec, httptest.NewRequest(http.MethodGet, "/api/export", nil))
+	handleExport(rec, httptest.NewRequest(http.MethodGet, "/api/export", nil), testBook)
 	if rec.Code != 200 {
 		t.Fatalf("export: %d", rec.Code)
 	}

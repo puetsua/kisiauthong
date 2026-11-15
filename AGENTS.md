@@ -210,7 +210,7 @@ docker compose -f deploy/docker-compose.yml up --build
 ## 11. Open decisions (resolve with an ADR, then update this file)
 
 - [ ] Sync revision scheme: server sequence number vs. per-row version counter
-- [ ] Web session model: cookie session vs. JWT in secure storage
+- [x] Web session model: cookie session (ADR 0007)
 - [ ] Attachment storage limits and whether encryption-at-rest is default-on
 - [ ] Budget rollover semantics (carry surplus, deficit, both, or neither)
 - [ ] Whether recurring transactions auto-post or require user confirmation
