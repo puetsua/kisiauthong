@@ -46,7 +46,8 @@ function currencyOptions(selected) {
 }
 const toMinor = (a, c) => Math.round(parseFloat(a || 0) * Math.pow(10, expOf(c)));
 // How amounts are written (Settings → Number format): grouped "1,074,958", plain "1074958",
-// or with the CJK myriad units "107萬4958元" (萬 10⁴, 億 10⁸, 兆 10¹²; lower groups keep 4 digits: "100萬0958元").
+// or with the CJK myriad units "107萬4958元" (萬 10⁴, 億 10⁸, 兆 10¹²; lower groups keep 4 digits: "100萬0958元";
+// cents as 分: "651元25分").
 const NUMFMT_L = { grouped: N_("Grouped (1,074,958)"), plain: N_("Plain (1074958)"), cjk: N_("萬・億・兆 (107萬4958元)") };
 const numberFormat = () => (state.general && state.general.numberFormat) || "grouped";
 const MYRIAD = ["", "萬", "億", "兆"];
@@ -73,8 +74,15 @@ function writeInt(n) {
 function fmt(minor, currency, calc = false) {
   const c = currency || defCur(), e = expOf(c), d = shownDigits(minor, c, calc);
   const m = Math.round(minor || 0), abs = Math.abs(m), unit = Math.pow(10, e);
-  const whole = writeInt(Math.floor(abs / unit)), frac = d ? "." + String(abs % unit).padStart(e, "0") : "";
-  return (currency || "") + " " + (m < 0 ? "-" : "") + whole + frac + (numberFormat() === "cjk" ? "元" : "");
+  const int = Math.floor(abs / unit), sign = m < 0 ? "-" : "", head = (currency || "") + " " + sign;
+  if (numberFormat() === "cjk") {
+    // 元 for the units; a hundredth is 分, so 2-decimal currencies read "651元25分" ("89分" below one 元).
+    // Other precisions (KWD 1/1000…) have no such name and keep a decimal point: "1.250元".
+    const cents = d ? abs % unit : 0;
+    if (e === 2) return head + (int || !cents ? writeInt(int) + "元" : "") + (cents ? cents + "分" : "");
+    return head + writeInt(int) + (d ? "." + String(abs % unit).padStart(e, "0") : "") + "元";
+  }
+  return head + writeInt(int) + (d ? "." + String(abs % unit).padStart(e, "0") : "");
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 // msg shows a short toast at the bottom of the page; errors stay longer and can be clicked away.
