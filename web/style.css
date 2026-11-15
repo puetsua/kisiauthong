@@ -70,7 +70,7 @@ a.smallbtn{text-decoration:none;display:inline-block}
 .dasheditor{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;align-items:start}
 .dashcanvas{min-height:200px;border-radius:12px;outline:2px dashed transparent;outline-offset:6px}
 .dashcanvas.droptarget{outline-color:var(--accent2)}
-.dw.edit{padding:0;overflow:hidden;cursor:grab;transition:box-shadow .12s}
+.dw.edit{padding:0;overflow:hidden;cursor:grab;transition:box-shadow .12s;user-select:none}
 .dw.edit:hover{box-shadow:0 0 0 2px var(--hover2)}
 .dw.edit.sel{box-shadow:0 0 0 2px var(--accent)}
 .dw.edit.dragging{opacity:.4}
@@ -95,6 +95,9 @@ a.smallbtn{text-decoration:none;display:inline-block}
 .palette .grow{flex:1;min-width:0}
 .droptrash{display:none;margin-top:10px;padding:16px;border:2px dashed var(--red);border-radius:8px;text-align:center;color:var(--red);font-weight:600}
 .dragging-tile .droptrash{display:block}
+.dasheditor .grip{touch-action:none;-webkit-touch-callout:none;display:grid;place-items:center;min-width:28px;min-height:28px}
+.dragghost{position:fixed;left:0;top:0;z-index:50;pointer-events:none;padding:8px 14px;border-radius:8px;background:var(--side);color:#fff;font-weight:600;box-shadow:0 10px 26px rgba(40,20,60,.35);white-space:nowrap}
+body.dashdragging,body.dashdragging *{cursor:grabbing!important;user-select:none}
 .paneform{display:flex;flex-direction:column;gap:12px;margin:4px 0 18px}
 .paneform>label{display:flex;flex-direction:column;gap:4px;font-size:.86rem;color:var(--muted)}
 .paneform input[type=text],.paneform input[type=number],.paneform select{padding:8px;border:1px solid var(--line);border-radius:6px;font-size:.95rem;color:var(--ink);background:#fff}
@@ -252,7 +255,7 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .topbar{padding:12px 14px}.topbar h1{font-size:1.2rem}
   .grid2{grid-template-columns:1fr}
   .dashgrid>.dw.half{grid-column:1/-1}
-  .dasheditor{grid-template-columns:minmax(0,1fr)}.dashpane{position:static;max-height:none;order:-1}
+  .dasheditor{grid-template-columns:minmax(0,1fr)}.dasheditor .grip{min-width:40px;min-height:40px;font-size:1.3rem}.tilebar .iconbtn{min-width:40px;min-height:40px}.tilebar{padding:2px 4px}.palette li{padding:4px 8px 4px 2px}.dashpane{position:static;max-height:none;order:-1}
   .flow{flex-direction:column}
   .notifpanel{left:12px;width:auto}
   .periodnav{margin-left:0;width:100%;justify-content:space-between}

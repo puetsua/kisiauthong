@@ -2,7 +2,7 @@
 // All user-visible strings go through __() / N_() from i18n.js (English source strings).
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashSel: null, drag: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
+const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashSel: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
@@ -193,7 +193,7 @@ const UP = ARROW("M12 19V5M6 11l6-6 6 6"), DOWN = ARROW("M12 5v14M6 13l6 6 6-6")
 const visibleIds = (draft) => draft.order.filter((id) => !draft.hidden.includes(id));
 function dashTile(id, draft) {
   const o = draft.widgets[id] || {}, name = o.title || widgetLabel(id), vis = visibleIds(draft), i = vis.indexOf(id);
-  return `<section class="panel dw edit${o.size === "half" ? " half" : ""}${state.dashSel === id ? " sel" : ""}" draggable="true" data-tile="${esc(id)}">
+  return `<section class="panel dw edit${o.size === "half" ? " half" : ""}${state.dashSel === id ? " sel" : ""}" data-tile="${esc(id)}">
     <div class="tilebar"><span class="grip" aria-hidden="true">⠿</span><button type="button" class="tname" data-tile-edit="${esc(id)}">${esc(name)}</button>
       <button type="button" class="iconbtn" data-tile-move="-1" aria-label="${esc(__("Move {widget} earlier", { widget: name }))}" ${i === 0 ? "disabled" : ""}>${UP}</button>
       <button type="button" class="iconbtn" data-tile-move="1" aria-label="${esc(__("Move {widget} later", { widget: name }))}" ${i === vis.length - 1 ? "disabled" : ""}>${DOWN}</button>
@@ -206,7 +206,7 @@ function dashPaneHTML(draft) {
   if (!id) {
     const avail = draft.order.filter((x) => draft.hidden.includes(x));
     return `<h3>${esc(__("Widgets"))}</h3>
-      ${avail.length ? `<ul class="palette">${avail.map((x) => `<li draggable="true" data-pal="${esc(x)}"><span class="grip" aria-hidden="true">⠿</span><span class="grow">${esc((draft.widgets[x] || {}).title || widgetLabel(x))}</span><button type="button" class="smallbtn" data-pal-add="${esc(x)}">${esc(__("Add"))}</button></li>`).join("")}</ul>`
+      ${avail.length ? `<ul class="palette">${avail.map((x) => `<li data-pal="${esc(x)}"><span class="grip" aria-hidden="true">⠿</span><span class="grow">${esc((draft.widgets[x] || {}).title || widgetLabel(x))}</span><button type="button" class="smallbtn" data-pal-add="${esc(x)}">${esc(__("Add"))}</button></li>`).join("")}</ul>`
         : `<p class="muted">${esc(__("All widgets are on the dashboard."))}</p>`}
       <div class="droptrash">${esc(__("Drop here to remove"))}</div>`;
   }
@@ -257,8 +257,6 @@ function screenDashboardEditor(v) {
         const again = canvas.querySelector(`[data-tile="${CSS.escape(id)}"] [data-tile-move="${b.dataset.tileMove}"]`);
         if (again && !again.disabled) again.focus();
       }));
-      tile.addEventListener("dragstart", (e) => { state.drag = { id, from: "canvas" }; tile.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); v.classList.add("dragging-tile"); });
-      tile.addEventListener("dragend", () => { tile.classList.remove("dragging"); clearDrop(); state.drag = null; v.classList.remove("dragging-tile"); });
     });
   };
   const drawPane = () => {
@@ -268,9 +266,6 @@ function screenDashboardEditor(v) {
     on("[data-pane-back]", "click", () => { state.dashSel = null; draw(); });
     on("[data-pane-remove]", "click", () => remove(id));
     on("[data-pal-add]", "click", (b) => { show(b.dataset.palAdd); place(b.dataset.palAdd, null); draw(); });
-    on("[data-pal]", "dragstart", (li) => { state.drag = { id: li.dataset.pal, from: "palette" }; li.classList.add("dragging"); });
-    on("[data-pal]", "dragend", (li) => { li.classList.remove("dragging"); clearDrop(); state.drag = null; });
-    pane.querySelectorAll("[data-pal]").forEach((li) => li.addEventListener("dragstart", (e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", li.dataset.pal); }));
     // option changes redraw only the dashboard, so the field being edited keeps focus
     on("[data-dash-title]", "input", (t) => { setWidgetOpt(id, "title", t.value.trim()); drawCanvas(); });
     on("[data-dash-size]", "change", (s) => { setWidgetOpt(id, "size", s.value === "half" ? "half" : undefined); drawCanvas(); });
@@ -288,41 +283,90 @@ function screenDashboardEditor(v) {
     });
   };
   const draw = () => { drawCanvas(); drawPane(); };
-  // drag and drop: tiles reorder, palette items add, a tile dropped on the pane is removed
-  const clearDrop = () => v.querySelectorAll(".dropbefore,.dropafter,.droptarget").forEach((x) => x.classList.remove("dropbefore", "dropafter", "droptarget"));
-  const dropSpot = (e) => {
-    const tile = e.target.closest("[data-tile]");
-    if (!tile || tile.dataset.tile === state.drag.id) return { tile: null };
-    const r = tile.getBoundingClientRect(), half = tile.classList.contains("half");
-    return { tile, after: half ? e.clientX > r.left + r.width / 2 : e.clientY > r.top + r.height / 2, half };
+  // Drag with pointer events so mouse, touch and pen all work (HTML5 drag and drop does not on phones).
+  // A mouse drags a widget from anywhere on it; a finger drags from the ⠿ handle, so the page still scrolls.
+  // Tiles reorder, widgets from the pane are added where dropped, and a tile dropped on the pane is removed.
+  const editor = v.querySelector(".dasheditor");
+  let pd = null;
+  const clearDrop = () => editor.querySelectorAll(".dropbefore,.dropafter,.droptarget").forEach((x) => x.classList.remove("dropbefore", "dropafter", "droptarget"));
+  const spotAt = (p, x, y) => {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return {};
+    if (p.from === "canvas" && el.closest("#dashPane")) return { trash: true };
+    if (!el.closest("#dashCanvas")) return {};
+    const tile = el.closest("[data-tile]");
+    if (!tile) return { end: true };
+    if (tile.dataset.tile === p.id) return {};
+    const r = tile.getBoundingClientRect();
+    return { tile, after: tile.classList.contains("half") ? x > r.left + r.width / 2 : y > r.top + r.height / 2 };
   };
-  canvas.addEventListener("dragover", (e) => {
-    if (!state.drag) return;
-    e.preventDefault(); clearDrop();
-    const s = dropSpot(e);
-    if (s.tile) s.tile.classList.add(s.after ? "dropafter" : "dropbefore");
-    else canvas.classList.add("droptarget");
-  });
-  canvas.addEventListener("dragleave", (e) => { if (!canvas.contains(e.relatedTarget)) clearDrop(); });
-  canvas.addEventListener("drop", (e) => {
-    if (!state.drag) return;
-    e.preventDefault();
-    const { id } = state.drag, s = dropSpot(e);
+  const mark = (sp) => {
     clearDrop();
-    if (!s.tile && e.target.closest("[data-tile]")) return; // dropped on itself
-    show(id);
-    place(id, s.tile ? s.tile.dataset.tile : null, s.after);
-    state.drag = null;
-    draw();
-  });
-  pane.addEventListener("dragover", (e) => { if (state.drag && state.drag.from === "canvas") { e.preventDefault(); pane.classList.add("droptarget"); } });
-  pane.addEventListener("dragleave", (e) => { if (!pane.contains(e.relatedTarget)) pane.classList.remove("droptarget"); });
-  pane.addEventListener("drop", (e) => {
-    if (!state.drag || state.drag.from !== "canvas") return;
-    e.preventDefault(); pane.classList.remove("droptarget");
-    const { id } = state.drag; state.drag = null;
-    v.classList.remove("dragging-tile");
-    remove(id);
+    if (sp.trash) pane.classList.add("droptarget");
+    else if (sp.tile) sp.tile.classList.add(sp.after ? "dropafter" : "dropbefore");
+    else if (sp.end) canvas.classList.add("droptarget");
+  };
+  const tick = () => {
+    if (!pd) return;
+    // scroll while holding a widget near the top (below the sticky header) or the bottom edge
+    const top = $(".topbar").getBoundingClientRect().bottom;
+    if (pd.y < top + 48) scrollBy(0, -14); else if (pd.y > innerHeight - 56) scrollBy(0, 14);
+    mark(spotAt(pd, pd.x, pd.y));
+    pd.raf = requestAnimationFrame(tick);
+  };
+  const startDrag = () => {
+    pd.started = true;
+    pd.src.classList.add("dragging");
+    if (pd.from === "canvas") editor.classList.add("dragging-tile");
+    pd.ghost = document.createElement("div");
+    pd.ghost.className = "dragghost";
+    pd.ghost.textContent = pd.name;
+    document.body.appendChild(pd.ghost);
+    document.body.classList.add("dashdragging");
+    pd.raf = requestAnimationFrame(tick);
+  };
+  const onMove = (e) => {
+    if (!pd || e.pointerId !== pd.pid) return;
+    pd.x = e.clientX; pd.y = e.clientY;
+    if (!pd.started && Math.hypot(pd.x - pd.x0, pd.y - pd.y0) > 6) startDrag();
+    if (pd.started) { e.preventDefault(); pd.ghost.style.transform = `translate(${pd.x + 14}px,${pd.y + 14}px)`; }
+  };
+  const endDrag = (drop) => {
+    const p = pd;
+    pd = null;
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+    window.removeEventListener("keydown", onKey);
+    if (!p || !p.started) return;
+    cancelAnimationFrame(p.raf);
+    p.ghost.remove();
+    p.src.classList.remove("dragging");
+    editor.classList.remove("dragging-tile");
+    document.body.classList.remove("dashdragging");
+    // the click a mouse sends after the drag must not also select the widget
+    const swallow = (e) => { e.stopPropagation(); e.preventDefault(); };
+    window.addEventListener("click", swallow, { capture: true, once: true });
+    setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+    const sp = drop ? spotAt(p, p.x, p.y) : {};
+    clearDrop();
+    if (sp.trash) remove(p.id);
+    else if (sp.tile || sp.end) { show(p.id); place(p.id, sp.tile ? sp.tile.dataset.tile : null, sp.after); draw(); }
+  };
+  const onUp = (e) => { if (pd && e.pointerId === pd.pid) endDrag(e.type === "pointerup"); };
+  const onKey = (e) => { if (e.key === "Escape") endDrag(false); };
+  editor.addEventListener("pointerdown", (e) => {
+    if (pd || e.button !== 0) return;
+    const src = e.target.closest("[data-tile],[data-pal]");
+    if (!src || e.target.closest("input,select,textarea,[data-tile-move],[data-tile-remove],.iconbtn[data-tile-edit],[data-pal-add]")) return;
+    const handle = e.target.closest(".grip");
+    if (e.pointerType !== "mouse" && !handle) return;
+    if (handle) e.preventDefault(); // no text selection or long-press menu from the handle
+    pd = { id: src.dataset.tile || src.dataset.pal, from: src.dataset.tile ? "canvas" : "palette", src, pid: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, name: src.querySelector(".tname,.grow").textContent };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("keydown", onKey);
   });
   $("#dashCancel").addEventListener("click", () => { state.customizing = false; render(); });
   $("#dashReset").addEventListener("click", () => { state.dashDraft = JSON.parse(JSON.stringify(DASH_DEFAULT)); state.dashSel = null; render(); });
@@ -1132,6 +1176,7 @@ function render() {
   $("#pageTitle").textContent = __(SCREENS[key][0]);
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === key));
   renderBell();
+  $("#addBtn").hidden = key === "dashboard" && state.customizing; // it would cover widgets being edited
   SCREENS[key][1]($("#view"));
 }
 window.addEventListener("hashchange", render);
