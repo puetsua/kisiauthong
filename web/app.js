@@ -108,16 +108,15 @@ const DASH_WIDGETS = [
   { id: "accounts", label: N_("Accounts"), pick: "accounts" },
   { id: "recent", label: N_("Recent transactions"), rows: 6 },
 ];
-const DASH_DEFAULT = { order: DASH_WIDGETS.map((w) => w.id), hidden: [], widgets: {} };
-const widgetDef = (id) => DASH_WIDGETS.find((w) => w.id === id);
-const widgetLabel = (id) => __(widgetDef(id).label);
+// The dashboard is a list of widgets, top to bottom. A widget type can be used any number of
+// times, each copy with its own options: { id, type, size?, title?, rows?, include? }.
+const DASH_DEFAULT = { items: DASH_WIDGETS.map((w) => ({ id: w.id, type: w.id })) };
+const widgetDef = (type) => DASH_WIDGETS.find((w) => w.id === type);
+const widgetLabel = (type) => __(widgetDef(type).label);
+const widgetName = (w) => w.title || widgetLabel(w.type);
 function dashLayout() {
   const s = state.dashboard || DASH_DEFAULT;
-  const order = (s.order || []).filter(widgetDef);
-  DASH_WIDGETS.forEach((w) => { if (!order.includes(w.id)) order.push(w.id); });
-  const widgets = {};
-  Object.entries(s.widgets || {}).forEach(([id, o]) => { if (widgetDef(id)) widgets[id] = JSON.parse(JSON.stringify(o)); });
-  return { order, hidden: (s.hidden || []).filter(widgetDef), widgets };
+  return { items: (s.items || []).filter((w) => widgetDef(w.type)).map((w) => JSON.parse(JSON.stringify(w))) };
 }
 // Items a widget can be narrowed to ("Show" checkboxes in Customize).
 function pickItems(kind) {
@@ -129,10 +128,10 @@ function pickItems(kind) {
   return [];
 }
 const ofAmount = (a, b, cur) => esc(__("{spent} of {limit}", { spent: fmt(a, cur), limit: fmt(b, cur) }));
-function widgetBody(id, o) {
-  const d = state.data, def = widgetDef(id), rows = o.rows || def.rows;
+function widgetBody(type, o) {
+  const d = state.data, def = widgetDef(type), rows = o.rows || def.rows;
   const inc = (x) => !(o.include && o.include.length) || o.include.includes(x);
-  switch (id) {
+  switch (type) {
     case "balances": {
       const perCur = {};
       d.accounts.forEach((a) => { if (inc(a.currency)) perCur[a.currency] = (perCur[a.currency] || 0) + a.balanceMinor; });
@@ -171,46 +170,42 @@ function widgetBody(id, o) {
   return "";
 }
 function dashGrid(layout) {
-  const visible = layout.order.filter((id) => !layout.hidden.includes(id));
-  if (!visible.length) return `<div class="empty">${esc(__("All widgets are hidden. Customize the dashboard to bring some back."))}</div>`;
-  return `<div class="dashgrid">${visible.map((id) => {
-    const o = layout.widgets[id] || {}, size = o.size === "half" ? " half" : "";
+  if (!layout.items.length) return `<div class="empty">${esc(__("No widgets yet. Customize the dashboard to add some."))}</div>`;
+  return `<div class="dashgrid">${layout.items.map((w) => {
+    const size = w.size === "half" ? " half" : "";
     // balances are bare cards: a heading only when the user gave it a title
-    if (id === "balances") return `<section class="dw bare${size}">${o.title ? `<h3>${esc(o.title)}</h3>` : ""}${widgetBody(id, o)}</section>`;
-    return `<section class="panel dw${size}"><h3>${esc(o.title || widgetLabel(id))}</h3>${widgetBody(id, o)}</section>`;
+    if (w.type === "balances") return `<section class="dw bare${size}">${w.title ? `<h3>${esc(w.title)}</h3>` : ""}${widgetBody(w.type, w)}</section>`;
+    return `<section class="panel dw${size}"><h3>${esc(widgetName(w))}</h3>${widgetBody(w.type, w)}</section>`;
   }).join("")}</div>`;
 }
+const draftItem = (id) => state.dashDraft.items.find((w) => w.id === id);
 function setWidgetOpt(id, key, val) {
-  const ws = state.dashDraft.widgets, o = ws[id] || {};
-  if (val === undefined || val === "" || (Array.isArray(val) && !val.length)) delete o[key]; else o[key] = val;
-  if (Object.keys(o).length) ws[id] = o; else delete ws[id];
+  const w = draftItem(id);
+  if (val === undefined || val === "" || (Array.isArray(val) && !val.length)) delete w[key]; else w[key] = val;
 }
 // Dashboard editor: the dashboard itself is the editing surface (left); the pane on the right
-// lists widgets that are not on it, or the settings of the selected one.
+// lists every widget type to add (as often as wanted), or the settings of the selected widget.
 const GEAR = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.4 7.4 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 2.6-1.5l2.4 1 2-3.4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`;
 const ARROW = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const UP = ARROW("M12 19V5M6 11l6-6 6 6"), DOWN = ARROW("M12 5v14M6 13l6 6 6-6");
-const visibleIds = (draft) => draft.order.filter((id) => !draft.hidden.includes(id));
-function dashTile(id, draft) {
-  const o = draft.widgets[id] || {}, name = o.title || widgetLabel(id), vis = visibleIds(draft), i = vis.indexOf(id);
-  return `<section class="panel dw edit${o.size === "half" ? " half" : ""}${state.dashSel === id ? " sel" : ""}" data-tile="${esc(id)}">
+function dashTile(w, i, draft) {
+  const id = w.id, name = widgetName(w), last = draft.items.length - 1;
+  return `<section class="panel dw edit${w.size === "half" ? " half" : ""}${state.dashSel === id ? " sel" : ""}" data-tile="${esc(id)}">
     <div class="tilebar"><span class="grip" aria-hidden="true">⠿</span><button type="button" class="tname" data-tile-edit="${esc(id)}">${esc(name)}</button>
       <button type="button" class="iconbtn" data-tile-move="-1" aria-label="${esc(__("Move {widget} earlier", { widget: name }))}" ${i === 0 ? "disabled" : ""}>${UP}</button>
-      <button type="button" class="iconbtn" data-tile-move="1" aria-label="${esc(__("Move {widget} later", { widget: name }))}" ${i === vis.length - 1 ? "disabled" : ""}>${DOWN}</button>
+      <button type="button" class="iconbtn" data-tile-move="1" aria-label="${esc(__("Move {widget} later", { widget: name }))}" ${i === last ? "disabled" : ""}>${DOWN}</button>
       <button type="button" class="iconbtn" data-tile-edit="${esc(id)}" aria-label="${esc(__("Settings for {widget}", { widget: name }))}" title="${esc(__("Settings"))}">${GEAR}</button>
       <button type="button" class="iconbtn" data-tile-remove aria-label="${esc(__("Remove {widget}", { widget: name }))}" title="${esc(__("Remove"))}">✕</button></div>
-    <div class="tilebody" inert>${widgetBody(id, o)}</div></section>`;
+    <div class="tilebody" inert>${widgetBody(w.type, w)}</div></section>`;
 }
 function dashPaneHTML(draft) {
-  const id = state.dashSel;
-  if (!id) {
-    const avail = draft.order.filter((x) => draft.hidden.includes(x));
+  const o = state.dashSel && draft.items.find((w) => w.id === state.dashSel);
+  if (!o) {
     return `<h3>${esc(__("Widgets"))}</h3>
-      ${avail.length ? `<ul class="palette">${avail.map((x) => `<li data-pal="${esc(x)}"><span class="grip" aria-hidden="true">⠿</span><span class="grow">${esc((draft.widgets[x] || {}).title || widgetLabel(x))}</span><button type="button" class="smallbtn" data-pal-add="${esc(x)}">${esc(__("Add"))}</button></li>`).join("")}</ul>`
-        : `<p class="muted">${esc(__("All widgets are on the dashboard."))}</p>`}
+      <ul class="palette">${DASH_WIDGETS.map((d) => `<li data-pal="${esc(d.id)}"><span class="grip" aria-hidden="true">⠿</span><span class="grow">${esc(__(d.label))}</span><button type="button" class="smallbtn" data-pal-add="${esc(d.id)}">${esc(__("Add"))}</button></li>`).join("")}</ul>
       <div class="droptrash">${esc(__("Drop here to remove"))}</div>`;
   }
-  const w = widgetDef(id), o = draft.widgets[id] || {}, label = widgetLabel(id);
+  const w = widgetDef(o.type), label = widgetLabel(o.type);
   const items = w.pick ? pickItems(w.pick) : [];
   const shown = (x) => !(o.include && o.include.length) || o.include.includes(x);
   return `<button type="button" class="linkbtn" data-pane-back>${esc(__("‹ All widgets"))}</button>
@@ -221,25 +216,37 @@ function dashPaneHTML(draft) {
       ${w.rows ? `<label>${esc(__("Rows"))} <input type="number" data-dash-rows min="1" max="50" value="${o.rows || w.rows}"></label>` : ""}
       ${items.length ? `<fieldset><legend>${esc(__("Show"))}</legend>${items.map((it) => `<label><input type="checkbox" data-dash-inc value="${esc(it.id)}" ${shown(it.id) ? "checked" : ""}> ${esc(it.label)}</label>`).join("")}</fieldset>` : ""}
     </div>
-    <button type="button" class="smallbtn danger" data-pane-remove>${esc(__("Remove from dashboard"))}</button>`;
+    <div class="setrow"><button type="button" class="smallbtn" data-pane-dup>${esc(__("Duplicate"))}</button><button type="button" class="smallbtn danger" data-pane-remove>${esc(__("Remove from dashboard"))}</button></div>`;
 }
 function screenDashboardEditor(v) {
   const draft = state.dashDraft;
   v.innerHTML = `<div class="dashbar"><h3>${esc(__("Customize dashboard"))}</h3><span><button class="smallbtn" id="dashReset">${esc(__("Reset to default"))}</button> <button class="smallbtn" id="dashCancel">${esc(__("Cancel"))}</button> <button class="primarybtn" id="dashSave">${esc(__("Save"))}</button></span></div>
     <div class="dasheditor"><div class="dashgrid dashcanvas" id="dashCanvas"></div><aside class="panel dashpane" id="dashPane" aria-label="${esc(__("Widgets"))}"></aside></div>`;
   const canvas = $("#dashCanvas"), pane = $("#dashPane");
-  const show = (id) => { draft.hidden = draft.hidden.filter((x) => x !== id); };
-  const remove = (id) => { if (!draft.hidden.includes(id)) draft.hidden.push(id); if (state.dashSel === id) state.dashSel = null; draw(); };
-  // place id before/after another widget (or at the end of the visible ones) in the full order
-  const place = (id, target, after) => {
-    const o = draft.order.filter((x) => x !== id), vis = o.filter((x) => !draft.hidden.includes(x) || x === target);
-    let j = target ? o.indexOf(target) + (after ? 1 : 0) : (vis.length ? o.indexOf(vis[vis.length - 1]) + 1 : 0);
-    o.splice(j, 0, id);
-    draft.order = o;
+  const remove = (id) => { draft.items = draft.items.filter((w) => w.id !== id); if (state.dashSel === id) state.dashSel = null; draw(); };
+  // a new widget of a type (optionally copying another's options), not yet placed
+  const create = (type, from) => {
+    let id;
+    do id = "w-" + Math.random().toString(36).slice(2, 10); while (draftItem(id));
+    const w = from ? { ...JSON.parse(JSON.stringify(from)), id } : { id, type };
+    return w;
+  };
+  // put a widget before/after another one, or at the end
+  const place = (w, targetId, after) => {
+    const items = draft.items.filter((x) => x.id !== w.id);
+    const j = targetId ? items.findIndex((x) => x.id === targetId) + (after ? 1 : 0) : items.length;
+    items.splice(j, 0, w);
+    draft.items = items;
+  };
+  const flash = (id) => {
+    const t = canvas.querySelector(`[data-tile="${CSS.escape(id)}"]`);
+    if (!t) return;
+    t.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    t.classList.add("flash");
+    setTimeout(() => t.classList.remove("flash"), 1200);
   };
   const drawCanvas = () => {
-    const vis = visibleIds(draft);
-    canvas.innerHTML = vis.map((id) => dashTile(id, draft)).join("") || `<div class="empty dropend">${esc(__("Drag widgets here, or use Add."))}</div>`;
+    canvas.innerHTML = draft.items.map((w, i) => dashTile(w, i, draft)).join("") || `<div class="empty dropend">${esc(__("Drag widgets here, or use Add."))}</div>`;
     canvas.querySelectorAll("[data-tile]").forEach((tile) => {
       const id = tile.dataset.tile;
       tile.addEventListener("click", (e) => {
@@ -250,9 +257,9 @@ function screenDashboardEditor(v) {
       });
       tile.querySelector("[data-tile-remove]").addEventListener("click", () => remove(id));
       tile.querySelectorAll("[data-tile-move]").forEach((b) => b.addEventListener("click", () => {
-        const vis2 = visibleIds(draft), j = vis2.indexOf(id) + parseInt(b.dataset.tileMove, 10);
-        if (j < 0 || j >= vis2.length) return;
-        place(id, vis2[j], j > vis2.indexOf(id));
+        const i = draft.items.findIndex((w) => w.id === id), j = i + parseInt(b.dataset.tileMove, 10);
+        if (j < 0 || j >= draft.items.length) return;
+        place(draft.items[i], draft.items[j].id, j > i);
         draw();
         const again = canvas.querySelector(`[data-tile="${CSS.escape(id)}"] [data-tile-move="${b.dataset.tileMove}"]`);
         if (again && !again.disabled) again.focus();
@@ -265,14 +272,15 @@ function screenDashboardEditor(v) {
     const on = (sel, ev, fn) => pane.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, () => fn(el)));
     on("[data-pane-back]", "click", () => { state.dashSel = null; draw(); });
     on("[data-pane-remove]", "click", () => remove(id));
-    on("[data-pal-add]", "click", (b) => { show(b.dataset.palAdd); place(b.dataset.palAdd, null); draw(); });
+    on("[data-pal-add]", "click", (b) => { const w = create(b.dataset.palAdd); place(w, null); draw(); flash(w.id); });
+    on("[data-pane-dup]", "click", () => { const w = create(null, draftItem(id)); place(w, id, true); state.dashSel = w.id; draw(); flash(w.id); });
     // option changes redraw only the dashboard, so the field being edited keeps focus
     on("[data-dash-title]", "input", (t) => { setWidgetOpt(id, "title", t.value.trim()); drawCanvas(); });
     on("[data-dash-size]", "change", (s) => { setWidgetOpt(id, "size", s.value === "half" ? "half" : undefined); drawCanvas(); });
     on("[data-dash-rows]", "change", (r) => {
-      const n = Math.min(50, Math.max(1, parseInt(r.value, 10) || widgetDef(id).rows));
+      const def = widgetDef(draftItem(id).type), n = Math.min(50, Math.max(1, parseInt(r.value, 10) || def.rows));
       r.value = n;
-      setWidgetOpt(id, "rows", n === widgetDef(id).rows ? undefined : n);
+      setWidgetOpt(id, "rows", n === def.rows ? undefined : n);
       drawCanvas();
     });
     on("[data-dash-inc]", "change", (c) => {
@@ -296,7 +304,7 @@ function screenDashboardEditor(v) {
     if (!el.closest("#dashCanvas")) return {};
     const tile = el.closest("[data-tile]");
     if (!tile) return { end: true };
-    if (tile.dataset.tile === p.id) return {};
+    if (p.from === "canvas" && tile.dataset.tile === p.id) return {};
     const r = tile.getBoundingClientRect();
     return { tile, after: tile.classList.contains("half") ? x > r.left + r.width / 2 : y > r.top + r.height / 2 };
   };
@@ -351,7 +359,12 @@ function screenDashboardEditor(v) {
     const sp = drop ? spotAt(p, p.x, p.y) : {};
     clearDrop();
     if (sp.trash) remove(p.id);
-    else if (sp.tile || sp.end) { show(p.id); place(p.id, sp.tile ? sp.tile.dataset.tile : null, sp.after); draw(); }
+    else if (sp.tile || sp.end) {
+      const w = p.from === "palette" ? create(p.id) : draftItem(p.id);
+      place(w, sp.tile ? sp.tile.dataset.tile : null, sp.after);
+      draw();
+      if (p.from === "palette") flash(w.id);
+    }
   };
   const onUp = (e) => { if (pd && e.pointerId === pd.pid) endDrag(e.type === "pointerup"); };
   const onKey = (e) => { if (e.key === "Escape") endDrag(false); };
@@ -362,7 +375,7 @@ function screenDashboardEditor(v) {
     const handle = e.target.closest(".grip");
     if (e.pointerType !== "mouse" && !handle) return;
     if (handle) e.preventDefault(); // no text selection or long-press menu from the handle
-    pd = { id: src.dataset.tile || src.dataset.pal, from: src.dataset.tile ? "canvas" : "palette", src, pid: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, name: src.querySelector(".tname,.grow").textContent };
+    pd = { id: src.dataset.tile || src.dataset.pal, from: src.dataset.tile ? "canvas" : "palette", src, pid: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, name: src.dataset.pal ? widgetLabel(src.dataset.pal) : src.querySelector(".tname").textContent };
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);

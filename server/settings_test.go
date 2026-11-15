@@ -43,7 +43,7 @@ func TestSettingsDefaults(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("GET: %d", code)
 	}
-	if s.General.DefaultCurrency != "TWD" || len(s.Dashboard.Order) != len(dashboardWidgets) || len(s.Dashboard.Hidden) != 0 {
+	if s.General.DefaultCurrency != "TWD" || itemList(s.Dashboard) != strings.Join(dashboardWidgets, ",") {
 		t.Fatalf("unexpected defaults: %+v", s)
 	}
 	if s.About.SourceURL != "https://example.invalid/src" {
@@ -53,7 +53,7 @@ func TestSettingsDefaults(t *testing.T) {
 
 func TestSettingsPartialUpdateKeepsOtherSection(t *testing.T) {
 	withTestStore(t)
-	if code, _ := doSettings(t, http.MethodPut, `{"dashboard":{"order":["recent","balances"],"hidden":["budgets"]}}`); code != 200 {
+	if code, _ := doSettings(t, http.MethodPut, `{"dashboard":{"items":[{"id":"recent","type":"recent"},{"id":"b","type":"balances"}]}}`); code != 200 {
 		t.Fatalf("PUT dashboard: %d", code)
 	}
 	code, s := doSettings(t, http.MethodPut, `{"general":{"defaultCurrency":" jpy "}}`)
@@ -63,7 +63,7 @@ func TestSettingsPartialUpdateKeepsOtherSection(t *testing.T) {
 	if s.General.DefaultCurrency != "JPY" {
 		t.Fatalf("currency not normalised: %q", s.General.DefaultCurrency)
 	}
-	if strings.Join(s.Dashboard.Order, ",") != "recent,balances" || strings.Join(s.Dashboard.Hidden, ",") != "budgets" {
+	if itemList(s.Dashboard) != "recent,b:balances" {
 		t.Fatalf("dashboard lost on general update: %+v", s.Dashboard)
 	}
 }
@@ -189,42 +189,81 @@ func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
 	}
 }
 
+// itemList renders a dashboard as "id" (when id == type) or "id:type", in order.
+func itemList(d DashboardSettings) string {
+	out := []string{}
+	for _, w := range d.Items {
+		if w.ID == w.Type {
+			out = append(out, w.ID)
+		} else {
+			out = append(out, w.ID+":"+w.Type)
+		}
+	}
+	return strings.Join(out, ",")
+}
+
 func TestSettingsDashboardWidgetOptions(t *testing.T) {
 	withTestStore(t)
-	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"order":["spending","recent"],"hidden":[],"widgets":{"recent":{"size":"half","title":"  Latest  ","rows":10},"accounts":{"include":["acc-a","acc-b"]}}}}`)
+	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"items":[
+		{"id":"recent","type":"recent","size":"half","title":"  Latest  ","rows":10},
+		{"id":"accounts","type":"accounts","include":["acc-a","acc-b"]}]}}`)
 	if code != 200 {
 		t.Fatalf("PUT: %d", code)
 	}
-	r := s.Dashboard.Widgets["recent"]
+	r := s.Dashboard.Items[0]
 	if r.Size != "half" || r.Title != "Latest" || r.Rows != 10 {
 		t.Fatalf("recent options: %+v", r)
 	}
-	if strings.Join(s.Dashboard.Widgets["accounts"].Include, ",") != "acc-a,acc-b" {
-		t.Fatalf("accounts include: %+v", s.Dashboard.Widgets["accounts"])
-	}
-	// a layout saved before widget options existed still loads with an empty map
-	if err := store.setSetting("dashboard", `{"order":["recent"],"hidden":[]}`); err != nil {
-		t.Fatal(err)
-	}
-	if _, s = doSettings(t, http.MethodGet, ""); s.Dashboard.Widgets == nil {
-		t.Fatalf("widgets map should default to empty")
+	if strings.Join(s.Dashboard.Items[1].Include, ",") != "acc-a,acc-b" {
+		t.Fatalf("accounts include: %+v", s.Dashboard.Items[1])
 	}
 }
 
-func TestSettingsRetiredWidgetIsDropped(t *testing.T) {
+func TestSettingsWidgetTypeRepeats(t *testing.T) {
 	withTestStore(t)
-	// a layout saved while the "expected" widget existed still loads, without it
-	if err := store.setSetting("dashboard", `{"order":["balances","expected","recent"],"hidden":["expected"],"widgets":{"expected":{"rows":3}}}`); err != nil {
+	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"items":[
+		{"id":"accounts","type":"accounts","title":"Banks","include":["acc-a","acc-b"]},
+		{"id":"w-cards","type":"accounts","title":"Cards","include":["acc-c"],"size":"half"},
+		{"id":"w-2","type":"balances","include":["TWD"]},
+		{"id":"w-3","type":"balances","include":["JPY"]}]}}`)
+	if code != 200 {
+		t.Fatalf("PUT: %d", code)
+	}
+	if itemList(s.Dashboard) != "accounts,w-cards:accounts,w-2:balances,w-3:balances" || s.Dashboard.Items[1].Title != "Cards" {
+		t.Fatalf("items: %+v", s.Dashboard.Items)
+	}
+	// stored and read back unchanged
+	if _, s = doSettings(t, http.MethodGet, ""); itemList(s.Dashboard) != "accounts,w-cards:accounts,w-2:balances,w-3:balances" {
+		t.Fatalf("after reload: %s", itemList(s.Dashboard))
+	}
+	// an empty dashboard is allowed
+	if code, s = doSettings(t, http.MethodPut, `{"dashboard":{"items":[]}}`); code != 200 || len(s.Dashboard.Items) != 0 {
+		t.Fatalf("empty: %d %+v", code, s.Dashboard)
+	}
+}
+
+func TestSettingsLegacyDashboardBecomesItems(t *testing.T) {
+	withTestStore(t)
+	// saved before widgets were reusable: one per type, hidden ones off the dashboard,
+	// types missing from order shown at the end, retired types dropped
+	if err := store.setSetting("dashboard", `{"order":["recent","expected","balances","budgets"],"hidden":["budgets","expected"],"widgets":{"recent":{"rows":3},"expected":{"rows":3}}}`); err != nil {
 		t.Fatal(err)
 	}
 	_, s := doSettings(t, http.MethodGet, "")
-	if strings.Join(s.Dashboard.Order, ",") != "balances,recent" || len(s.Dashboard.Hidden) != 0 || len(s.Dashboard.Widgets) != 0 {
-		t.Fatalf("stored layout: %+v", s.Dashboard)
+	if itemList(s.Dashboard) != "recent,balances,spending,moneyboxes,accounts" || s.Dashboard.Items[0].Rows != 3 {
+		t.Fatalf("legacy layout: %s %+v", itemList(s.Dashboard), s.Dashboard.Items)
 	}
-	// and an older client sending it back is cleaned, not rejected
-	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"order":["expected","spending"],"hidden":[]}}`)
-	if code != 200 || strings.Join(s.Dashboard.Order, ",") != "spending" {
-		t.Fatalf("PUT with retired widget: %d %+v", code, s.Dashboard)
+	// an older client sending the old shape is converted too
+	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"order":["expected","spending"],"hidden":["balances","budgets","moneyboxes","accounts","recent"]}}`)
+	if code != 200 || itemList(s.Dashboard) != "spending" {
+		t.Fatalf("PUT old shape: %d %s", code, itemList(s.Dashboard))
+	}
+	// a stored layout that no longer validates falls back to the default instead of breaking settings
+	if err := store.setSetting("dashboard", `{"items":[{"id":"x","type":"nope"}]}`); err != nil {
+		t.Fatal(err)
+	}
+	if code, s = doSettings(t, http.MethodGet, ""); code != 200 || itemList(s.Dashboard) != strings.Join(dashboardWidgets, ",") {
+		t.Fatalf("broken stored layout: %d %s", code, itemList(s.Dashboard))
 	}
 }
 
@@ -236,12 +275,15 @@ func TestSettingsRejectsInvalid(t *testing.T) {
 		`{"general":{"currencies":["USD","US"]}}`,
 		`{"general":{"currencies":"USD"}}`,
 		`{"dashboard":{"order":["nope"],"hidden":[]}}`,
-		`{"dashboard":{"order":[],"hidden":[],"widgets":{"nope":{}}}}`,
-		`{"dashboard":{"order":[],"hidden":[],"widgets":{"recent":{"size":"huge"}}}}`,
-		`{"dashboard":{"order":[],"hidden":[],"widgets":{"recent":{"rows":51}}}}`,
-		`{"dashboard":{"order":[],"hidden":[],"widgets":{"recent":{"rows":-1}}}}`,
-		`{"dashboard":{"order":[],"hidden":[],"widgets":{"recent":{"title":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}}`,
-		`{"dashboard":{"order":[],"hidden":[],"widgets":{"accounts":{"include":[""]}}}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"nope"}]}}`,
+		`{"dashboard":{"items":[{"id":"","type":"recent"}]}}`,
+		`{"dashboard":{"items":[{"id":"has space","type":"recent"}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"recent"},{"id":"a","type":"budgets"}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"recent","size":"huge"}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"recent","rows":51}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"recent","rows":-1}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"recent","title":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"accounts","include":[""]}]}}`,
 		`{}`,
 		`not json`,
 	} {

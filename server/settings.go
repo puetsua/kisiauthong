@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -13,30 +14,12 @@ import (
 	"unicode/utf8"
 )
 
-// dashboardWidgets is the known widget set, in default order.
+// dashboardWidgets is the known widget types, in default order.
 var dashboardWidgets = []string{"balances", "budgets", "spending", "moneyboxes", "accounts", "recent"}
 
 // retiredWidgets were once valid; saved layouts that still name them are cleaned, not rejected.
 // "expected" left the dashboard when expected transactions moved to the notification bell.
 var retiredWidgets = map[string]bool{"expected": true}
-
-func (d *DashboardSettings) dropRetired() {
-	keep := func(ids []string) []string {
-		out := ids[:0:0]
-		for _, id := range ids {
-			if !retiredWidgets[id] {
-				out = append(out, id)
-			}
-		}
-		return out
-	}
-	d.Order, d.Hidden = keep(d.Order), keep(d.Hidden)
-	for id := range d.Widgets {
-		if retiredWidgets[id] {
-			delete(d.Widgets, id)
-		}
-	}
-}
 
 // WidgetOptions customises one dashboard widget. Zero values mean "default".
 type WidgetOptions struct {
@@ -46,17 +29,63 @@ type WidgetOptions struct {
 	Include []string `json:"include,omitempty"` // item ids / currency codes to show; empty = all
 }
 
+// WidgetItem is one widget on the dashboard. A type may appear any number of
+// times, each with its own options (e.g. two Accounts widgets for different accounts).
+type WidgetItem struct {
+	ID   string `json:"id"`   // client-chosen, unique within the dashboard
+	Type string `json:"type"` // one of dashboardWidgets
+	WidgetOptions
+}
+
+// DashboardSettings is the dashboard's widgets, top to bottom.
 type DashboardSettings struct {
-	Order   []string                 `json:"order"`
-	Hidden  []string                 `json:"hidden"`
-	Widgets map[string]WidgetOptions `json:"widgets"`
+	Items []WidgetItem `json:"items"`
+}
+
+// UnmarshalJSON also reads layouts saved before widgets were reusable,
+// {order, hidden, widgets} with one widget per type, as the equivalent item list.
+func (d *DashboardSettings) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		Items   *[]WidgetItem            `json:"items"`
+		Order   []string                 `json:"order"`
+		Hidden  []string                 `json:"hidden"`
+		Widgets map[string]WidgetOptions `json:"widgets"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if raw.Items != nil {
+		d.Items = *raw.Items
+		return nil
+	}
+	skip := map[string]bool{}
+	for _, t := range raw.Hidden {
+		skip[t] = true
+	}
+	d.Items = []WidgetItem{}
+	add := func(t string) {
+		if !skip[t] {
+			skip[t] = true
+			d.Items = append(d.Items, WidgetItem{ID: t, Type: t, WidgetOptions: raw.Widgets[t]})
+		}
+	}
+	for _, t := range raw.Order {
+		add(t)
+	}
+	for _, t := range dashboardWidgets { // the old dashboard showed types missing from order at the end
+		add(t)
+	}
+	return nil
 }
 
 const (
+	maxWidgets       = 40
 	maxWidgetTitle   = 60
 	maxWidgetRows    = 50
 	maxWidgetInclude = 200
 )
+
+var widgetIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 type GeneralSettings struct {
 	DefaultCurrency string `json:"defaultCurrency"`
@@ -129,57 +158,67 @@ type Settings struct {
 
 var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
 
+// defaultDashboard has one widget of each type; a type's first widget uses the type as its id.
+func defaultDashboard() DashboardSettings {
+	d := DashboardSettings{Items: []WidgetItem{}}
+	for _, t := range dashboardWidgets {
+		d.Items = append(d.Items, WidgetItem{ID: t, Type: t})
+	}
+	return d
+}
+
 func defaultSettings() Settings {
 	return Settings{
-		Dashboard: DashboardSettings{Order: append([]string{}, dashboardWidgets...), Hidden: []string{}},
+		Dashboard: defaultDashboard(),
 		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, PageWidth: "default", OpenDays: defaultOpenDays},
 	}
 }
 
 func (d *DashboardSettings) validate() error {
-	d.dropRetired()
 	known := map[string]bool{}
-	for _, id := range dashboardWidgets {
-		known[id] = true
+	for _, t := range dashboardWidgets {
+		known[t] = true
 	}
-	for _, id := range append(append([]string{}, d.Order...), d.Hidden...) {
-		if !known[id] {
-			return fmt.Errorf("unknown dashboard widget: %s", id)
+	items := []WidgetItem{}
+	seen := map[string]bool{}
+	for _, w := range d.Items {
+		if retiredWidgets[w.Type] {
+			continue
 		}
-	}
-	if d.Widgets == nil {
-		d.Widgets = map[string]WidgetOptions{}
-	}
-	for id, w := range d.Widgets {
-		if !known[id] {
-			return fmt.Errorf("unknown dashboard widget: %s", id)
+		if !known[w.Type] {
+			return fmt.Errorf("unknown dashboard widget: %s", w.Type)
 		}
+		if !widgetIDRe.MatchString(w.ID) {
+			return fmt.Errorf("widget id must be 1-64 letters, digits, - or _")
+		}
+		if seen[w.ID] {
+			return fmt.Errorf("duplicate widget id: %s", w.ID)
+		}
+		seen[w.ID] = true
 		if w.Size != "" && w.Size != "full" && w.Size != "half" {
-			return fmt.Errorf("widget %s: size must be full or half", id)
+			return fmt.Errorf("widget %s: size must be full or half", w.ID)
 		}
 		w.Title = strings.TrimSpace(w.Title)
 		if utf8.RuneCountInString(w.Title) > maxWidgetTitle {
-			return fmt.Errorf("widget %s: title longer than %d characters", id, maxWidgetTitle)
+			return fmt.Errorf("widget %s: title longer than %d characters", w.ID, maxWidgetTitle)
 		}
 		if w.Rows < 0 || w.Rows > maxWidgetRows {
-			return fmt.Errorf("widget %s: rows must be 1-%d", id, maxWidgetRows)
+			return fmt.Errorf("widget %s: rows must be 1-%d", w.ID, maxWidgetRows)
 		}
 		if len(w.Include) > maxWidgetInclude {
-			return fmt.Errorf("widget %s: too many items in include", id)
+			return fmt.Errorf("widget %s: too many items in include", w.ID)
 		}
 		for _, x := range w.Include {
 			if x == "" || len(x) > 64 {
-				return fmt.Errorf("widget %s: invalid include entry", id)
+				return fmt.Errorf("widget %s: invalid include entry", w.ID)
 			}
 		}
-		d.Widgets[id] = w
+		items = append(items, w)
 	}
-	if d.Order == nil {
-		d.Order = []string{}
+	if len(items) > maxWidgets {
+		return fmt.Errorf("at most %d widgets", maxWidgets)
 	}
-	if d.Hidden == nil {
-		d.Hidden = []string{}
-	}
+	d.Items = items
 	return nil
 }
 
@@ -236,10 +275,11 @@ func (s *Store) loadSettings() (Settings, error) {
 			return out, fmt.Errorf("stored dashboard setting is invalid JSON")
 		}
 	}
-	if out.Dashboard.Widgets == nil {
-		out.Dashboard.Widgets = map[string]WidgetOptions{}
+	if err := out.Dashboard.validate(); err != nil {
+		// a broken layout must not take the rest of the settings down with it
+		log.Printf("stored dashboard setting ignored: %v", err)
+		out.Dashboard = defaultDashboard()
 	}
-	out.Dashboard.dropRetired()
 	if v, ok, err := s.getSetting("general"); err != nil {
 		return out, err
 	} else if ok {

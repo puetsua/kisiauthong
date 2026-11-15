@@ -93,6 +93,9 @@ a.smallbtn{text-decoration:none;display:inline-block}
 .palette li:hover{border-color:var(--accent2)}
 .palette li.dragging{opacity:.4}
 .palette .grow{flex:1;min-width:0}
+.dw.edit.flash{animation:tileflash 1.2s ease-out}
+@keyframes tileflash{from{box-shadow:0 0 0 4px var(--accent2)}to{box-shadow:0 0 0 0 transparent}}
+.dashpane .setrow{display:flex;gap:8px;flex-wrap:wrap}
 .droptrash{display:none;margin-top:10px;padding:16px;border:2px dashed var(--red);border-radius:8px;text-align:center;color:var(--red);font-weight:600}
 .dragging-tile .droptrash{display:block}
 .dasheditor .grip{touch-action:none;-webkit-touch-callout:none;display:grid;place-items:center;min-width:28px;min-height:28px}
@@ -255,7 +258,7 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .topbar{padding:12px 14px}.topbar h1{font-size:1.2rem}
   .grid2{grid-template-columns:1fr}
   .dashgrid>.dw.half{grid-column:1/-1}
-  .dasheditor{grid-template-columns:minmax(0,1fr)}.dasheditor .grip{min-width:40px;min-height:40px;font-size:1.3rem}.tilebar .iconbtn{min-width:40px;min-height:40px}.tilebar{padding:2px 4px}.palette li{padding:4px 8px 4px 2px}.dashpane{position:static;max-height:none;order:-1}
+  .dasheditor{grid-template-columns:minmax(0,1fr)}.dasheditor .grip{min-width:40px;min-height:40px;font-size:1.3rem}.tilebar .iconbtn{min-width:40px;min-height:40px}.tilebar{padding:2px 4px}.palette li{padding:4px 8px 4px 2px}.panel.dashpane{position:static;max-height:none;order:-1}
   .flow{flex-direction:column}
   .notifpanel{left:12px;width:auto}
   .periodnav{margin-left:0;width:100%;justify-content:space-between}
