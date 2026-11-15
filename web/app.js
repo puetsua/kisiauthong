@@ -19,11 +19,15 @@ const curName = (c) => {
   try { curNames[LANG] = curNames[LANG] || new Intl.DisplayNames([LANG], { type: "currency" }); return curNames[LANG].of(c); } catch (e) { return c; }
 };
 const curOption = (c, sel) => `<option value="${esc(c)}" ${c === sel ? "selected" : ""}>${esc(c)} — ${esc(curName(c))}</option>`;
-// Frequently used currencies first, then every ISO 4217 code under "All currencies".
+// Top group: the frequently used list (Settings), then currencies your accounts and tags already
+// use, then the current value; below it every other ISO 4217 code under "All currencies".
 function currencyOptions(selected) {
-  const sel = selected || defCur(), fav = favCurs().includes(sel) ? favCurs() : [...favCurs(), sel];
-  const rest = ALL_CURRENCIES.filter((c) => !fav.includes(c));
-  return fav.map((c) => curOption(c, sel)).join("") + (rest.length ? `<optgroup label="${esc(__("All currencies"))}">${rest.map((c) => curOption(c, sel)).join("")}</optgroup>` : "");
+  const sel = selected || defCur(), d = state.data;
+  const inUse = d ? [...d.accounts.map((a) => a.currency), ...d.tags.map((t) => t.currency)] : [];
+  const top = [...new Set([...favCurs(), ...inUse, sel].filter(Boolean))];
+  const rest = ALL_CURRENCIES.filter((c) => !top.includes(c));
+  return `<optgroup label="${esc(__("Frequently used"))}">${top.map((c) => curOption(c, sel)).join("")}</optgroup>`
+    + (rest.length ? `<optgroup label="${esc(__("All currencies"))}">${rest.map((c) => curOption(c, sel)).join("")}</optgroup>` : "");
 }
 const toMinor = (a, c) => Math.round(parseFloat(a || 0) * Math.pow(10, expOf(c)));
 function fmt(minor, currency) {

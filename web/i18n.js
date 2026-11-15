@@ -17,7 +17,7 @@ const I18N = {
     "days": "天", "weeks": "週", "months": "個月", "years": "年", "Date range": "指定期間", "Custom…": "自訂…",
     "{amount} left": "剩 {amount}", "{amount} over": "超支 {amount}", "Starts {date}": "{date} 開始", "Ended {date}": "{date} 已結束",
     "{amount} a day for {n} day(s)": "每天 {amount}，還有 {n} 天", "{n} day(s) left": "還有 {n} 天", "of {limit}": "／{limit}",
-    "{amount} this month": "本月 {amount}", "Nothing spent this month": "本月沒有支出", "Categories": "分類",
+    "{amount} this month": "本月 {amount}", "Nothing spent this month": "本月沒有支出", "Categories": "分類", "Frequently used": "常用",
     "Owed": "欠款", "Card": "卡片", "Wallet": "錢包", "Phone": "手機", "Coins": "零錢", "Home": "住家", "Car": "汽車", "Travel": "旅行",
     "Gift": "禮物", "Work": "工作", "Shop": "商店", "Globe": "地球", "Icon": "圖示", "Optional": "選填",
     "{name} is at {pct}% of its limit": "{name}已用到上限的 {pct}%",
