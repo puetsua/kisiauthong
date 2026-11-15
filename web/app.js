@@ -85,7 +85,17 @@ function row(cells) {
 const TYPE_L = { expense: N_("Expense"), income: N_("Income"), transfer: N_("Transfer"), allocate: N_("Allocate") };
 const KIND_L = { bank: N_("Bank"), savings: N_("Savings"), cash: N_("Cash"), credit_card: N_("Credit card"), ewallet: N_("E-wallet"), investment: N_("Investment"), loan: N_("Loan"), external: N_("External") };
 const OWN_KINDS = ["bank", "savings", "cash", "credit_card", "ewallet", "investment", "loan"];
-const TAGKIND_L = { category: N_("Category"), goal: N_("Goal"), label: N_("Label"), payee: N_("Payee") };
+const TAGKIND_L = { category: N_("Category"), goal: N_("Money box") };
+// Budget periods (ADR 0004): unit × every N, anchored on cycleStart; "range" is one fixed period.
+const CYCLE_EVERY_L = { daily: N_("Every {n} days"), weekly: N_("Every {n} weeks"), monthly: N_("Every {n} months"), yearly: N_("Every {n} years") };
+const CYCLE_UNIT_L = { daily: N_("days"), weekly: N_("weeks"), monthly: N_("months"), yearly: N_("years") };
+const BUDGET_PRESETS = [["daily", 1], ["weekly", 1], ["weekly", 2], ["weekly", 3], ["monthly", 1], ["monthly", 2], ["monthly", 3], ["monthly", 6], ["yearly", 1]];
+function cycleName(cycle, every) {
+  if (cycle === "range") return __("Date range");
+  return every > 1 ? __(CYCLE_EVERY_L[cycle], { n: every }) : lbl(FREQ_L, cycle || "monthly");
+}
+// "Monthly · Nov 1 – 30, 2026": how a budget repeats and the period it is in now
+const budgetPeriodText = (t) => (t.cycle === "range" ? "" : cycleName(t.cycle, t.cycleEvery) + " · ") + periodLabel({ start: t.periodStart, end: t.periodEnd });
 const FREQ_L = { daily: N_("Daily"), weekly: N_("Weekly"), monthly: N_("Monthly"), quarterly: N_("Quarterly"), yearly: N_("Yearly") };
 const lbl = (map, x) => __(map[x] || x);
 const enumOptions = (map, keys, sel) => keys.map((k) => `<option value="${esc(k)}" ${k === sel ? "selected" : ""}>${esc(lbl(map, k))}</option>`).join("");
@@ -102,7 +112,7 @@ const transferAcct = (t) => {
 /* ---------- screens ---------- */
 const DASH_WIDGETS = [
   { id: "balances", label: N_("Balances by currency"), pick: "currencies" },
-  { id: "budgets", label: N_("Budgets this month"), pick: "budgets" },
+  { id: "budgets", label: N_("Budgets"), pick: "budgets" },
   { id: "spending", label: N_("Spending this month"), rows: 8 },
   { id: "moneyboxes", label: N_("Money boxes"), pick: "goals" },
   { id: "accounts", label: N_("Accounts"), pick: "accounts" },
@@ -140,6 +150,7 @@ const WIDGET_COLS = {
     { key: "used", label: N_("Used"), num: 1, v: (t) => pctFmt(t.pct) },
     { key: "limit", label: N_("Limit"), num: 1, v: (t) => fmt(t.limitMinor, t.currency) },
     { key: "remaining", label: N_("Remaining"), on: 1, num: 1, v: (t) => fmt(t.remainingMinor, t.currency) },
+    { key: "period", label: N_("Period"), v: (t) => esc(budgetPeriodText(t)) },
   ],
   spending: [
     { key: "name", label: N_("Category"), on: 1, v: (x) => x.tagId ? `<button class="titlelink" data-detail-tag="${esc(x.tagId)}">${esc(tagName(x.tagId))}</button>` : `<span class="muted">${esc(__("Uncategorised"))}</span>` },
@@ -719,19 +730,6 @@ function screenAccounts(v) {
   bindDetails(v);
 }
 
-function screenBudgets(v) {
-  const cats = state.data.tags.filter((t) => t.limitMinor !== undefined);
-  const rows = cats.map((t) => {
-    const p = t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0;
-    const daysLeft = 30 - new Date().getDate() + 1;
-    return row([{ l: "Budget", v: `<button class="titlelink" data-detail-tag="${esc(t.id)}">${esc(t.name)}</button>` }, { l: "Spent", v: ofAmount(t.spentMinor, t.limitMinor, t.currency) }, { l: "Progress", v: `<div class="bar"><i class="${barCls(p)}" style="width:${Math.min(100, p)}%"></i></div>${p.toFixed(0)}%` }, { l: "Remaining", v: fmt(t.remainingMinor, t.currency), num: 1 }, { l: N_("Per day left"), v: fmt(Math.max(0, Math.floor(t.remainingMinor / daysLeft)), t.currency), num: 1 }]);
-  }).join("");
-  v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Monthly budgets (this month)"))}</h3><button class="smallbtn" id="newBudget">${esc(__("+ New budget tag"))}</button></div>
-    ${cats.length ? table([{ t: "Budget" }, { t: "Spent" }, { t: "Progress" }, { t: "Remaining", num: 1 }, { t: "Per day left", num: 1 }], rows) : `<div class="empty">${esc(__("No budgets yet. A budget is a category tag with a monthly limit."))}</div>`}</section>`;
-  $("#newBudget").addEventListener("click", () => openTagDialog("category"));
-  bindDetails(v);
-}
-
 function screenMoneyboxes(v) {
   const goals = state.data.tags.filter((t) => t.targetMinor !== undefined);
   v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Money boxes"))}</h3><button class="smallbtn" id="newBox">${esc(__("+ New money box"))}</button></div>
@@ -758,16 +756,50 @@ function screenTemplates(v) {
   bindDetails(v);
 }
 
+// One budget: how much of the limit is spent, how far through the period we are, and what is left per day.
+function budgetCard(t) {
+  const today = state.data.today, p = t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0;
+  const total = spanDays(t.periodStart, t.periodEnd);
+  const started = today >= t.periodStart, ended = today > t.periodEnd;
+  const elapsed = !started ? 0 : ended ? 100 : spanDays(t.periodStart, today) / total * 100;
+  const daysLeft = started && !ended ? spanDays(today, t.periodEnd) : 0;
+  const left = t.remainingMinor >= 0 ? __("{amount} left", { amount: fmt(t.remainingMinor, t.currency) }) : __("{amount} over", { amount: fmt(-t.remainingMinor, t.currency) });
+  const pace = !started ? __("Starts {date}", { date: dayLabel(t.periodStart) }) : ended ? __("Ended {date}", { date: dayLabel(t.periodEnd) })
+    : t.remainingMinor > 0 ? __("{amount} a day for {n} day(s)", { amount: fmt(Math.floor(t.remainingMinor / daysLeft), t.currency), n: daysLeft }) : __("{n} day(s) left", { n: daysLeft });
+  return `<button type="button" class="tcard bcard ${barCls(p)}" data-detail-tag="${esc(t.id)}">
+    <span class="thead"><b>${esc(t.name)}</b><small>${esc(budgetPeriodText(t))}</small></span>
+    <span class="bamount"><b>${fmt(t.spentMinor, t.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(t.limitMinor, t.currency) }))}</small></span>
+    <span class="bar pacebar"><i class="${barCls(p)}" style="width:${Math.min(100, p)}%"></i>${started && !ended ? `<em style="left:${elapsed}%" title="${esc(__("Today"))}"></em>` : ""}</span>
+    <span class="tfoot"><span class="${t.remainingMinor < 0 ? "neg" : ""}">${esc(left)}</span><small>${esc(pace)}</small></span></button>`;
+}
+// spending this month per currency for one category, from the server's monthly summary
+const monthSpend = (id) => (state.data.spendingThisMonth || []).filter((x) => x.tagId === id).map((x) => fmt(x.amountMinor, x.currency)).join(" · ");
+const tagUses = (id) => new Set([...state.data.transactions.filter((t) => t.tagId === id).map((t) => t.id), ...state.data.transactionTags.filter((l) => l.tagId === id).map((l) => l.transactionId)]).size;
+function categoryCard(t) {
+  const spent = monthSpend(t.id), n = tagUses(t.id);
+  return `<button type="button" class="tcard ccard" data-detail-tag="${esc(t.id)}">
+    <span class="thead"><b>${esc(t.name)}</b><small>${esc(__("{n} transaction(s)", { n }))}</small></span>
+    <span class="tfoot"><span>${spent ? esc(__("{amount} this month", { amount: spent })) : `<small>${esc(__("Nothing spent this month"))}</small>`}</span></span></button>`;
+}
+function boxCard(t) {
+  const p = t.targetMinor > 0 ? t.savedMinor / t.targetMinor * 100 : 0;
+  return `<button type="button" class="tcard gcard" data-detail-goal="${esc(t.id)}">
+    <span class="thead"><b>${esc(t.name)}</b><small>${esc(t.targetDate ? __("by {date}", { date: dayLabel(t.targetDate) }) : "")}</small></span>
+    <span class="bamount"><b>${fmt(t.savedMinor, t.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(t.targetMinor, t.currency) }))}</small></span>
+    <span class="bar"><i style="width:${Math.min(100, p)}%"></i></span></button>`;
+}
 function screenTags(v) {
-  const rows = state.data.tags.map((t) => row([
-    { l: N_("Tag"), v: `<button class="titlelink" data-detail-tag="${esc(t.id)}">${esc(t.name)}</button>` }, { l: "Kind", v: esc(lbl(TAGKIND_L, t.kind)) },
-    { l: N_("Budget / target"), v: esc(t.limitMinor !== undefined ? __("{amount} / month", { amount: fmt(t.limitMinor, t.currency) }) : t.targetMinor !== undefined ? fmt(t.targetMinor, t.currency) + (t.targetDate ? " · " + __("by {date}", { date: t.targetDate }) : "") : "—") },
-    { l: "Currency", v: esc(t.currency || "—") },
-  ])).join("");
-  v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("All tags"))}</h3><button class="smallbtn" id="newTag">${esc(__("+ New tag"))}</button></div>
-    ${table([{ t: "Tag" }, { t: "Kind" }, { t: "Budget / target" }, { t: "Currency" }], rows)}
-    <p class="muted">${esc(__("Click a tag name for its pane, where Edit lives. Categories, budgets and money boxes are all tags: a category tag with a limit is a budget, a goal tag is a money box."))}</p></section>`;
-  $("#newTag").addEventListener("click", () => openTagDialog("label"));
+  const tags = state.data.tags;
+  const budgets = tags.filter((t) => t.kind === "category" && t.limitMinor !== undefined);
+  const cats = tags.filter((t) => t.kind === "category" && t.limitMinor === undefined);
+  const boxes = tags.filter((t) => t.kind === "goal");
+  const section = (title, list, card, empty, btn) => `<section class="tsection"><div class="tsechead"><h3>${esc(title)}</h3>${btn}</div>
+    ${list.length ? `<div class="tgrid">${list.map(card).join("")}</div>` : `<div class="empty">${esc(empty)}</div>`}</section>`;
+  v.innerHTML = section(__("Budgets"), budgets, budgetCard, __("No budgets yet. Give a category a limit to track it here."), "")
+    + section(__("Categories"), cats, categoryCard, __("No other categories."), `<button class="smallbtn" id="newCategory">${esc(__("+ New category"))}</button>`)
+    + section(__("Money boxes"), boxes, boxCard, __("No money boxes yet."), `<button class="smallbtn" id="newBox">${esc(__("+ New money box"))}</button>`);
+  $("#newCategory").addEventListener("click", () => openTagDialog("category"));
+  $("#newBox").addEventListener("click", () => openTagDialog("goal"));
   bindDetails(v);
 }
 
@@ -986,34 +1018,69 @@ function openAccountDialog(editId, presetKind) {
     } catch (err) { errMsg(err); }
   });
 }
+// first day of the calendar period holding `iso`, for anchoring "every N" budgets started today
+function calendarStart(cycle, iso) {
+  const d = parseDay(iso);
+  if (cycle === "weekly") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  if (cycle === "monthly") d.setDate(1);
+  if (cycle === "yearly") { d.setMonth(0); d.setDate(1); }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+const moneyField = (label, name, minor, cur, cls) => field(label, `<span class="moneyrow"><select name="${name}Cur" aria-label="${esc(__("Currency"))}">${currencyOptions(cur)}</select><input name="${name}" type="number" step="0.01" min="0.01" value="${minor != null ? decimal(minor, cur) : ""}"></span>`, cls);
 function openTagDialog(kind, editId) {
   const t = editId ? state.data.tags.find((x) => x.id === editId) : null;
-  const k = t ? t.kind : kind;
-  openDialog(t ? __("Edit tag") : k === "goal" ? __("New money box (goal tag)") : k === "category" ? __("New budget (category tag)") : __("New tag"), dialogForm(
-    field("Name", `<input name="name" required placeholder="${esc(k === "goal" ? __("House fund") : __("Food"))}" value="${t ? esc(t.name) : ""}">`) +
-    field("Kind", `<select name="kind">${enumOptions(TAGKIND_L, ["category", "goal", "label", "payee"], k)}</select>`) +
-    field(N_("Monthly limit (optional)"), `<input name="limit" type="number" step="0.01" value="${t && t.limitMinor !== undefined ? decimal(t.limitMinor, t.currency || defCur()) : ""}">`, "f-category") +
-    field(N_("Target amount"), `<input name="target" type="number" step="0.01" value="${t && t.targetMinor !== undefined ? decimal(t.targetMinor, t.currency || defCur()) : ""}">`, "f-goal") +
-    field("Target date", `<input name="targetDate" type="date" value="${t ? esc(t.targetDate || "") : ""}">`, "f-goal") +
-    field("Currency", `<select name="currency">${currencyOptions(t && t.currency)}</select>`, "f-category f-goal"),
-    t ? __("Save changes") : __("Add tag")));
-  const form = $("#dialogForm");
+  const k = t ? t.kind : kind || "category", cur = (t && t.currency) || defCur();
+  const hasBudget = !!(t && t.limitMinor !== undefined);
+  const cyc = (t && t.cycle) || "monthly", every = (t && t.cycleEvery) || 1;
+  const preset = !hasBudget ? "monthly:1" : cyc === "range" ? "range" : BUDGET_PRESETS.some(([c, n]) => c === cyc && n === every) ? `${cyc}:${every}` : "custom";
+  const presetOpts = BUDGET_PRESETS.map(([c, n]) => `<option value="${c}:${n}" ${preset === `${c}:${n}` ? "selected" : ""}>${esc(cycleName(c, n))}</option>`).join("")
+    + `<option value="custom" ${preset === "custom" ? "selected" : ""}>${esc(__("Custom…"))}</option><option value="range" ${preset === "range" ? "selected" : ""}>${esc(__("Date range"))}</option>`;
+  openDialog(t ? (k === "goal" ? __("Edit money box") : __("Edit category")) : k === "goal" ? __("New money box") : __("New category"), dialogForm(
+    field("Name", `<input name="name" required maxlength="100" placeholder="${esc(k === "goal" ? __("House fund") : __("Food"))}" value="${t ? esc(t.name) : ""}">`) +
+    (t ? field("Kind", `<select name="kind">${enumOptions(TAGKIND_L, ["category", "goal"], k)}</select>`) : `<input type="hidden" name="kind" value="${esc(k)}">`) +
+    `<label class="checkline f-category"><input type="checkbox" name="hasBudget" ${hasBudget ? "checked" : ""}> ${esc(__("Set a budget"))}</label>` +
+    moneyField(N_("Limit"), "limit", t && t.limitMinor, cur, "f-budget") +
+    field(N_("Period"), `<select name="preset">${presetOpts}</select>`, "f-budget") +
+    field(N_("Every"), `<span class="moneyrow"><input name="every" type="number" min="1" max="99" value="${every}"><select name="unit">${enumOptions(CYCLE_UNIT_L, Object.keys(CYCLE_UNIT_L), cyc === "range" ? "monthly" : cyc)}</select></span>`, "f-budget f-custom") +
+    field(N_("First period starts"), `<input name="anchor" type="date" value="${t && cyc !== "range" ? esc(t.cycleStart || "") : ""}">`, "f-budget f-anchor") +
+    field(N_("From"), `<input name="rangeStart" type="date" value="${t && cyc === "range" ? esc(t.cycleStart || "") : ""}">`, "f-budget f-range") +
+    field(N_("To"), `<input name="rangeEnd" type="date" value="${t && cyc === "range" ? esc(t.cycleEnd || "") : ""}">`, "f-budget f-range") +
+    moneyField(N_("Target amount"), "target", t && t.targetMinor, cur, "f-goal") +
+    field("Target date", `<input name="targetDate" type="date" value="${t ? esc(t.targetDate || "") : ""}">`, "f-goal"),
+    t ? __("Save changes") : k === "goal" ? __("Add money box") : __("Add category")));
+  const form = $("#dialogForm"), el = form.elements;
   const sync = () => {
-    const kind = form.elements.kind.value;
-    form.querySelectorAll(".f-category, .f-goal").forEach((el) => { el.hidden = !el.classList.contains("f-" + kind); });
-    form.elements.target.required = kind === "goal";
+    const goal = el.kind.value === "goal", budget = !goal && el.hasBudget.checked, pre = el.preset.value;
+    // hidden fields are disabled too, so they are neither validated nor submitted
+    const show = (cls, on) => form.querySelectorAll(cls).forEach((x) => { x.hidden = !on; x.querySelectorAll("input,select").forEach((c) => { c.disabled = !on; }); });
+    show(".f-category", !goal);
+    show(".f-budget", budget);
+    show(".f-custom", budget && pre === "custom");
+    show(".f-anchor", budget && pre !== "range");
+    show(".f-range", budget && pre === "range");
+    show(".f-goal", goal);
+    el.limit.required = budget; el.rangeStart.required = el.rangeEnd.required = budget && pre === "range"; el.target.required = goal;
   };
-  form.elements.kind.addEventListener("change", sync);
+  ["kind", "hasBudget", "preset"].forEach((n) => el[n] && el[n].addEventListener("change", sync));
   sync();
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.target).entries()), cur = (f.currency || defCur()).toUpperCase();
-    const body = { name: f.name, kind: f.kind };
-    if (f.kind === "category" || f.kind === "goal") body.currency = cur;
-    if (f.kind === "category" && f.limit) { body.limitMinor = toMinor(f.limit, cur); body.cycle = "monthly"; }
-    if (f.kind === "goal") { body.targetMinor = toMinor(f.target, cur); if (f.targetDate) body.targetDate = f.targetDate; }
+    const f = Object.fromEntries(new FormData(e.target).entries());
+    const body = { name: f.name.trim(), kind: f.kind };
+    if (f.kind === "goal") {
+      body.currency = f.targetCur; body.targetMinor = toMinor(f.target, f.targetCur);
+      if (f.targetDate) body.targetDate = f.targetDate;
+    } else if (f.hasBudget) {
+      body.currency = f.limitCur; body.limitMinor = toMinor(f.limit, f.limitCur);
+      if (f.preset === "range") Object.assign(body, { cycle: "range", cycleStart: f.rangeStart, cycleEnd: f.rangeEnd });
+      else {
+        const [cycle, n] = f.preset === "custom" ? [f.unit, parseInt(f.every, 10) || 1] : [f.preset.split(":")[0], parseInt(f.preset.split(":")[1], 10)];
+        // an "every N" budget without a chosen start begins with the calendar period holding today
+        Object.assign(body, { cycle, cycleEvery: n, cycleStart: f.anchor || (n > 1 ? calendarStart(cycle, state.data.today) : "") });
+      }
+    }
     try {
-      if (t) { await put("/api/tags/" + t.id, body); msg(__("Tag updated.")); } else { await post("/api/tags", body); msg(__("Tag added.")); }
+      if (t) { await put("/api/tags/" + t.id, body); msg(__("Tag updated.")); } else { await post("/api/tags", body); msg(f.kind === "goal" ? __("Money box added.") : __("Category added.")); }
       $("#dialog").close(); await load();
     } catch (err) { errMsg(err); }
   });
@@ -1143,8 +1210,8 @@ function openAccountDetail(id) {
 function openTagDetail(id) {
   const t = state.data.tags.find((x) => x.id === id);
   if (!t) return;
-  const pairs = [["Kind", esc(lbl(TAGKIND_L, t.kind))], ["Currency", esc(t.currency || "—")]];
-  if (t.limitMinor !== undefined) pairs.push([N_("Monthly budget"), fmt(t.limitMinor, t.currency)], [N_("Spent this month"), fmt(t.spentMinor, t.currency)], ["Remaining", fmt(t.remainingMinor, t.currency)]);
+  const pairs = [["Kind", esc(lbl(TAGKIND_L, t.kind))]];
+  if (t.limitMinor !== undefined) pairs.push([N_("Budget"), fmt(t.limitMinor, t.currency)], [N_("Period"), esc(budgetPeriodText(t))], ["Spent", fmt(t.spentMinor, t.currency)], ["Remaining", fmt(t.remainingMinor, t.currency)]);
   if (t.targetMinor !== undefined) pairs.push([N_("Money-box target"), fmt(t.targetMinor, t.currency)], [N_("Saved"), fmt(t.savedMinor, t.currency)], [N_("Target date"), esc(t.targetDate || "—")]);
   openDialog(t.name, detailTable(pairs) + `<div class="pane-actions"><button class="smallbtn" id="paneEdit">${esc(__("Edit tag"))}</button>${t.targetMinor !== undefined ? `<button class="smallbtn" id="paneAlloc">${esc(__("Allocate"))}</button><button class="smallbtn" id="paneHistory">${esc(__("History"))}</button>` : ""}</div>`);
   $("#paneEdit").addEventListener("click", () => { $("#dialog").close(); openTagDialog(null, id); });
@@ -1190,9 +1257,10 @@ function allNotifications() {
     open: () => openEditTxn(t.id),
   }));
   d.tags.filter((t) => t.limitMinor > 0).forEach((t) => {
-    const pct = Math.round(t.spentMinor / t.limitMinor * 100), body = __("{spent} of {limit} spent this month", { spent: fmt(t.spentMinor, t.currency), limit: fmt(t.limitMinor, t.currency) });
-    if (pct >= 100) out.push({ key: `budget-over:${t.id}:${month}`, rank: 1, level: "over", icon: noteIcon("warn"), title: __("{name} is over budget", { name: t.name }), body, open: () => openTagDetail(t.id) });
-    else if (pct >= 80) out.push({ key: `budget-near:${t.id}:${month}`, rank: 3, level: "warn", icon: noteIcon("warn"), title: __("{name} has used {pct}% of its budget", { name: t.name, pct }), body, open: () => openTagDetail(t.id) });
+    const pct = Math.round(t.spentMinor / t.limitMinor * 100), body = __("{spent} of {limit} spent · {period}", { spent: fmt(t.spentMinor, t.currency), limit: fmt(t.limitMinor, t.currency), period: periodLabel({ start: t.periodStart, end: t.periodEnd }) });
+    // keyed by period, so a dismissed alert comes back when the next period runs over
+    if (pct >= 100) out.push({ key: `budget-over:${t.id}:${t.periodStart}`, rank: 1, level: "over", icon: noteIcon("warn"), title: __("{name} is over budget", { name: t.name }), body, open: () => openTagDetail(t.id) });
+    else if (pct >= 80) out.push({ key: `budget-near:${t.id}:${t.periodStart}`, rank: 3, level: "warn", icon: noteIcon("warn"), title: __("{name} has used {pct}% of its budget", { name: t.name, pct }), body, open: () => openTagDetail(t.id) });
   });
   d.accounts.filter((a) => a.creditLimitMinor && (a.utilisation || 0) >= 0.8).forEach((a) => out.push({
     key: `credit:${a.id}:${month}`, rank: 2, level: a.utilisation >= 1 ? "over" : "warn", icon: noteIcon("card"),
@@ -1251,8 +1319,12 @@ window.addEventListener("resize", () => { if (state.notifOpen) renderBell(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.notifOpen) { state.notifOpen = false; renderBell(); $("#bellBtn").focus(); } });
 
 /* ---------- routing ---------- */
-const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], budgets: [N_("Budgets"), screenBudgets], moneyboxes: ["Money boxes", screenMoneyboxes], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings] };
-function currentScreen() { const h = location.hash.replace("#", ""); return SCREENS[h] ? h : "dashboard"; }
+const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], moneyboxes: ["Money boxes", screenMoneyboxes], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings] };
+function currentScreen() {
+  const h = location.hash.replace("#", "");
+  if (h === "budgets") return "tags"; // budgets live on the Tags page now
+  return SCREENS[h] ? h : "dashboard";
+}
 function render() {
   const key = currentScreen();
   $("#pageTitle").textContent = __(SCREENS[key][0]);

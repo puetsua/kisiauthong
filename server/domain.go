@@ -82,9 +82,9 @@ func (d *Data) TagSaved(tagID string) int64 {
 	return total
 }
 
-// BudgetSpent sums posted spending (own account -> external) linked to the tag in the month of ref (YYYY-MM-DD).
-func (d *Data) BudgetSpent(tagID, ref string) int64 {
-	month := ref[:7]
+// BudgetSpent sums posted spending (own account -> external) linked to the tag
+// with a date in [start, end] (inclusive YYYY-MM-DD; see BudgetPeriod).
+func (d *Data) BudgetSpent(tagID, start, end string) int64 {
 	linked := map[string]bool{}
 	for _, tt := range d.TransactionTags {
 		if tt.TagID == tagID {
@@ -93,7 +93,7 @@ func (d *Data) BudgetSpent(tagID, ref string) int64 {
 	}
 	var total int64
 	for _, t := range d.Transactions {
-		if t.State == "posted" && d.IsSpending(t) && linked[t.ID] && len(t.Date) >= 7 && t.Date[:7] == month {
+		if t.State == "posted" && d.IsSpending(t) && linked[t.ID] && t.Date >= start && t.Date <= end {
 			total += t.AmountMinor
 		}
 	}

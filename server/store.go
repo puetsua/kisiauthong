@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   UNIQUE(transaction_template_id, occurrence_date));
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, limit_minor INTEGER,
-  cycle TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT '', target_minor INTEGER, target_date TEXT NOT NULL DEFAULT '');
+  cycle TEXT NOT NULL DEFAULT '', cycle_every INTEGER NOT NULL DEFAULT 0, cycle_start TEXT NOT NULL DEFAULT '',
+  cycle_end TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT '', target_minor INTEGER, target_date TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS transaction_tags (
   transaction_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY(transaction_id, tag_id));
 CREATE TABLE IF NOT EXISTS transaction_templates (
@@ -122,6 +123,8 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateExpenseIncomeToTransfers,  // 1
 	migrateReleaseToNegativeAllocate, // 2
 	migrateAddTransactionMemo,        // 3
+	migrateTagKinds,                  // 4
+	migrateBudgetPeriods,             // 5
 }
 
 func (s *Store) migrate() error {
@@ -148,27 +151,60 @@ func (s *Store) migrate() error {
 	return tx.Commit()
 }
 
-// Migration 3: transactions get a free-text memo beside the short title.
-// New databases already have the column from the schema.
-func migrateAddTransactionMemo(tx *sql.Tx) error {
-	rows, err := tx.Query(`PRAGMA table_info(transactions)`)
+// hasColumn reports whether table already has a column (new databases get
+// columns from the schema, so column-adding migrations must be conditional).
+func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
+	rows, err := tx.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
-		return err
+		return false, err
 	}
-	has := false
+	defer rows.Close()
 	for rows.Next() {
 		var cid, notnull, pk int
 		var name, typ string
 		var dflt sql.NullString
 		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			rows.Close()
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+// Migration 5 (ADR 0004): budget periods other than calendar months.
+func migrateBudgetPeriods(tx *sql.Tx) error {
+	for _, c := range []struct{ name, def string }{
+		{"cycle_every", "INTEGER NOT NULL DEFAULT 0"},
+		{"cycle_start", "TEXT NOT NULL DEFAULT ''"},
+		{"cycle_end", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		has, err := hasColumn(tx, "tags", c.name)
+		if err != nil {
 			return err
 		}
-		has = has || name == "memo"
+		if !has {
+			if _, err := tx.Exec(`ALTER TABLE tags ADD COLUMN ` + c.name + ` ` + c.def); err != nil {
+				return err
+			}
+		}
 	}
-	rows.Close()
-	if has {
-		return nil
+	return nil
+}
+
+// Migration 4 (ADR 0004): only category and goal tags remain; label and payee
+// tags become categories, keeping their transactions.
+func migrateTagKinds(tx *sql.Tx) error {
+	_, err := tx.Exec(`UPDATE tags SET kind='category' WHERE kind IN ('label','payee')`)
+	return err
+}
+
+// Migration 3: transactions get a free-text memo beside the short title.
+func migrateAddTransactionMemo(tx *sql.Tx) error {
+	has, err := hasColumn(tx, "transactions", "memo")
+	if err != nil || has {
+		return err
 	}
 	_, err = tx.Exec(`ALTER TABLE transactions ADD COLUMN memo TEXT NOT NULL DEFAULT ''`)
 	return err
@@ -279,7 +315,7 @@ func (s *Store) reload() error {
 		d.Transactions = append(d.Transactions, t)
 	}
 	tr.Close()
-	tg, err := s.db.Query(`SELECT id,name,kind,limit_minor,cycle,currency,target_minor,target_date FROM tags ORDER BY name`)
+	tg, err := s.db.Query(`SELECT id,name,kind,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,target_minor,target_date FROM tags ORDER BY name`)
 	if err != nil {
 		return err
 	}
@@ -287,7 +323,7 @@ func (s *Store) reload() error {
 	for tg.Next() {
 		var t Tag
 		var lm, tm sql.NullInt64
-		if err := tg.Scan(&t.ID, &t.Name, &t.Kind, &lm, &t.Cycle, &t.Currency, &tm, &t.TargetDate); err != nil {
+		if err := tg.Scan(&t.ID, &t.Name, &t.Kind, &lm, &t.Cycle, &t.CycleEvery, &t.CycleStart, &t.CycleEnd, &t.Currency, &tm, &t.TargetDate); err != nil {
 			return err
 		}
 		if lm.Valid {
@@ -369,8 +405,8 @@ func (s *Store) insertAccount(a Account) error {
 	return err
 }
 func (s *Store) insertTag(t Tag) error {
-	_, err := s.db.Exec(`INSERT INTO tags(id,name,kind,limit_minor,cycle,currency,target_minor,target_date) VALUES(?,?,?,?,?,?,?,?)`,
-		t.ID, t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.Currency, n64(t.TargetMinor), t.TargetDate)
+	_, err := s.db.Exec(`INSERT INTO tags(id,name,kind,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,target_minor,target_date) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, n64(t.TargetMinor), t.TargetDate)
 	return err
 }
 func (s *Store) insertTransaction(t Transaction) error {
@@ -402,8 +438,8 @@ func (s *Store) updateAccount(a Account) error {
 	return s.reload()
 }
 func (s *Store) updateTag(t Tag) error {
-	_, err := s.db.Exec(`UPDATE tags SET name=?,kind=?,limit_minor=?,cycle=?,currency=?,target_minor=?,target_date=? WHERE id=?`,
-		t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.Currency, n64(t.TargetMinor), t.TargetDate, t.ID)
+	_, err := s.db.Exec(`UPDATE tags SET name=?,kind=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,target_minor=?,target_date=? WHERE id=?`,
+		t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, n64(t.TargetMinor), t.TargetDate, t.ID)
 	if err != nil {
 		return err
 	}

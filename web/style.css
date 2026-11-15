@@ -284,3 +284,31 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .primarybtn{padding:9px 13px}
 }
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+
+/* tag dialog: amount with its currency; a checkbox line */
+.moneyrow{display:flex;gap:8px;margin-top:4px}
+.moneyrow select{flex:0 0 8.5em;width:8.5em;margin-top:0;text-overflow:ellipsis}
+.moneyrow input{flex:1;min-width:0;margin-top:0}
+.checkline{display:flex!important;align-items:center;gap:8px;flex-direction:row!important;grid-column:1/-1;color:var(--ink)!important;font-size:.95rem!important}
+.checkline input{width:auto;margin:0}
+
+/* Tags page: budgets, categories and money boxes as cards */
+.tsection{margin-bottom:26px}
+.tsechead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.tsechead h3{margin:0}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.tcard{display:flex;flex-direction:column;gap:10px;text-align:left;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.tcard:hover{border-color:var(--accent2);box-shadow:0 4px 14px rgba(60,30,90,.08)}
+.tcard:focus-visible{outline:3px solid var(--accent2);outline-offset:2px}
+.tcard small{color:var(--muted);font-size:.82rem}
+.thead{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.thead b{font-size:1.02rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thead small{text-align:right}
+.bamount b{font-family:Georgia,serif;font-size:1.35rem;color:var(--accent)}
+.bcard.over .bamount b{color:var(--red)}
+.tfoot{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;font-weight:600;font-size:.92rem}
+.tfoot .neg{color:var(--red)}
+.pacebar{position:relative;overflow:visible}
+.pacebar i{border-radius:5px}
+.pacebar em{position:absolute;top:-4px;bottom:-4px;width:2px;margin-left:-1px;background:var(--ink);border-radius:1px;opacity:.55}
+.ccard{gap:14px}

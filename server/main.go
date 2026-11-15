@@ -53,9 +53,15 @@ func stateView() map[string]interface{} {
 	for _, t := range d.Tags {
 		m := map[string]interface{}{"id": t.ID, "name": t.Name, "kind": t.Kind, "currency": t.Currency}
 		if t.LimitMinor != nil {
-			spent := d.BudgetSpent(t.ID, today)
+			start, end := BudgetPeriod(t, today)
+			spent := d.BudgetSpent(t.ID, start, end)
 			m["limitMinor"] = *t.LimitMinor
 			m["cycle"] = t.Cycle
+			m["cycleEvery"] = max(t.CycleEvery, 1)
+			m["cycleStart"] = t.CycleStart
+			m["cycleEnd"] = t.CycleEnd
+			m["periodStart"] = start
+			m["periodEnd"] = end
 			m["spentMinor"] = spent
 			m["remainingMinor"] = *t.LimitMinor - spent
 		}
@@ -166,20 +172,24 @@ func main() {
 			return
 		}
 		t.ID = parts[2]
+		t.Name = strings.TrimSpace(t.Name)
 		if t.Name == "" {
 			writeErr(w, 400, "name required")
 			return
 		}
+		if err := normalizeTag(&t); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
 		store.mu.Lock()
 		defer store.mu.Unlock()
-		found := false
-		for _, x := range store.data.Tags {
-			if x.ID == t.ID {
-				found = true
-			}
-		}
-		if !found {
+		old := store.data.tagByID(t.ID)
+		if old == nil {
 			writeErr(w, 404, "tag not found")
+			return
+		}
+		if old.Kind != t.Kind && store.data.tagInUse(t.ID) {
+			writeErr(w, 400, "this tag is used by transactions, so it cannot switch between category and money box")
 			return
 		}
 		if err := store.updateTag(t); err != nil {
@@ -228,8 +238,10 @@ func main() {
 			return
 		}
 		t.ID = newID("tag")
-		if t.Kind == "" {
-			t.Kind = "label"
+		t.Name = strings.TrimSpace(t.Name)
+		if err := normalizeTag(&t); err != nil {
+			writeErr(w, 400, err.Error())
+			return
 		}
 		store.mu.Lock()
 		defer store.mu.Unlock()

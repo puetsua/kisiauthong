@@ -163,6 +163,11 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 	mustExec(`PRAGMA user_version = 0`)
 	// a database from before migration 3 has no memo column
 	mustExec(`ALTER TABLE transactions DROP COLUMN memo`)
+	// before migration 4 tags could be labels and payees; before 5 budgets had no period columns
+	mustExec(`INSERT INTO tags(id,name,kind) VALUES('old-label','trip-2026','label'),('old-payee','7-Eleven','payee')`)
+	for _, c := range []string{"cycle_every", "cycle_start", "cycle_end"} {
+		mustExec(`ALTER TABLE tags DROP COLUMN ` + c)
+	}
 	s.db.Close()
 
 	s, err = openStore(path) // runs the migration
@@ -172,6 +177,14 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 	defer s.db.Close()
 	if a := s.data.accountByID(ExternalAccountID); a == nil || !a.IsExternal() {
 		t.Fatalf("anonymous external account missing after migration")
+	}
+	for _, id := range []string{"old-label", "old-payee"} {
+		if tg := s.data.tagByID(id); tg == nil || tg.Kind != "category" {
+			t.Errorf("migration 4: %s should be a category: %+v", id, tg)
+		}
+	}
+	if food := s.data.tagByID("tag-food"); food == nil || food.Cycle != "monthly" || food.CycleEvery != 0 || food.CycleStart != "" {
+		t.Errorf("migration 5: monthly budget should keep its period: %+v", food)
 	}
 	byID := map[string]Transaction{}
 	for _, tx := range s.data.Transactions {

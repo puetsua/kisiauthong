@@ -32,7 +32,7 @@ type WidgetOptions struct {
 
 // widgetColumns is the column keys each table widget offers (web/app.js WIDGET_COLS).
 var widgetColumns = map[string][]string{
-	"budgets":  {"name", "spent", "progress", "used", "limit", "remaining"},
+	"budgets":  {"name", "spent", "progress", "used", "limit", "remaining", "period"},
 	"spending": {"name", "share", "pct", "spent"},
 	"accounts": {"name", "type", "currency", "balance", "earmarked", "free"},
 }

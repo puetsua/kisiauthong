@@ -69,7 +69,10 @@ type Tag struct {
 	Name        string `json:"name"`
 	Kind        string `json:"kind"`
 	LimitMinor  *int64 `json:"limitMinor,omitempty"`
-	Cycle       string `json:"cycle,omitempty"`
+	Cycle       string `json:"cycle,omitempty"`      // budget period unit (budget.go)
+	CycleEvery  int    `json:"cycleEvery,omitempty"` // period length in units; 0 = 1
+	CycleStart  string `json:"cycleStart,omitempty"` // first day of one period; "" = calendar-aligned
+	CycleEnd    string `json:"cycleEnd,omitempty"`   // "range" budgets only
 	Currency    string `json:"currency,omitempty"`
 	TargetMinor *int64 `json:"targetMinor,omitempty"`
 	TargetDate  string `json:"targetDate,omitempty"`
