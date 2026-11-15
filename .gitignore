@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# kisiauthong — gitignore
+
+# Private / local docs — never committed
+.docs/
+
+# Secrets & local config
+.env
+.env.*
+!.env.example
+*.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# Node (web, desktop UI, mobile, packages)
+node_modules/
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Go server
+/server/bin/
+/server/*.exe
+/server/coverage.out
+vendor/
+
+# Rust / Tauri desktop
+target/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# Mobile (Expo / React Native / Android)
+mobile/.expo/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# Python tooling (if any)
+__pycache__/
+*.py[cod]
+.venv/
+
+# Data — user financial data must never be committed
+data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+backups/
+exports/
+attachments/
+
+# Logs / temp
+*.log
+tmp/
+temp/
+.cache/

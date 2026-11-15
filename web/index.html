@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kisiauthong — my books</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">kisiauthong<small>personal bookkeeping</small></div>
+    <nav id="nav" aria-label="Main">
+      <a href="#dashboard" data-screen="dashboard">Dashboard</a>
+      <a href="#transactions" data-screen="transactions">Transactions</a>
+      <a href="#accounts" data-screen="accounts">Accounts</a>
+      <a href="#budgets" data-screen="budgets">Budgets</a>
+      <a href="#moneyboxes" data-screen="moneyboxes">Money boxes</a>
+      <a href="#templates" data-screen="templates">Templates</a>
+      <a href="#tags" data-screen="tags">Tags</a>
+    </nav>
+    <div class="sidefoot">KiSiauThong · AGPL-3.0-or-later</div>
+  </aside>
+
+  <div class="content">
+    <header class="topbar">
+      <button id="menuBtn" class="iconbtn" aria-label="Menu">☰</button>
+      <h1 id="pageTitle">Dashboard</h1>
+      <div class="topactions">
+        <button id="dueBtn" class="ghostbtn" type="button" hidden></button>
+      </div>
+    </header>
+    <p id="msg" role="status" class="wrapmsg"></p>
+    <main id="view" class="view"></main>
+  </div>
+</div>
+
+<button id="addBtn" class="fab" type="button" aria-label="Add transaction">+ Add transaction</button>
+
+<!-- Transaction drawer -->
+<div id="drawerBackdrop" class="backdrop" hidden></div>
+<aside id="drawer" class="drawer" hidden aria-label="Transaction editor">
+  <div class="drawerhead"><h2 id="drawerTitle">Add transaction</h2><button id="drawerClose" class="iconbtn" aria-label="Close">✕</button></div>
+  <form id="txnForm">
+    <div class="seg" id="typeSeg" role="tablist">
+      <button type="button" data-type="expense" class="on">Expense</button><button type="button" data-type="income">Income</button><button type="button" data-type="transfer">Transfer</button><button type="button" data-type="allocate">Allocate</button><button type="button" data-type="release">Release</button>
+    </div>
+    <label>Account <select name="accountId" id="fAccount"></select></label>
+    <label id="fToWrap" hidden>To account <select name="toAccountId" id="fToAccount"></select></label>
+    <label>Amount <input name="amount" type="number" step="0.01" min="0.01" required inputmode="decimal"></label>
+    <label>Date <input name="date" type="date" required></label>
+    <label id="fTagWrap">Tag <select name="tagId" id="fTag"><option value="">— none —</option></select></label>
+    <label>Note <input name="note" placeholder="Groceries"></label>
+    <label id="fStateWrap">State <select name="state"><option value="posted">Posted</option><option value="planned">Expected (planned)</option></select></label>
+    <button class="primarybtn big" type="submit">Save transaction</button>
+  </form>
+</aside>
+
+<!-- Generic create dialog -->
+<dialog id="dialog">
+  <form method="dialog" class="dialoghead"><h2 id="dialogTitle"></h2><button class="iconbtn" value="cancel" aria-label="Close">✕</button></form>
+  <div id="dialogBody"></div>
+</dialog>
+
+<script src="app.js?v=7"></script>
+</body>
+</html>

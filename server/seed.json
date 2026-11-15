@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "accounts": [
+    { "id": "acc-a", "name": "Savings A", "kind": "savings", "currency": "TWD", "openingBalanceMinor": 60000000, "allowNegative": false },
+    { "id": "acc-b", "name": "Bank B", "kind": "bank", "currency": "TWD", "openingBalanceMinor": 18000000, "allowNegative": false },
+    { "id": "acc-c", "name": "Account C", "kind": "bank", "currency": "TWD", "openingBalanceMinor": 12000000, "allowNegative": false },
+    { "id": "acc-jpy", "name": "Japan wallet", "kind": "cash", "currency": "JPY", "openingBalanceMinor": 42600, "allowNegative": false }
+  ],
+  "transactions": [
+    { "id": "txn-001", "accountId": "acc-a", "type": "income", "state": "posted", "amountMinor": 8000000, "currency": "TWD", "date": "2026-10-05", "note": "Salary" },
+    { "id": "txn-002", "accountId": "acc-a", "type": "expense", "state": "posted", "amountMinor": 3000000, "currency": "TWD", "date": "2026-10-10", "note": "Groceries" },
+    { "id": "txn-003", "accountId": null, "fromAccountId": "acc-a", "toAccountId": "acc-b", "type": "transfer", "state": "posted", "amountMinor": 5000000, "currency": "TWD", "date": "2026-10-06", "note": "Top up Bank B (A -> B)" },
+    { "id": "txn-004", "accountId": "acc-b", "type": "expense", "state": "posted", "amountMinor": 3000000, "currency": "TWD", "date": "2026-10-11", "note": "Utilities" },
+    { "id": "txn-005", "accountId": "acc-a", "type": "expense", "state": "planned", "amountMinor": 120000, "currency": "TWD", "date": "2026-10-12", "note": "Streaming (expected, not yet charged)", "transactionTemplateId": "tpl-streaming", "occurrenceDate": "2026-10-12" },
+    { "id": "txn-101", "accountId": "acc-a", "tagId": "tag-house", "type": "allocate", "state": "posted", "amountMinor": 20000000, "currency": "TWD", "date": "2026-03-01", "note": "Decided: payday saving into House fund" },
+    { "id": "txn-102", "accountId": "acc-a", "tagId": "tag-house", "type": "allocate", "state": "posted", "amountMinor": 20000000, "currency": "TWD", "date": "2026-07-01", "note": "Decided: bonus into House fund" },
+    { "id": "txn-103", "accountId": "acc-b", "tagId": "tag-house", "type": "allocate", "state": "posted", "amountMinor": 15000000, "currency": "TWD", "date": "2026-05-01", "note": "Decided: keep part of House fund in Bank B" },
+    { "id": "txn-104", "accountId": "acc-c", "tagId": "tag-house", "type": "allocate", "state": "posted", "amountMinor": 10000000, "currency": "TWD", "date": "2026-08-01", "note": "Decided: keep part of House fund in Account C" },
+    { "id": "txn-105", "accountId": "acc-a", "tagId": "tag-furniture", "type": "allocate", "state": "posted", "amountMinor": 8000000, "currency": "TWD", "date": "2026-09-01", "note": "Decided: start Furniture money box" },
+    { "id": "txn-106", "accountId": "acc-a", "tagId": "tag-furniture", "type": "release", "state": "posted", "amountMinor": 3000000, "currency": "TWD", "date": "2026-10-01", "note": "Decided: release NT$30,000 back for a repair bill" }
+  ],
+  "tags": [
+    { "id": "tag-food", "name": "Food", "kind": "category", "limitMinor": 1200000, "cycle": "monthly" },
+    { "id": "tag-house", "name": "House fund", "kind": "goal", "currency": "TWD", "targetMinor": 100000000, "targetDate": "2027-12-31" },
+    { "id": "tag-furniture", "name": "Furniture", "kind": "goal", "currency": "TWD", "targetMinor": 8000000, "targetDate": "2026-06-30" }
+  ],
+  "transactionTags": [
+    { "transactionId": "txn-002", "tagId": "tag-food" },
+    { "transactionId": "txn-005", "tagId": "tag-food" }
+  ],
+  "transactionTemplates": [
+    {
+      "id": "tpl-streaming", "name": "Streaming video", "enabled": true,
+      "template": { "accountId": "acc-a", "type": "expense", "amountMinor": 120000, "currency": "TWD", "note": "Streaming (expected, not yet charged)" },
+      "schedule": { "frequency": "monthly", "interval": 1, "dayOfMonth": 12, "startDate": "2026-01-12", "endDate": null }
+    },
+    {
+      "id": "tpl-house-payday", "name": "Payday saving into House fund", "enabled": true,
+      "template": { "accountId": "acc-a", "tagId": "tag-house", "type": "allocate", "amountMinor": 2000000, "currency": "TWD", "note": "Template: payday saving into House fund" },
+      "schedule": { "frequency": "monthly", "interval": 1, "dayOfMonth": 5, "startDate": "2026-11-05", "endDate": "2027-12-05" }
+    },
+    {
+      "id": "tpl-electricity", "name": "Electricity (variable)", "enabled": true,
+      "template": { "accountId": "acc-b", "type": "expense", "amountMinor": 120000, "expectedRangeMinor": { "min": 80000, "max": 150000 }, "currency": "TWD", "note": "Electricity (confirm actual amount before posting)" },
+      "schedule": { "frequency": "monthly", "interval": 1, "dayOfMonth": 15, "startDate": "2026-01-15", "endDate": null }
+    },
+    {
+      "id": "tpl-salary", "name": "Salary", "enabled": true,
+      "template": { "accountId": "acc-a", "type": "income", "amountMinor": 8000000, "currency": "TWD", "note": "Salary" },
+      "schedule": { "frequency": "monthly", "interval": 1, "dayOfMonth": 5, "startDate": "2026-01-05", "endDate": null }
+    }
+  ]
+}

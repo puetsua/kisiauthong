@@ -1,0 +1,309 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+package main
+
+import (
+	"database/sql"
+	_ "embed"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+
+	_ "modernc.org/sqlite"
+)
+
+//go:embed seed.json
+var seedJSON string
+
+const schema = `
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, currency TEXT NOT NULL,
+  opening_balance_minor INTEGER NOT NULL DEFAULT 0, allow_negative INTEGER NOT NULL DEFAULT 0,
+  credit_limit_minor INTEGER, statement_close_day INTEGER, payment_due_day INTEGER);
+CREATE TABLE IF NOT EXISTS transactions (
+  id TEXT PRIMARY KEY, account_id TEXT NOT NULL DEFAULT '', from_account_id TEXT NOT NULL DEFAULT '',
+  to_account_id TEXT NOT NULL DEFAULT '', tag_id TEXT NOT NULL DEFAULT '', type TEXT NOT NULL,
+  state TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT,
+  UNIQUE(transaction_template_id, occurrence_date));
+CREATE TABLE IF NOT EXISTS tags (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, limit_minor INTEGER,
+  cycle TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT '', target_minor INTEGER, target_date TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS transaction_tags (
+  transaction_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY(transaction_id, tag_id));
+CREATE TABLE IF NOT EXISTS transaction_templates (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+  template_json TEXT NOT NULL, schedule_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY, value TEXT NOT NULL);
+`
+
+type Store struct {
+	mu   sync.Mutex
+	db   *sql.DB
+	data Data
+}
+
+func openStore(path string) (*Store, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec(schema); err != nil {
+		return nil, err
+	}
+	s := &Store{db: db}
+	if err := s.reload(); err != nil {
+		return nil, err
+	}
+	if len(s.data.Accounts) == 0 {
+		var seed Data
+		if err := json.Unmarshal([]byte(seedJSON), &seed); err != nil {
+			return nil, fmt.Errorf("seed: %w", err)
+		}
+		for _, a := range seed.Accounts {
+			if err := s.insertAccount(a); err != nil {
+				return nil, err
+			}
+		}
+		for _, t := range seed.Tags {
+			if err := s.insertTag(t); err != nil {
+				return nil, err
+			}
+		}
+		for _, t := range seed.Transactions {
+			if err := s.insertTransaction(t); err != nil {
+				return nil, err
+			}
+		}
+		for _, tt := range seed.TransactionTags {
+			if _, err := db.Exec(`INSERT OR IGNORE INTO transaction_tags(transaction_id,tag_id) VALUES(?,?)`, tt.TransactionID, tt.TagID); err != nil {
+				return nil, err
+			}
+		}
+		for _, tp := range seed.TransactionTemplates {
+			if err := s.insertTemplate(tp); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.reload(); err != nil {
+			return nil, err
+		}
+	}
+	return s, nil
+}
+
+func (s *Store) reload() error {
+	d := Data{Version: 1}
+	rows, err := s.db.Query(`SELECT id,name,kind,currency,opening_balance_minor,allow_negative,credit_limit_minor,statement_close_day,payment_due_day FROM accounts ORDER BY name`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a Account
+		var an int
+		var cl sql.NullInt64
+		var sc, pd sql.NullInt64
+		if err := rows.Scan(&a.ID, &a.Name, &a.Kind, &a.Currency, &a.OpeningBalanceMinor, &an, &cl, &sc, &pd); err != nil {
+			return err
+		}
+		a.AllowNegative = an != 0
+		if cl.Valid {
+			a.CreditLimitMinor = &cl.Int64
+		}
+		if sc.Valid {
+			v := int(sc.Int64)
+			a.StatementCloseDay = &v
+		}
+		if pd.Valid {
+			v := int(pd.Int64)
+			a.PaymentDueDay = &v
+		}
+		d.Accounts = append(d.Accounts, a)
+	}
+	rows.Close()
+	tr, err := s.db.Query(`SELECT id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,note,transaction_template_id,occurrence_date FROM transactions ORDER BY date,id`)
+	if err != nil {
+		return err
+	}
+	defer tr.Close()
+	for tr.Next() {
+		var t Transaction
+		var tplID, occ sql.NullString
+		if err := tr.Scan(&t.ID, &t.AccountID, &t.FromAccountID, &t.ToAccountID, &t.TagID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Note, &tplID, &occ); err != nil {
+			return err
+		}
+		t.TransactionTemplateID = tplID.String
+		t.OccurrenceDate = occ.String
+		d.Transactions = append(d.Transactions, t)
+	}
+	tr.Close()
+	tg, err := s.db.Query(`SELECT id,name,kind,limit_minor,cycle,currency,target_minor,target_date FROM tags ORDER BY name`)
+	if err != nil {
+		return err
+	}
+	defer tg.Close()
+	for tg.Next() {
+		var t Tag
+		var lm, tm sql.NullInt64
+		if err := tg.Scan(&t.ID, &t.Name, &t.Kind, &lm, &t.Cycle, &t.Currency, &tm, &t.TargetDate); err != nil {
+			return err
+		}
+		if lm.Valid {
+			t.LimitMinor = &lm.Int64
+		}
+		if tm.Valid {
+			t.TargetMinor = &tm.Int64
+		}
+		d.Tags = append(d.Tags, t)
+	}
+	tg.Close()
+	tt, err := s.db.Query(`SELECT transaction_id,tag_id FROM transaction_tags`)
+	if err != nil {
+		return err
+	}
+	defer tt.Close()
+	for tt.Next() {
+		var x TransactionTag
+		if err := tt.Scan(&x.TransactionID, &x.TagID); err != nil {
+			return err
+		}
+		d.TransactionTags = append(d.TransactionTags, x)
+	}
+	tt.Close()
+	tp, err := s.db.Query(`SELECT id,name,enabled,template_json,schedule_json FROM transaction_templates ORDER BY name`)
+	if err != nil {
+		return err
+	}
+	defer tp.Close()
+	for tp.Next() {
+		var x TransactionTemplate
+		var en int
+		var tj, sj string
+		if err := tp.Scan(&x.ID, &x.Name, &en, &tj, &sj); err != nil {
+			return err
+		}
+		x.Enabled = en != 0
+		if err := json.Unmarshal([]byte(tj), &x.Template); err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(sj), &x.Schedule); err != nil {
+			return err
+		}
+		d.TransactionTemplates = append(d.TransactionTemplates, x)
+	}
+	tp.Close()
+	s.data = d
+	return nil
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+func n64(p *int64) interface{} {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+func nint(p *int) interface{} {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+func nullEmpty(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func (s *Store) insertAccount(a Account) error {
+	_, err := s.db.Exec(`INSERT INTO accounts(id,name,kind,currency,opening_balance_minor,allow_negative,credit_limit_minor,statement_close_day,payment_due_day) VALUES(?,?,?,?,?,?,?,?,?)`,
+		a.ID, a.Name, a.Kind, a.Currency, a.OpeningBalanceMinor, b2i(a.AllowNegative), n64(a.CreditLimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay))
+	return err
+}
+func (s *Store) insertTag(t Tag) error {
+	_, err := s.db.Exec(`INSERT INTO tags(id,name,kind,limit_minor,cycle,currency,target_minor,target_date) VALUES(?,?,?,?,?,?,?,?)`,
+		t.ID, t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.Currency, n64(t.TargetMinor), t.TargetDate)
+	return err
+}
+func (s *Store) insertTransaction(t Transaction) error {
+	_, err := s.db.Exec(`INSERT INTO transactions(id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,note,transaction_template_id,occurrence_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Note, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate))
+	return err
+}
+func (s *Store) getSetting(key string) (string, bool, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return v, true, nil
+}
+func (s *Store) setSetting(key, value string) error {
+	_, err := s.db.Exec(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
+	return err
+}
+func (s *Store) updateAccount(a Account) error {
+	_, err := s.db.Exec(`UPDATE accounts SET name=?,kind=?,currency=?,opening_balance_minor=?,allow_negative=?,credit_limit_minor=?,statement_close_day=?,payment_due_day=? WHERE id=?`,
+		a.Name, a.Kind, a.Currency, a.OpeningBalanceMinor, b2i(a.AllowNegative), n64(a.CreditLimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay), a.ID)
+	if err != nil {
+		return err
+	}
+	return s.reload()
+}
+func (s *Store) updateTag(t Tag) error {
+	_, err := s.db.Exec(`UPDATE tags SET name=?,kind=?,limit_minor=?,cycle=?,currency=?,target_minor=?,target_date=? WHERE id=?`,
+		t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.Currency, n64(t.TargetMinor), t.TargetDate, t.ID)
+	if err != nil {
+		return err
+	}
+	return s.reload()
+}
+func (s *Store) updateTransaction(t Transaction) error {
+	_, err := s.db.Exec(`UPDATE transactions SET account_id=?,from_account_id=?,to_account_id=?,tag_id=?,type=?,state=?,amount_minor=?,currency=?,date=?,note=? WHERE id=?`,
+		t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Note, t.ID)
+	if err != nil {
+		return err
+	}
+	// refresh category links: replace with the single tagId link for expense/income, keep others for allocate/release
+	if t.Type == "expense" || t.Type == "income" {
+		if _, err := s.db.Exec(`DELETE FROM transaction_tags WHERE transaction_id=?`, t.ID); err != nil {
+			return err
+		}
+		if t.TagID != "" {
+			if _, err := s.db.Exec(`INSERT OR IGNORE INTO transaction_tags(transaction_id,tag_id) VALUES(?,?)`, t.ID, t.TagID); err != nil {
+				return err
+			}
+		}
+	}
+	return s.reload()
+}
+func (s *Store) updateTemplate(t TransactionTemplate) error {
+	tj, _ := json.Marshal(t.Template)
+	sj, _ := json.Marshal(t.Schedule)
+	_, err := s.db.Exec(`UPDATE transaction_templates SET name=?,enabled=?,template_json=?,schedule_json=? WHERE id=?`, t.Name, b2i(t.Enabled), string(tj), string(sj), t.ID)
+	if err != nil {
+		return err
+	}
+	return s.reload()
+}
+func (s *Store) insertTemplate(t TransactionTemplate) error {
+	tj, _ := json.Marshal(t.Template)
+	sj, _ := json.Marshal(t.Schedule)
+	_, err := s.db.Exec(`INSERT INTO transaction_templates(id,name,enabled,template_json,schedule_json) VALUES(?,?,?,?,?)`, t.ID, t.Name, b2i(t.Enabled), string(tj), string(sj))
+	return err
+}
