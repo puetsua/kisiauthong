@@ -31,8 +31,21 @@ function fmt(minor, currency) {
   return (currency || "") + " " + v.toLocaleString(LANG, { minimumFractionDigits: e, maximumFractionDigits: e });
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const msg = (t) => { $("#msg").textContent = t || ""; };
-const errMsg = (e) => msg(__("Error: {message}", { message: e.message }));
+// msg shows a short toast at the bottom of the page; errors stay longer and can be clicked away.
+let toastTimer = 0;
+function msg(t, kind) {
+  const el = $("#toast");
+  clearTimeout(toastTimer);
+  if (!t) { el.classList.remove("show"); return; }
+  el.textContent = t;
+  el.className = "toast" + (kind === "error" ? " error" : "");
+  el.setAttribute("role", kind === "error" ? "alert" : "status");
+  void el.offsetWidth; // restart the entrance transition when one toast replaces another
+  el.classList.add("show");
+  toastTimer = setTimeout(() => el.classList.remove("show"), kind === "error" ? 7000 : 3000);
+}
+const errMsg = (e) => msg(__("Error: {message}", { message: e.message }), "error");
+$("#toast").addEventListener("click", () => msg(""));
 async function api(path, opts) {
   const r = await fetch(path, opts);
   const d = await r.json().catch(() => ({}));
@@ -737,11 +750,11 @@ $("#txnForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target).entries());
   const cur = accCur(f.accountId), type = state.txnType;
-  if (type === "transfer" && !f.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to.")); return; }
-  if (toMinor(f.amount, cur) === 0) { msg(__("Enter an amount other than zero.")); return; }
+  if (type === "transfer" && !f.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to."), "error"); return; }
+  if (toMinor(f.amount, cur) === 0) { msg(__("Enter an amount other than zero."), "error"); return; }
   if (type === "allocate" && toMinor(f.amount, cur) < 0) { // the server refuses this too; say it with the amount first
     const held = state.data.transactions.filter((t) => t.id !== state.editingTxn && t.type === "allocate" && t.state === "posted" && t.accountId === f.accountId && t.tagId === f.tagId).reduce((n, t) => n + t.amountMinor, 0);
-    if (held + toMinor(f.amount, cur) < 0) { msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: tagName(f.tagId), amount: fmt(Math.max(0, held), cur), account: accName(f.accountId) })); return; }
+    if (held + toMinor(f.amount, cur) < 0) { msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: tagName(f.tagId), amount: fmt(Math.max(0, held), cur), account: accName(f.accountId) }), "error"); return; }
   }
   const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", memo: f.memo || "", state: "posted" }; // saving confirms an expected transaction
   if (type === "expense" || type === "income") { // stored as a transfer with an external side
@@ -1086,10 +1099,10 @@ async function load() {
     state.general = s.general;
     state.about = s.about;
     state.dismissed = (s.notifications && s.notifications.dismissed) || [];
-  } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message })); }
+  } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
   render();
 }
 setLang(pickLang(""));
-load().catch((e) => { msg(__("Failed to load: {message}", { message: e.message })); });
+load().catch((e) => { msg(__("Failed to load: {message}", { message: e.message }), "error"); });
