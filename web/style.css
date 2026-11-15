@@ -172,6 +172,16 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .chip.tagchip{cursor:pointer;font:inherit;font-size:.8rem}
 .chip.tagchip:hover{border-color:var(--green);color:var(--green)}
 .txactions{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:14px}
+/* transaction period paging */
+.periodbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin:0 0 14px}
+.periodbar .seg{margin:0}
+.periodbar .seg button{padding:6px 14px}
+.prange{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.prange input{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;font:inherit;color:var(--ink)}
+.periodnav{display:flex;align-items:center;gap:12px}
+.periodnav.top{margin-left:auto}
+.periodnav.bottom{justify-content:center;margin:14px 0}
+.plabel{font-weight:600;font-variant-numeric:tabular-nums;min-width:9em;text-align:center}
 @media (max-width:800px){
   .shell{flex-direction:column}
   .sidebar{width:100%;height:auto;position:sticky;top:0;z-index:5;padding:12px 14px;gap:10px}
@@ -187,6 +197,8 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .dashgrid>.dw.half{grid-column:1/-1}
   .dashedit details{margin-left:0}
   .flow{flex-direction:column}
+  .periodnav.top{margin-left:0;width:100%;justify-content:space-between}
+  .plabel{min-width:0}
   .txhero .big{font-size:1.6rem}
   .dialoghead h2{font-size:1.2rem}
   .flow .arrow{transform:rotate(90deg);justify-self:center;align-self:center}

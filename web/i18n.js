@@ -36,9 +36,9 @@ const I18N = {
     "No allocations yet": "還沒有撥入",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型",
-    "Clear": "清除", "Today": "今天", "Spending": "支出", "From outside": "外部來源", "Tags": "標籤", "to": "到",
-    "Expected, not confirmed yet. Confirm it when the real charge or income arrives.": "預計中，尚未確認。實際扣款或入帳後再確認。", "{n} transaction(s)": "{n} 筆交易", "Days open by default": "預設展開天數", "Days open by default saved.": "預設展開天數已儲存。", "Yesterday": "昨天", "No transactions yet.": "還沒有交易。", "Search note, tag, account…": "搜尋備註、標籤、帳戶…", "Pages": "分頁", "‹ Previous": "‹ 上一頁", "Next ›": "下一頁 ›", "{from}–{to} of {total}": "第 {from}–{to} 筆，共 {total} 筆",
-    "No transactions match. Add your first with the + button.": "沒有符合的交易。按 + 按鈕新增第一筆。",
+    "Clear": "清除", "Today": "今天", "Week": "週", "Month": "月", "Custom": "自訂", "Period": "期間", "Back to today": "回到今天", "End date": "結束日期",
+    "No transactions in this period.": "這段期間沒有交易。", "A range can be at most {n} days.": "日期範圍最多 {n} 天。", "Spending": "支出", "From outside": "外部來源", "Tags": "標籤", "to": "到",
+    "Expected, not confirmed yet. Confirm it when the real charge or income arrives.": "預計中，尚未確認。實際扣款或入帳後再確認。", "{n} transaction(s)": "{n} 筆交易", "Days open by default": "預設展開天數", "Days open by default saved.": "預設展開天數已儲存。", "Yesterday": "昨天", "No transactions yet.": "還沒有交易。", "Search note, tag, account…": "搜尋備註、標籤、帳戶…", "‹ Previous": "‹ 上一頁", "Next ›": "下一頁 ›",
     "Delete this transaction? This cannot be undone.": "要刪除這筆交易嗎？刪除後無法復原。", "Deleted.": "已刪除。",
     "Add transaction": "新增交易", "Edit transaction": "編輯交易", "Save transaction": "儲存交易", "Transaction editor": "交易編輯器",
     "Transaction updated.": "交易已更新。", "Saved.": "已儲存。", "Groceries": "買菜", "Close": "關閉",
@@ -86,7 +86,6 @@ const I18N = {
     // settings
     "General": "一般", "Language": "語言", "Browser default": "依瀏覽器設定", "Language saved.": "語言已儲存。",
     "Page width": "頁面寬度", "Default": "預設", "Wide": "加寬", "Page width saved.": "頁面寬度已儲存。",
-    "Transactions per page": "每頁交易筆數", "Transactions per page saved.": "每頁交易筆數已儲存。",
     "Default currency": "預設幣別", "Default currency saved.": "預設幣別已儲存。", "Frequently used currencies": "常用幣別",
     "Add currency": "新增幣別", "+ Add currency…": "＋ 新增幣別…", "Remove {currency}": "移除 {currency}", "All currencies": "所有幣別",
     "{currency} added.": "已新增 {currency}。", "{currency} removed.": "已移除 {currency}。",

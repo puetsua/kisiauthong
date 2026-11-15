@@ -2,12 +2,10 @@
 // All user-visible strings go through __() / N_() from i18n.js (English source strings).
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, page: 0, dayOpen: {} };
+const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {} };
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
-const PER_PAGE_CHOICES = [20, 50, 100, 200];
-const perPage = () => (state.general && state.general.transactionsPerPage) || 50;
 const OPEN_DAY_CHOICES = [1, 3, 7, 14, 30];
 const openDays = () => (state.general && state.general.openDays) || 7;
 const WIDTH_L = { default: N_("Default"), wide: N_("Wide"), full: N_("Full width") };
@@ -345,6 +343,57 @@ function feedRow(t, opts = {}) {
       <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, t.type))}</span><span class="fsub"><span class="sr">${esc(lbl(TYPE_L, t.type))} · </span>${esc(sub)}</span></span>
       <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button>${opts.confirm ? `<button type="button" class="smallbtn" data-confirm="${esc(t.id)}">${esc(__("Confirm…"))}</button>` : ""}</li>`;
 }
+/* ---------- transaction periods (the list pages by calendar period, not by entry count) ---------- */
+const MAX_RANGE_DAYS = 180;
+const PERIOD_L = { week: N_("Week"), month: N_("Month"), custom: N_("Custom") };
+const parseDay = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); };
+const addDays = (iso, n) => { const d = parseDay(iso); d.setDate(d.getDate() + n); return isoDay(d); };
+const spanDays = (a, b) => Math.round((parseDay(b) - parseDay(a)) / 86400000) + 1; // inclusive; rounding absorbs DST hours
+// periodFor returns the week (Monday-Sunday) or month containing the anchor date.
+function periodFor(mode, anchor) {
+  const d = parseDay(anchor);
+  if (mode === "week") { const start = addDays(anchor, -((d.getDay() + 6) % 7)); return { mode, start, end: addDays(start, 6) }; }
+  return { mode: "month", start: isoDay(new Date(d.getFullYear(), d.getMonth(), 1)), end: isoDay(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
+}
+function shiftPeriod(p, dir) {
+  if (p.mode === "month") { const s = parseDay(p.start); return periodFor("month", isoDay(new Date(s.getFullYear(), s.getMonth() + dir, 1))); }
+  if (p.mode === "week") return periodFor("week", addDays(p.start, 7 * dir));
+  const len = spanDays(p.start, p.end);
+  return { mode: "custom", start: addDays(p.start, len * dir), end: addDays(p.end, len * dir) };
+}
+// clampRange keeps a custom range ordered and at most MAX_RANGE_DAYS long (moving the end).
+function clampRange(start, end) {
+  if (end < start) [start, end] = [end, start];
+  const tooLong = spanDays(start, end) > MAX_RANGE_DAYS;
+  return { mode: "custom", start, end: tooLong ? addDays(start, MAX_RANGE_DAYS - 1) : end, clamped: tooLong };
+}
+function periodLabel(p) {
+  try {
+    if (p.mode === "month") return new Intl.DateTimeFormat(LANG, { year: "numeric", month: "long" }).format(parseDay(p.start));
+    const a = parseDay(p.start), b = parseDay(p.end);
+    if (LANG === "zh-TW") { // ICU's zh-TW range pattern is numeric ("2026/11/9至2026/11/15"); spell it out instead
+      const withYear = new Intl.DateTimeFormat(LANG, { year: "numeric", month: "long", day: "numeric" });
+      return withYear.format(a) + " – " + (a.getFullYear() === b.getFullYear() ? new Intl.DateTimeFormat(LANG, { month: "long", day: "numeric" }) : withYear).format(b);
+    }
+    return new Intl.DateTimeFormat(LANG, { year: "numeric", month: "short", day: "numeric" }).formatRange(a, b);
+  } catch (e) { return p.start + " – " + p.end; }
+}
+const PERIOD_KEY = "kisiauthong.txnPeriod";
+function currentPeriod() {
+  if (!state.period) {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(PERIOD_KEY) || "null"); } catch (e) { /* storage unavailable: use defaults */ }
+    const today = state.data.today;
+    state.period = saved && saved.mode === "custom" && saved.start && saved.end ? clampRange(saved.start, saved.end)
+      : periodFor(saved && saved.mode === "week" ? "week" : "month", today);
+  }
+  return state.period;
+}
+function setPeriod(p) {
+  state.period = { mode: p.mode, start: p.start, end: p.end };
+  try { localStorage.setItem(PERIOD_KEY, JSON.stringify(state.period)); } catch (e) { /* per-browser convenience only */ }
+}
+
 // feedHTML groups a newest-first list by day; the first `open` days start expanded,
 // and a day the user opened or closed keeps that choice (state.dayOpen) across re-renders.
 function feedHTML(list, open = Infinity) {
@@ -383,29 +432,62 @@ function screenTransactions(v) {
       <select id="ftype"><option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}</select>
       <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div>
     <div id="txnResults"></div>`;
-  const drawResults = () => {
-    const all = filteredTxns();
-    // unconfirmed items wait in their own section (oldest first) instead of carrying a state on every row
-    const expected = all.filter((t) => t.state === "planned").reverse(), list = all.filter((t) => t.state !== "planned");
-    const size = perPage(), pages = Math.max(1, Math.ceil(list.length / size));
-    state.page = Math.min(Math.max(0, state.page), pages - 1);
-    const from = state.page * size, shown = list.slice(from, from + size);
-    // always shown, even for one page, so paging is discoverable
-    const pager = `<nav class="pager" aria-label="${esc(__("Pages"))}">
-        <button class="smallbtn" data-page="${state.page - 1}" ${state.page === 0 ? "disabled" : ""}>${esc(__("‹ Previous"))}</button>
-        <span>${esc(__("{from}–{to} of {total}", { from: from + 1, to: from + shown.length, total: list.length }))}</span>
-        <button class="smallbtn" data-page="${state.page + 1}" ${state.page >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button></nav>`;
-    const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, confirm: true })).join("")}</ul></section>` : "";
-    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(shown, openDays())}</section>` + pager : "";
-    $("#txnResults").innerHTML = expectedHTML + postedHTML || `<div class="empty">${esc(__("No transactions match. Add your first with the + button."))}</div>`;
-    $("#txnResults").querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => { state.page = parseInt(b.dataset.page, 10); drawResults(); $("#view").scrollIntoView({ block: "start" }); }));
-    bindConfirm($("#txnResults"));
-    bindDays($("#txnResults"));
+  const today = state.data.today;
+  const nav = (p, where) => {
+    const atLatest = p.end >= today;
+    return `<nav class="periodnav ${where}" aria-label="${esc(__("Period"))}">
+        <button class="smallbtn" data-shift="-1">${esc(__("‹ Previous"))}</button>
+        <span class="plabel">${esc(periodLabel(p))}</span>
+        <button class="smallbtn" data-shift="1" ${atLatest ? "disabled" : ""}>${esc(__("Next ›"))}</button>
+        ${where === "top" && !(today >= p.start && today <= p.end) ? `<button class="smallbtn" data-today>${esc(__("Back to today"))}</button>` : ""}</nav>`;
   };
-  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value }; state.page = 0; drawResults(); };
+  const drawResults = () => {
+    const p = currentPeriod(), all = filteredTxns();
+    // unconfirmed items wait in their own section (oldest first, any date) instead of carrying a state on every row
+    const expected = all.filter((t) => t.state === "planned").reverse();
+    const list = all.filter((t) => t.state !== "planned" && t.date >= p.start && t.date <= p.end);
+    const modes = Object.keys(PERIOD_L).map((m) => `<button type="button" data-mode="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(PERIOD_L[m]))}</button>`).join("");
+    const custom = p.mode === "custom" ? `<span class="prange"><input type="date" id="pStart" value="${esc(p.start)}" aria-label="${esc(__("Start date"))}"> – <input type="date" id="pEnd" value="${esc(p.end)}" aria-label="${esc(__("End date"))}"></span>` : "";
+    const head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p, "top")}</div>`;
+    const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, confirm: true })).join("")}</ul></section>` : "";
+    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(list, openDays())}</section>` + nav(p, "bottom")
+      : `<div class="empty">${esc(__("No transactions in this period."))}</div>`;
+    $("#txnResults").innerHTML = expectedHTML + head + postedHTML;
+    const box = $("#txnResults");
+    box.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+      const m = b.dataset.mode;
+      if (m === p.mode) return;
+      // custom starts from the period on screen; week/month jump to the one holding its last day (capped at today)
+      setPeriod(m === "custom" ? clampRange(p.start, p.end) : periodFor(m, p.end < today ? p.end : today));
+      drawResults();
+    }));
+    box.querySelectorAll("[data-shift]").forEach((b) => b.addEventListener("click", () => {
+      setPeriod(shiftPeriod(p, parseInt(b.dataset.shift, 10)));
+      drawResults();
+      if (b.closest(".bottom")) $("#view").scrollIntoView({ block: "start" });
+    }));
+    const todayBtn = box.querySelector("[data-today]");
+    if (todayBtn) todayBtn.addEventListener("click", () => {
+      const len = spanDays(p.start, p.end);
+      setPeriod(p.mode === "custom" ? { mode: "custom", start: addDays(today, 1 - len), end: today } : periodFor(p.mode, today));
+      drawResults();
+    });
+    const onRange = () => {
+      const s = $("#pStart").value, e = $("#pEnd").value;
+      if (!s || !e) return;
+      const r = clampRange(s, e);
+      if (r.clamped) msg(__("A range can be at most {n} days.", { n: MAX_RANGE_DAYS }));
+      setPeriod(r);
+      drawResults();
+    };
+    if ($("#pStart")) { $("#pStart").addEventListener("change", onRange); $("#pEnd").addEventListener("change", onRange); }
+    bindConfirm(box);
+    bindDays(box);
+  };
+  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value }; drawResults(); };
   ["faccount", "ftype"].forEach((id) => $("#" + id).addEventListener("change", upd));
   $("#fq").addEventListener("input", upd);
-  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "" }; state.page = 0; render(); });
+  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "" }; render(); });
   drawResults();
   if (state.scrollToExpected && $("#expectedSec")) $("#expectedSec").scrollIntoView({ block: "start" });
   state.scrollToExpected = false;
@@ -484,8 +566,7 @@ function screenSettings(v) {
       <div class="setrow"><label>${esc(__("Language"))} <select id="setLang">${langOpts}</select></label>
         <label>${esc(__("Default currency"))} <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label>
         <label>${esc(__("Page width"))} <select id="setWidth">${enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())}</select></label>
-        <label>${esc(__("Days open by default"))} <select id="setOpenDays">${[...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")}</select></label>
-        <label>${esc(__("Transactions per page"))} <select id="setPerPage">${[...new Set([...PER_PAGE_CHOICES, perPage()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === perPage() ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
+        <label>${esc(__("Days open by default"))} <select id="setOpenDays">${[...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
       <div class="setlabel">${esc(__("Frequently used currencies"))}</div>
       <div class="curchips">${favCurs().map((c) => `<span class="chip cur${c === defCur() ? " def" : ""}" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="${esc(__("Remove {currency}", { currency: c }))}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}</div>
       <div class="setrow"><select id="setAddCur" aria-label="${esc(__("Add currency"))}"><option value="">${esc(__("+ Add currency…"))}</option>${ALL_CURRENCIES.filter((c) => !favCurs().includes(c)).map((c) => curOption(c, "")).join("")}</select></div></section>
@@ -513,7 +594,6 @@ function screenSettings(v) {
   $("#setDefCur").addEventListener("change", (e) => saveGeneral({ defaultCurrency: e.target.value }, () => __("Default currency saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
   $("#setOpenDays").addEventListener("change", (e) => { state.dayOpen = {}; saveGeneral({ openDays: parseInt(e.target.value, 10) }, () => __("Days open by default saved.")); });
-  $("#setPerPage").addEventListener("change", (e) => { state.page = 0; saveGeneral({ transactionsPerPage: parseInt(e.target.value, 10) }, () => __("Transactions per page saved.")); });
   $("#setAddCur").addEventListener("change", (e) => { const c = e.target.value; if (c) saveGeneral({ currencies: [...favCurs(), c] }, () => __("{currency} added.", { currency: c })); });
   v.querySelectorAll("[data-cur-del]").forEach((b) => b.addEventListener("click", () => {
     const c = b.dataset.curDel;
