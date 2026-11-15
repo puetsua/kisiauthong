@@ -362,7 +362,7 @@ function feedRow(t, opts = {}) {
   const sub = txnSubtitle(t) + (opts.withDate ? " · " + dayLabel(t.date) : "");
   return `<li><button type="button" class="feedrow" data-detail-txn="${esc(t.id)}">
       <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span>
-      <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}</span><span class="fsub"><span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
+      <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub"><span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
       <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button>${opts.confirm ? `<button type="button" class="smallbtn" data-confirm="${esc(t.id)}">${esc(__("Confirm…"))}</button>` : ""}</li>`;
 }
 /* ---------- transaction periods (the list pages by calendar period, not by entry count) ---------- */
@@ -440,7 +440,7 @@ async function deleteTxn(id) {
 function filteredTxns() {
   const f = state.filter, q = f.q.trim().toLowerCase();
   let list = [...state.data.transactions].sort(byNewest);
-  if (q) list = list.filter((t) => [t.note, lbl(TYPE_L, flow(t)), txnSubtitle(t), fmt(t.amountMinor, t.currency)].join(" ").toLowerCase().includes(q));
+  if (q) list = list.filter((t) => [t.note, t.memo, lbl(TYPE_L, flow(t)), txnSubtitle(t), fmt(t.amountMinor, t.currency)].join(" ").toLowerCase().includes(q));
   if (f.account) list = list.filter((t) => t.accountId === f.account || t.fromAccountId === f.account || t.toAccountId === f.account);
   if (f.type) list = list.filter((t) => flow(t) === f.type);
   return list;
@@ -717,6 +717,7 @@ function openEditTxn(id) {
   form.elements.amount.value = decimal(t.amountMinor, t.currency);
   form.elements.date.value = t.date;
   form.elements.note.value = t.note || "";
+  form.elements.memo.value = t.memo || "";
   form.elements.state.value = t.state;
   $("#drawerTitle").textContent = __("Edit transaction");
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
@@ -738,7 +739,7 @@ $("#txnForm").addEventListener("submit", async (e) => {
     const held = state.data.transactions.filter((t) => t.id !== state.editingTxn && t.type === "allocate" && t.state === "posted" && t.accountId === f.accountId && t.tagId === f.tagId).reduce((n, t) => n + t.amountMinor, 0);
     if (held + toMinor(f.amount, cur) < 0) { msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: tagName(f.tagId), amount: fmt(Math.max(0, held), cur), account: accName(f.accountId) })); return; }
   }
-  const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", state: isDecision(type) ? "posted" : f.state };
+  const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", memo: f.memo || "", state: isDecision(type) ? "posted" : f.state };
   if (type === "expense" || type === "income") { // stored as a transfer with an external side
     const ext = f.extAccountId || EXT_ID;
     Object.assign(body, { type: "transfer", accountId: "", fromAccountId: type === "expense" ? f.accountId : ext, toAccountId: type === "expense" ? ext : f.accountId });
@@ -843,7 +844,7 @@ function openTemplateDialog(editId) {
     field(N_("Expected max (variable bill, optional)"), `<input name="rangeMax" type="number" step="0.01" value="${rng ? decimal(rng.max, tp.template.currency) : ""}">`, "f-range") +
     field(N_("Day of month"), `<input name="dayOfMonth" type="number" min="1" max="31" value="${tp ? tp.schedule.dayOfMonth || 1 : 1}">`, "f-dom") +
     field(N_("Start date"), `<input name="startDate" type="date" required value="${tp ? esc(tp.schedule.startDate) : ""}">`) +
-    field(N_("Note"), `<input name="note" value="${tp ? esc(tp.template.note || "") : ""}">`, "wide"),
+    field("Title", `<input name="note" maxlength="200" value="${tp ? esc(tp.template.note || "") : ""}">`, "wide"),
     tp ? __("Save changes") : __("Add template")));
   const form = $("#dialogForm");
   const sync = () => {
@@ -936,6 +937,7 @@ function openTxnDetail(id) {
       <div class="big ${amountCls(t)}">${esc(amountText(t))}</div>
     </div>
     <div class="flow">${node(from)}<span class="arrow" aria-label="${esc(__("to"))}"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 12h15m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>${node(to)}</div>
+    ${t.memo ? `<div class="txmemo"><span>${esc(__("Note"))}</span><p>${esc(t.memo)}</p></div>` : ""}
     ${facts.length ? `<dl class="txfacts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>` : ""}
     <div class="txactions"><button type="button" class="smallbtn danger" id="paneDelete">${esc(__("Delete"))}</button><button type="button" class="smallbtn" id="paneEdit">${esc(__("Edit"))}</button></div>`);
   const body = $("#dialogBody");
@@ -985,7 +987,7 @@ function openTemplateDetail(id) {
     ["Generates", esc(__("{type} {amount} on {account}", { type: lbl(TYPE_L, flow(t.template)), amount: fmt(t.template.amountMinor, t.template.currency), account: transferAcct(t.template) })) + (t.template.tagId ? " → " + esc(tagName(t.template.tagId)) : "")],
     ...(t.template.expectedRangeMinor ? [[N_("Expected range (variable)"), fmt(t.template.expectedRangeMinor.min, t.template.currency) + " – " + fmt(t.template.expectedRangeMinor.max, t.template.currency)]] : []),
     ["Schedule", esc(scheduleText(t.schedule) + " · " + __("from {date}", { date: t.schedule.startDate }))],
-    ["Next due", esc(t.nextDue || "—")], ["Note", esc(t.template.note || "—")],
+    ["Next due", esc(t.nextDue || "—")], ["Title", esc(t.template.note || "—")],
   ]) + `<div class="pane-actions"><button class="smallbtn" id="paneEdit">${esc(__("Edit template"))}</button><button class="smallbtn" id="paneToggle">${esc(t.enabled ? __("Pause") : __("Resume"))}</button><button class="smallbtn" id="paneGenerate">${esc(__("Generate due"))}</button></div>`);
   $("#paneEdit").addEventListener("click", () => { $("#dialog").close(); openTemplateDialog(id); });
   $("#paneToggle").addEventListener("click", async () => {

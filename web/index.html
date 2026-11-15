@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#2a1740">
 <title>記數通 KiSiauThong</title>
-<link rel="stylesheet" href="style.css?v=27">
+<link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
 <div class="shell">
@@ -59,7 +59,8 @@
     <p id="fAmtNote" class="formnote hint" hidden data-i18n="A negative amount takes money back out of the money box.">A negative amount takes money back out of the money box.</p>
     <label><span data-i18n="Date">Date</span> <input name="date" type="date" required></label>
     <label id="fTagWrap"><span id="fTagLab">Tag</span> <select name="tagId" id="fTag"></select></label>
-    <label><span data-i18n="Note">Note</span> <input name="note" data-i18n-placeholder="Groceries"></label>
+    <label><span data-i18n="Title">Title</span> <input name="note" maxlength="200" data-i18n-placeholder="Groceries"></label>
+    <label><span data-i18n="Note">Note</span> <textarea name="memo" rows="3" maxlength="4000" data-i18n-placeholder="Details worth remembering: who, why, receipt number…"></textarea></label>
     <label id="fStateWrap"><span data-i18n="State">State</span> <select name="state"><option value="posted" data-i18n="Posted">Posted</option><option value="planned" data-i18n="Expected (planned)">Expected (planned)</option></select></label>
     <button class="primarybtn big" type="submit" data-i18n="Save transaction">Save transaction</button>
   </form>
@@ -71,7 +72,7 @@
   <div id="dialogBody"></div>
 </dialog>
 
-<script src="i18n.js?v=27"></script>
-<script src="app.js?v=27"></script>
+<script src="i18n.js?v=28"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>

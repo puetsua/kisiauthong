@@ -161,6 +161,8 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 	mustExec(`UPDATE transaction_templates SET template_json='{"accountId":"acc-a","type":"income","amountMinor":8000000,"currency":"TWD","note":"Salary"}' WHERE id='tpl-salary'`)
 	mustExec(`INSERT INTO transactions(id,account_id,tag_id,type,state,amount_minor,currency,date,note) VALUES('old-rel','acc-a','tag-furniture','release','posted',700,'TWD','2026-11-03','Back out')`)
 	mustExec(`PRAGMA user_version = 0`)
+	// a database from before migration 3 has no memo column
+	mustExec(`ALTER TABLE transactions DROP COLUMN memo`)
 	s.db.Close()
 
 	s, err = openStore(path) // runs the migration
@@ -187,6 +189,17 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 	for _, tp := range s.data.TransactionTemplates {
 		if tp.ID == "tpl-salary" && (tp.Template.Type != "transfer" || tp.Template.FromAccountID != ExternalAccountID || tp.Template.ToAccountID != "acc-a") {
 			t.Errorf("template not converted: %+v", tp.Template)
+		}
+	}
+	// migration 3 added the memo column back, and it round-trips
+	tx := byID["old-exp"]
+	tx.Memo = "Paid in cash"
+	if err := s.updateTransaction(tx); err != nil {
+		t.Fatalf("update with memo: %v", err)
+	}
+	for _, x := range s.data.Transactions {
+		if x.ID == "old-exp" && x.Memo != "Paid in cash" {
+			t.Errorf("memo not stored: %+v", x)
 		}
 	}
 	var v int

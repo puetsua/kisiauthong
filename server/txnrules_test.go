@@ -115,6 +115,22 @@ func TestSignedAllocations(t *testing.T) {
 	}
 }
 
+func TestTitleAndMemo(t *testing.T) {
+	d := seededData(t)
+	ok := Transaction{Type: "expense", AccountID: "acc-b", AmountMinor: 100, Note: "  Lunch  ", Memo: "  With Alex.\nSplit later.  "}
+	if err := d.normalizeTransaction(&ok); err != nil || ok.Note != "Lunch" || ok.Memo != "With Alex.\nSplit later." {
+		t.Errorf("trim: %v %+v", err, ok)
+	}
+	long := Transaction{Type: "expense", AccountID: "acc-b", AmountMinor: 100, Memo: strings.Repeat("記", maxMemoRunes+1)}
+	if err := d.normalizeTransaction(&long); err == nil {
+		t.Errorf("over-long memo accepted")
+	}
+	fits := Transaction{Type: "expense", AccountID: "acc-b", AmountMinor: 100, Memo: strings.Repeat("記", maxMemoRunes)}
+	if err := d.normalizeTransaction(&fits); err != nil {
+		t.Errorf("memo at the limit (counted in characters, not bytes): %v", err)
+	}
+}
+
 func TestNormalizeTemplate(t *testing.T) {
 	d := seededData(t)
 	b := TemplateBody{Type: "income", AccountID: "acc-a", AmountMinor: 100}

@@ -24,7 +24,8 @@ type Transaction struct {
 	AmountMinor           int64  `json:"amountMinor"`
 	Currency              string `json:"currency"`
 	Date                  string `json:"date"`
-	Note                  string `json:"note"`
+	Note                  string `json:"note"`           // short title shown in lists
+	Memo                  string `json:"memo,omitempty"` // longer free-text note
 	TransactionTemplateID string `json:"transactionTemplateId,omitempty"`
 	OccurrenceDate        string `json:"occurrenceDate,omitempty"`
 }

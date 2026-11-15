@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   id TEXT PRIMARY KEY, account_id TEXT NOT NULL DEFAULT '', from_account_id TEXT NOT NULL DEFAULT '',
   to_account_id TEXT NOT NULL DEFAULT '', tag_id TEXT NOT NULL DEFAULT '', type TEXT NOT NULL,
   state TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL,
-  note TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT,
+  note TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT,
   UNIQUE(transaction_template_id, occurrence_date));
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, limit_minor INTEGER,
@@ -57,15 +57,25 @@ func openStore(path string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{db: db}
+	if err := s.migrate(); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	if err := s.reload(); err != nil {
 		return nil, err
 	}
-	if len(s.data.Accounts) == 0 {
+	if !s.data.hasOwnAccounts() { // a new database: only the system external account exists
+		existing := map[string]bool{}
+		for _, a := range s.data.Accounts {
+			existing[a.ID] = true
+		}
 		var seed Data
 		if err := json.Unmarshal([]byte(seedJSON), &seed); err != nil {
 			return nil, fmt.Errorf("seed: %w", err)
 		}
 		for _, a := range seed.Accounts {
+			if existing[a.ID] {
+				continue
+			}
 			if err := s.insertAccount(a); err != nil {
 				return nil, err
 			}
@@ -94,10 +104,16 @@ func openStore(path string) (*Store, error) {
 			return nil, err
 		}
 	}
-	if err := s.migrate(); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
-	}
 	return s, nil
+}
+
+func (d *Data) hasOwnAccounts() bool {
+	for _, a := range d.Accounts {
+		if !a.IsExternal() {
+			return true
+		}
+	}
+	return false
 }
 
 // migrations are numbered by position and append-only: never edit or
@@ -105,6 +121,7 @@ func openStore(path string) (*Store, error) {
 var migrations = []func(tx *sql.Tx) error{
 	migrateExpenseIncomeToTransfers,  // 1
 	migrateReleaseToNegativeAllocate, // 2
+	migrateAddTransactionMemo,        // 3
 }
 
 func (s *Store) migrate() error {
@@ -128,10 +145,33 @@ func (s *Store) migrate() error {
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations))); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
+	return tx.Commit()
+}
+
+// Migration 3: transactions get a free-text memo beside the short title.
+// New databases already have the column from the schema.
+func migrateAddTransactionMemo(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA table_info(transactions)`)
+	if err != nil {
 		return err
 	}
-	return s.reload()
+	has := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		has = has || name == "memo"
+	}
+	rows.Close()
+	if has {
+		return nil
+	}
+	_, err = tx.Exec(`ALTER TABLE transactions ADD COLUMN memo TEXT NOT NULL DEFAULT ''`)
+	return err
 }
 
 // Migration 2 (ADR 0003): release stops being a stored type; a release of N
@@ -223,7 +263,7 @@ func (s *Store) reload() error {
 		d.Accounts = append(d.Accounts, a)
 	}
 	rows.Close()
-	tr, err := s.db.Query(`SELECT id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,note,transaction_template_id,occurrence_date FROM transactions ORDER BY date,id`)
+	tr, err := s.db.Query(`SELECT id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,note,memo,transaction_template_id,occurrence_date FROM transactions ORDER BY date,id`)
 	if err != nil {
 		return err
 	}
@@ -231,7 +271,7 @@ func (s *Store) reload() error {
 	for tr.Next() {
 		var t Transaction
 		var tplID, occ sql.NullString
-		if err := tr.Scan(&t.ID, &t.AccountID, &t.FromAccountID, &t.ToAccountID, &t.TagID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Note, &tplID, &occ); err != nil {
+		if err := tr.Scan(&t.ID, &t.AccountID, &t.FromAccountID, &t.ToAccountID, &t.TagID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Note, &t.Memo, &tplID, &occ); err != nil {
 			return err
 		}
 		t.TransactionTemplateID = tplID.String
@@ -334,8 +374,8 @@ func (s *Store) insertTag(t Tag) error {
 	return err
 }
 func (s *Store) insertTransaction(t Transaction) error {
-	_, err := s.db.Exec(`INSERT INTO transactions(id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,note,transaction_template_id,occurrence_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Note, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate))
+	_, err := s.db.Exec(`INSERT INTO transactions(id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,note,memo,transaction_template_id,occurrence_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Note, t.Memo, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate))
 	return err
 }
 func (s *Store) getSetting(key string) (string, bool, error) {
@@ -370,8 +410,8 @@ func (s *Store) updateTag(t Tag) error {
 	return s.reload()
 }
 func (s *Store) updateTransaction(t Transaction) error {
-	_, err := s.db.Exec(`UPDATE transactions SET account_id=?,from_account_id=?,to_account_id=?,tag_id=?,type=?,state=?,amount_minor=?,currency=?,date=?,note=? WHERE id=?`,
-		t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Note, t.ID)
+	_, err := s.db.Exec(`UPDATE transactions SET account_id=?,from_account_id=?,to_account_id=?,tag_id=?,type=?,state=?,amount_minor=?,currency=?,date=?,note=?,memo=? WHERE id=?`,
+		t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Note, t.Memo, t.ID)
 	if err != nil {
 		return err
 	}

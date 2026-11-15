@@ -2,7 +2,16 @@
 // Copyright (C) 2026 kisiauthong contributors
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+)
+
+const (
+	maxTitleRunes = 200
+	maxMemoRunes  = 4000
+)
 
 // ExternalAccountID is the anonymous external account: the other side of an
 // expense or income when the user does not name a payee or payer.
@@ -46,6 +55,13 @@ func (d *Data) tagByID(id string) *Tag {
 //     not take out more than the account has allocated to that money box.
 //     "release" is accepted as a shorthand for a negative allocation.
 func (d *Data) normalizeTransaction(t *Transaction) error {
+	t.Note, t.Memo = strings.TrimSpace(t.Note), strings.TrimSpace(t.Memo)
+	if utf8.RuneCountInString(t.Note) > maxTitleRunes {
+		return fmt.Errorf("title longer than %d characters", maxTitleRunes)
+	}
+	if utf8.RuneCountInString(t.Memo) > maxMemoRunes {
+		return fmt.Errorf("note longer than %d characters", maxMemoRunes)
+	}
 	if t.State == "" {
 		t.State = "posted"
 	}

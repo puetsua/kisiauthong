@@ -36,7 +36,8 @@ const I18N = {
     "No allocations yet": "還沒有分配",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型",
-    "Clear": "清除", "Today": "今天", "A negative amount takes money back out of the money box.": "輸入負數可以把錢從存錢筒撥回帳戶。", "Enter an amount other than zero.": "金額不能是 0。",
+    "Clear": "清除", "Today": "今天", "Has a note": "有備註",
+    "Details worth remembering: who, why, receipt number…": "值得記下的細節：和誰、為什麼、收據號碼…", "A negative amount takes money back out of the money box.": "輸入負數可以把錢從存錢筒撥回帳戶。", "Enter an amount other than zero.": "金額不能是 0。",
     "{box} holds {amount} in {account}; you can take out at most that.": "{box}在{account}只有 {amount}，最多只能撥回這個金額。",
     "Allocating records a decision and never moves cash: the account balance stays the same and its free amount drops. A negative allocation takes money back out. Every allocation is listed in History.": "分配只是記錄一個決定，不會真的移動現金：帳戶餘額不變，可用金額減少。負數的分配會把錢撥回帳戶。所有分配都會列在紀錄中。", "External": "外部", "External accounts": "外部帳戶", "+ New external account": "＋ 新增外部帳戶", "New external account": "新增外部帳戶",
     "Paid to": "付給", "Received from": "收自", "Employer": "雇主",
