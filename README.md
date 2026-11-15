@@ -17,7 +17,7 @@ Platforms: web server (self-hosted), desktop (Windows, Linux, macOS), and Androi
 docker run -d --name kisiauthong -p 127.0.0.1:8080:8080 -v kisiauthong-data:/data ghcr.io/puetsua/kisiauthong:latest
 ```
 
-or `docker compose -f deploy/docker-compose.yml up -d`. Your books live in the `kisiauthong-data` volume.
+or `docker compose -f deploy/docker-compose.yml up -d`. Your books live in the `kisiauthong-data` volume. Give the container at least 256 MB of memory: each sign-in hashes the password with Argon2id using 64 MiB (with a limit, also set `GOMEMLIMIT`, e.g. `200MiB`).
 
 **Download**: each [release](https://github.com/puetsua/kisiauthong/releases) has one archive per system (Windows, macOS, Linux; Intel/AMD and ARM). Unpack it and run `kisiauthong` (`kisiauthong.exe` on Windows): it is a single file with the web UI built in and keeps its data in `data/` under the folder you start it from. `kisiauthong version` prints the version.
 
