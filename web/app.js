@@ -90,7 +90,6 @@ const FREQ_L = { daily: N_("Daily"), weekly: N_("Weekly"), monthly: N_("Monthly"
 const lbl = (map, x) => __(map[x] || x);
 const enumOptions = (map, keys, sel) => keys.map((k) => `<option value="${esc(k)}" ${k === sel ? "selected" : ""}>${esc(lbl(map, k))}</option>`).join("");
 const txnTitle = (t) => t.note || lbl(TYPE_L, flow(t));
-const unconfirmed = () => `<span class="chip due">${esc(__("UNCONFIRMED"))}</span>`;
 // transferAcct: the accounts involved, naming an external side only when it is not the anonymous one
 const transferAcct = (t) => {
   const k = flow(t), n = namedExt(t);
@@ -104,7 +103,6 @@ const transferAcct = (t) => {
 const DASH_WIDGETS = [
   { id: "balances", label: N_("Balances by currency"), pick: "currencies" },
   { id: "budgets", label: N_("Budgets this month"), pick: "budgets" },
-  { id: "expected", label: N_("Expected to confirm"), rows: 6 },
   { id: "spending", label: N_("Spending this month"), rows: 8 },
   { id: "moneyboxes", label: N_("Money boxes"), pick: "goals" },
   { id: "accounts", label: N_("Accounts"), pick: "accounts" },
@@ -134,12 +132,11 @@ const ofAmount = (a, b, cur) => esc(__("{spent} of {limit}", { spent: fmt(a, cur
 function widgetBody(id, o) {
   const d = state.data, def = widgetDef(id), rows = o.rows || def.rows;
   const inc = (x) => !(o.include && o.include.length) || o.include.includes(x);
-  const planned = d.transactions.filter((t) => t.state === "planned");
   switch (id) {
     case "balances": {
       const perCur = {};
       d.accounts.forEach((a) => { if (inc(a.currency)) perCur[a.currency] = (perCur[a.currency] || 0) + a.balanceMinor; });
-      return `<div class="cards">${Object.entries(perCur).map(([c, val]) => `<div class="card"><span class="lab">${esc(__("Balance · {currency}", { currency: c }))}</span><b>${fmt(val, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span></div>`).join("")}<div class="card"><span class="lab">${esc(__("Expected to confirm"))}</span><b>${planned.length}</b><span class="muted">${esc(__("Not yet posted"))}</span></div></div>`;
+      return `<div class="cards">${Object.entries(perCur).map(([c, val]) => `<div class="card"><span class="lab">${esc(__("Balance · {currency}", { currency: c }))}</span><b>${fmt(val, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span></div>`).join("")}</div>`;
     }
     case "budgets": {
       const list = d.tags.filter((t) => t.limitMinor !== undefined && inc(t.id)).map((t) => {
@@ -147,10 +144,6 @@ function widgetBody(id, o) {
         return row([{ l: "Budget", v: `<button class="titlelink" data-detail-tag="${esc(t.id)}">${esc(t.name)}</button>` }, { l: "Spent", v: ofAmount(t.spentMinor, t.limitMinor, t.currency) }, { l: "Progress", v: `<div class="bar"><i class="${barCls(p)}" style="width:${Math.min(100, p)}%"></i></div>` }, { l: "Remaining", v: fmt(t.remainingMinor, t.currency), num: 1 }]);
       }).join("");
       return list ? table([{ t: N_("Budget") }, { t: N_("Spent") }, { t: N_("Progress") }, { t: N_("Remaining"), num: 1 }], list) : `<p class="muted">${esc(__("No budgets yet."))}</p>`;
-    }
-    case "expected": {
-      const list = planned.slice(0, rows).map((t) => row([{ l: N_("Date"), v: esc(t.date) }, { l: N_("Expected"), v: `<button class="titlelink" data-detail-txn="${esc(t.id)}">${esc(txnTitle(t))}</button> ${unconfirmed()}` }, { l: N_("Account"), v: esc(transferAcct(t)) }, { l: N_("Amount"), v: fmt(t.amountMinor, t.currency), num: 1 }])).join("");
-      return list ? table([{ t: "Date" }, { t: "Expected" }, { t: "Account" }, { t: "Amount", num: 1 }], list) : `<p class="muted">${esc(__("Nothing waiting. Templates generate here when due."))}</p>`;
     }
     case "spending": {
       // server returns rows grouped by currency, largest first; bars compare within one currency only

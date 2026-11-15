@@ -14,7 +14,29 @@ import (
 )
 
 // dashboardWidgets is the known widget set, in default order.
-var dashboardWidgets = []string{"balances", "budgets", "expected", "spending", "moneyboxes", "accounts", "recent"}
+var dashboardWidgets = []string{"balances", "budgets", "spending", "moneyboxes", "accounts", "recent"}
+
+// retiredWidgets were once valid; saved layouts that still name them are cleaned, not rejected.
+// "expected" left the dashboard when expected transactions moved to the notification bell.
+var retiredWidgets = map[string]bool{"expected": true}
+
+func (d *DashboardSettings) dropRetired() {
+	keep := func(ids []string) []string {
+		out := ids[:0:0]
+		for _, id := range ids {
+			if !retiredWidgets[id] {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	d.Order, d.Hidden = keep(d.Order), keep(d.Hidden)
+	for id := range d.Widgets {
+		if retiredWidgets[id] {
+			delete(d.Widgets, id)
+		}
+	}
+}
 
 // WidgetOptions customises one dashboard widget. Zero values mean "default".
 type WidgetOptions struct {
@@ -115,6 +137,7 @@ func defaultSettings() Settings {
 }
 
 func (d *DashboardSettings) validate() error {
+	d.dropRetired()
 	known := map[string]bool{}
 	for _, id := range dashboardWidgets {
 		known[id] = true
@@ -216,6 +239,7 @@ func (s *Store) loadSettings() (Settings, error) {
 	if out.Dashboard.Widgets == nil {
 		out.Dashboard.Widgets = map[string]WidgetOptions{}
 	}
+	out.Dashboard.dropRetired()
 	if v, ok, err := s.getSetting("general"); err != nil {
 		return out, err
 	} else if ok {

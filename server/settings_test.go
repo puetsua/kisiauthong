@@ -211,6 +211,23 @@ func TestSettingsDashboardWidgetOptions(t *testing.T) {
 	}
 }
 
+func TestSettingsRetiredWidgetIsDropped(t *testing.T) {
+	withTestStore(t)
+	// a layout saved while the "expected" widget existed still loads, without it
+	if err := store.setSetting("dashboard", `{"order":["balances","expected","recent"],"hidden":["expected"],"widgets":{"expected":{"rows":3}}}`); err != nil {
+		t.Fatal(err)
+	}
+	_, s := doSettings(t, http.MethodGet, "")
+	if strings.Join(s.Dashboard.Order, ",") != "balances,recent" || len(s.Dashboard.Hidden) != 0 || len(s.Dashboard.Widgets) != 0 {
+		t.Fatalf("stored layout: %+v", s.Dashboard)
+	}
+	// and an older client sending it back is cleaned, not rejected
+	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"order":["expected","spending"],"hidden":[]}}`)
+	if code != 200 || strings.Join(s.Dashboard.Order, ",") != "spending" {
+		t.Fatalf("PUT with retired widget: %d %+v", code, s.Dashboard)
+	}
+}
+
 func TestSettingsRejectsInvalid(t *testing.T) {
 	withTestStore(t)
 	for _, body := range []string{
