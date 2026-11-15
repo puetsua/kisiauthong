@@ -27,6 +27,14 @@ type WidgetOptions struct {
 	Title   string   `json:"title,omitempty"`   // overrides the built-in label
 	Rows    int      `json:"rows,omitempty"`    // row limit for list widgets
 	Include []string `json:"include,omitempty"` // item ids / currency codes to show; empty = all
+	Columns []string `json:"columns,omitempty"` // shown columns in order (table widgets); empty = default
+}
+
+// widgetColumns is the column keys each table widget offers (web/app.js WIDGET_COLS).
+var widgetColumns = map[string][]string{
+	"budgets":  {"name", "spent", "progress", "used", "limit", "remaining"},
+	"spending": {"name", "share", "pct", "spent"},
+	"accounts": {"name", "type", "currency", "balance", "earmarked", "free"},
 }
 
 // WidgetItem is one widget on the dashboard. A type may appear any number of
@@ -211,6 +219,22 @@ func (d *DashboardSettings) validate() error {
 		for _, x := range w.Include {
 			if x == "" || len(x) > 64 {
 				return fmt.Errorf("widget %s: invalid include entry", w.ID)
+			}
+		}
+		if len(w.Columns) > 0 {
+			offered := map[string]bool{}
+			for _, k := range widgetColumns[w.Type] {
+				offered[k] = true
+			}
+			if len(offered) == 0 {
+				return fmt.Errorf("widget %s: %s has no columns to choose", w.ID, w.Type)
+			}
+			used := map[string]bool{}
+			for _, k := range w.Columns {
+				if !offered[k] || used[k] {
+					return fmt.Errorf("widget %s: unknown or repeated column %q", w.ID, k)
+				}
+				used[k] = true
 			}
 		}
 		items = append(items, w)

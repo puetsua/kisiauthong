@@ -108,6 +108,13 @@ body.dashdragging,body.dashdragging *{cursor:grabbing!important;user-select:none
 .paneform fieldset{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
 .paneform legend{font-size:.86rem;color:var(--muted);padding:0;margin-bottom:6px}
 .paneform fieldset label{display:flex;align-items:center;gap:6px;font-size:.92rem}
+.colpick{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:8px}
+.colpick li{display:flex;align-items:center;gap:2px;padding:2px 4px 2px 10px;border-bottom:1px solid var(--rule)}
+.colpick li:last-child{border-bottom:0}
+.colpick label{flex:1;min-width:0;padding:6px 0}
+.colpick .iconbtn{color:var(--muted);border-radius:6px;padding:5px 7px;display:grid;place-items:center}
+.colpick .iconbtn:hover:not(:disabled){background:var(--hover2);color:var(--accent)}
+.colpick .iconbtn:disabled{opacity:.3;cursor:default}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:18px}
 .panel h2,.panel h3{font-family:Georgia,serif;margin:0 0 10px}
 .panelhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
@@ -258,7 +265,7 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .topbar{padding:12px 14px}.topbar h1{font-size:1.2rem}
   .grid2{grid-template-columns:1fr}
   .dashgrid>.dw.half{grid-column:1/-1}
-  .dasheditor{grid-template-columns:minmax(0,1fr)}.dasheditor .grip{min-width:40px;min-height:40px;font-size:1.3rem}.tilebar .iconbtn{min-width:40px;min-height:40px}.tilebar{padding:2px 4px}.palette li{padding:4px 8px 4px 2px}.panel.dashpane{position:static;max-height:none;order:-1}
+  .dasheditor{grid-template-columns:minmax(0,1fr)}.dasheditor .grip{min-width:40px;min-height:40px;font-size:1.3rem}.tilebar .iconbtn,.colpick .iconbtn{min-width:40px;min-height:40px}.tilebar{padding:2px 4px}.palette li{padding:4px 8px 4px 2px}.panel.dashpane{position:static;max-height:none;order:-1}
   .flow{flex-direction:column}
   .notifpanel{left:12px;width:auto}
   .periodnav{margin-left:0;width:100%;justify-content:space-between}

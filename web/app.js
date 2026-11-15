@@ -128,6 +128,41 @@ function pickItems(kind) {
   return [];
 }
 const ofAmount = (a, b, cur) => esc(__("{spent} of {limit}", { spent: fmt(a, cur), limit: fmt(b, cur) }));
+const pctFmt = (p) => new Intl.NumberFormat(LANG, { style: "percent", maximumFractionDigits: 0 }).format(p / 100);
+const bar = (p, cls = "") => `<div class="bar"><i class="${cls}" style="width:${Math.min(100, Math.max(0, p))}%"></i></div>`;
+// Columns of the table widgets. `on` marks the default set; a widget's `columns` lists the
+// shown keys in order. Keep the keys in step with widgetColumns in server/settings.go.
+const WIDGET_COLS = {
+  budgets: [
+    { key: "name", label: N_("Budget"), on: 1, v: (t) => `<button class="titlelink" data-detail-tag="${esc(t.id)}">${esc(t.name)}</button>` },
+    { key: "spent", label: N_("Spent"), on: 1, v: (t) => ofAmount(t.spentMinor, t.limitMinor, t.currency) },
+    { key: "progress", label: N_("Progress"), on: 1, v: (t) => bar(t.pct, barCls(t.pct)) },
+    { key: "used", label: N_("Used"), num: 1, v: (t) => pctFmt(t.pct) },
+    { key: "limit", label: N_("Limit"), num: 1, v: (t) => fmt(t.limitMinor, t.currency) },
+    { key: "remaining", label: N_("Remaining"), on: 1, num: 1, v: (t) => fmt(t.remainingMinor, t.currency) },
+  ],
+  spending: [
+    { key: "name", label: N_("Category"), on: 1, v: (x) => x.tagId ? `<button class="titlelink" data-detail-tag="${esc(x.tagId)}">${esc(tagName(x.tagId))}</button>` : `<span class="muted">${esc(__("Uncategorised"))}</span>` },
+    { key: "share", label: N_("Share"), on: 1, v: (x) => bar(x.share) },
+    { key: "pct", label: N_("% of spending"), num: 1, v: (x) => pctFmt(x.pct) },
+    { key: "spent", label: N_("Spent"), on: 1, num: 1, v: (x) => fmt(x.amountMinor, x.currency) },
+  ],
+  accounts: [
+    { key: "name", label: N_("Account"), on: 1, v: (a) => `<button class="titlelink" data-detail-account="${esc(a.id)}">${esc(a.name)}</button>` },
+    { key: "type", label: N_("Kind"), on: 1, v: (a) => `<span class="chip">${esc(lbl(KIND_L, a.kind))}</span>` },
+    { key: "currency", label: N_("Currency"), v: (a) => esc(a.currency) },
+    { key: "balance", label: N_("Balance"), on: 1, num: 1, v: (a) => fmt(a.balanceMinor, a.currency) },
+    { key: "earmarked", label: N_("Earmarked"), on: 1, num: 1, v: (a) => fmt(a.allocatedMinor, a.currency) },
+    { key: "free", label: N_("Free"), on: 1, num: 1, v: (a) => fmt(a.unallocatedMinor, a.currency) },
+  ],
+};
+const defaultCols = (type) => WIDGET_COLS[type].filter((c) => c.on).map((c) => c.key);
+// the shown columns of a widget, in order
+function widgetCols(type, o) {
+  const all = WIDGET_COLS[type], keys = o.columns && o.columns.length ? o.columns : defaultCols(type);
+  return keys.map((k) => all.find((c) => c.key === k)).filter(Boolean);
+}
+const colTable = (cols, xs) => table(cols.map((c) => ({ t: c.label, num: c.num })), xs.map((x) => row(cols.map((c) => ({ l: c.label, v: c.v(x), num: c.num })))).join(""));
 function widgetBody(type, o) {
   const d = state.data, def = widgetDef(type), rows = o.rows || def.rows;
   const inc = (x) => !(o.include && o.include.length) || o.include.includes(x);
@@ -138,29 +173,26 @@ function widgetBody(type, o) {
       return `<div class="cards">${Object.entries(perCur).map(([c, val]) => `<div class="card"><span class="lab">${esc(__("Balance · {currency}", { currency: c }))}</span><b>${fmt(val, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span></div>`).join("")}</div>`;
     }
     case "budgets": {
-      const list = d.tags.filter((t) => t.limitMinor !== undefined && inc(t.id)).map((t) => {
-        const p = t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0;
-        return row([{ l: "Budget", v: `<button class="titlelink" data-detail-tag="${esc(t.id)}">${esc(t.name)}</button>` }, { l: "Spent", v: ofAmount(t.spentMinor, t.limitMinor, t.currency) }, { l: "Progress", v: `<div class="bar"><i class="${barCls(p)}" style="width:${Math.min(100, p)}%"></i></div>` }, { l: "Remaining", v: fmt(t.remainingMinor, t.currency), num: 1 }]);
-      }).join("");
-      return list ? table([{ t: N_("Budget") }, { t: N_("Spent") }, { t: N_("Progress") }, { t: N_("Remaining"), num: 1 }], list) : `<p class="muted">${esc(__("No budgets yet."))}</p>`;
+      const list = d.tags.filter((t) => t.limitMinor !== undefined && inc(t.id)).map((t) => ({ ...t, pct: t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0 }));
+      return list.length ? colTable(widgetCols(type, o), list) : `<p class="muted">${esc(__("No budgets yet."))}</p>`;
     }
     case "spending": {
       // server returns rows grouped by currency, largest first; bars compare within one currency only
       const byCur = {};
       (d.spendingThisMonth || []).forEach((x) => { (byCur[x.currency] = byCur[x.currency] || []).push(x); });
-      const list = Object.entries(byCur).map(([c, xs]) => xs.slice(0, rows).map((x) => row([
-        { l: N_("Category"), v: x.tagId ? `<button class="titlelink" data-detail-tag="${esc(x.tagId)}">${esc(tagName(x.tagId))}</button>` : `<span class="muted">${esc(__("Uncategorised"))}</span>` },
-        { l: N_("Share"), v: `<div class="bar"><i style="width:${xs[0].amountMinor ? x.amountMinor / xs[0].amountMinor * 100 : 0}%"></i></div>` },
-        { l: "Spent", v: fmt(x.amountMinor, c), num: 1 }])).join("")).join("");
-      return list ? table([{ t: "Category" }, { t: "Share" }, { t: "Spent", num: 1 }], list) : `<p class="muted">${esc(__("No posted expenses this month."))}</p>`;
+      const list = Object.values(byCur).flatMap((xs) => {
+        const total = xs.reduce((n, x) => n + x.amountMinor, 0);
+        // share: against the largest category; pct: of all spending, both within one currency
+        return xs.slice(0, rows).map((x) => ({ ...x, share: xs[0].amountMinor ? x.amountMinor / xs[0].amountMinor * 100 : 0, pct: total ? x.amountMinor / total * 100 : 0 }));
+      });
+      return list.length ? colTable(widgetCols(type, o), list) : `<p class="muted">${esc(__("No posted expenses this month."))}</p>`;
     }
     case "moneyboxes": {
       const goals = d.tags.filter((t) => t.targetMinor !== undefined && inc(t.id));
       return goals.length ? goals.map(goalCard).join("") : `<p class="muted">${esc(__("No money boxes yet."))}</p>`;
     }
     case "accounts": {
-      const list = d.accounts.filter((a) => inc(a.id)).map((a) => row([{ l: "Account", v: `<button class="titlelink" data-detail-account="${esc(a.id)}">${esc(a.name)}</button> <span class="chip">${esc(lbl(KIND_L, a.kind))}</span>` }, { l: N_("Balance"), v: fmt(a.balanceMinor, a.currency), num: 1 }, { l: N_("Earmarked"), v: fmt(a.allocatedMinor, a.currency), num: 1 }, { l: N_("Free"), v: fmt(a.unallocatedMinor, a.currency), num: 1 }])).join("");
-      return table([{ t: "Account" }, { t: "Balance", num: 1 }, { t: "Earmarked", num: 1 }, { t: "Free", num: 1 }], list);
+      return colTable(widgetCols(type, o), d.accounts.filter((a) => inc(a.id)));
     }
     case "recent": {
       const list = d.transactions.filter((t) => t.state === "posted").sort(byNewest).slice(0, rows);
@@ -198,6 +230,17 @@ function dashTile(w, i, draft) {
       <button type="button" class="iconbtn" data-tile-remove aria-label="${esc(__("Remove {widget}", { widget: name }))}" title="${esc(__("Remove"))}">✕</button></div>
     <div class="tilebody" inert>${widgetBody(w.type, w)}</div></section>`;
 }
+// Columns editor: shown columns first in their order, then the hidden ones; tick to show, arrows to reorder.
+function colPicker(o) {
+  const all = WIDGET_COLS[o.type], shown = widgetCols(o.type, o).map((c) => c.key);
+  const list = [...shown, ...all.map((c) => c.key).filter((k) => !shown.includes(k))];
+  return `<fieldset><legend>${esc(__("Columns"))}</legend><ul class="colpick">${list.map((k, i) => {
+    const c = all.find((x) => x.key === k), name = __(c.label);
+    return `<li data-col="${esc(k)}"><label><input type="checkbox" data-col-on ${shown.includes(k) ? "checked" : ""}> ${esc(name)}</label>
+      <button type="button" class="iconbtn" data-col-move="-1" aria-label="${esc(__("Move {column} left", { column: name }))}" ${i === 0 ? "disabled" : ""}>${UP}</button>
+      <button type="button" class="iconbtn" data-col-move="1" aria-label="${esc(__("Move {column} right", { column: name }))}" ${i === list.length - 1 ? "disabled" : ""}>${DOWN}</button></li>`;
+  }).join("")}</ul></fieldset>`;
+}
 function dashPaneHTML(draft) {
   const o = state.dashSel && draft.items.find((w) => w.id === state.dashSel);
   if (!o) {
@@ -214,6 +257,7 @@ function dashPaneHTML(draft) {
       <label>${esc(__("Title"))} <input type="text" data-dash-title value="${esc(o.title || "")}" placeholder="${esc(label)}" maxlength="60"></label>
       <label>${esc(__("Width"))} <select data-dash-size><option value="full">${esc(__("Full width"))}</option><option value="half" ${o.size === "half" ? "selected" : ""}>${esc(__("Half width"))}</option></select></label>
       ${w.rows ? `<label>${esc(__("Rows"))} <input type="number" data-dash-rows min="1" max="50" value="${o.rows || w.rows}"></label>` : ""}
+      ${WIDGET_COLS[o.type] ? colPicker(o) : ""}
       ${items.length ? `<fieldset><legend>${esc(__("Show"))}</legend>${items.map((it) => `<label><input type="checkbox" data-dash-inc value="${esc(it.id)}" ${shown(it.id) ? "checked" : ""}> ${esc(it.label)}</label>`).join("")}</fieldset>` : ""}
     </div>
     <div class="setrow"><button type="button" class="smallbtn" data-pane-dup>${esc(__("Duplicate"))}</button><button type="button" class="smallbtn danger" data-pane-remove>${esc(__("Remove from dashboard"))}</button></div>`;
@@ -282,6 +326,31 @@ function screenDashboardEditor(v) {
       r.value = n;
       setWidgetOpt(id, "rows", n === def.rows ? undefined : n);
       drawCanvas();
+    });
+    // columns: the ticked ones, in list order; the default set is stored as "no override"
+    const saveCols = (keys) => {
+      const type = draftItem(id).type;
+      setWidgetOpt(id, "columns", keys.join(",") === defaultCols(type).join(",") ? undefined : keys);
+    };
+    const colKeys = (onlyOn) => [...pane.querySelectorAll(".colpick li")].filter((li) => !onlyOn || li.querySelector("[data-col-on]").checked).map((li) => li.dataset.col);
+    on("[data-col-on]", "change", (c) => {
+      const keys = colKeys(true);
+      if (!keys.length) { c.checked = true; msg(__("Keep at least one column.")); return; }
+      saveCols(keys);
+      drawCanvas();
+    });
+    on("[data-col-move]", "click", (b) => {
+      const li = b.closest("li"), dir = parseInt(b.dataset.colMove, 10), sib = dir < 0 ? li.previousElementSibling : li.nextElementSibling;
+      if (!sib) return;
+      // a hidden column moved above a shown one is placed among them, so keep the full list order
+      if (dir < 0) sib.before(li); else sib.after(li);
+      const shown = colKeys(true);
+      saveCols(shown);
+      const scroll = pane.scrollTop;
+      drawCanvas(); drawPane();
+      pane.scrollTop = scroll;
+      const again = pane.querySelector(`.colpick li[data-col="${CSS.escape(li.dataset.col)}"] [data-col-move="${dir}"]`);
+      if (again && !again.disabled) again.focus();
     });
     on("[data-dash-inc]", "change", (c) => {
       const boxes = [...pane.querySelectorAll("[data-dash-inc]")], picked = boxes.filter((b) => b.checked).map((b) => b.value);

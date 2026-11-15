@@ -242,6 +242,24 @@ func TestSettingsWidgetTypeRepeats(t *testing.T) {
 	}
 }
 
+func TestSettingsWidgetColumns(t *testing.T) {
+	withTestStore(t)
+	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"items":[{"id":"a","type":"accounts","columns":["name","currency","free"]}]}}`)
+	if code != 200 || strings.Join(s.Dashboard.Items[0].Columns, ",") != "name,currency,free" {
+		t.Fatalf("columns: %d %+v", code, s.Dashboard.Items)
+	}
+	for _, body := range []string{
+		`{"dashboard":{"items":[{"id":"a","type":"accounts","columns":["name","nope"]}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"accounts","columns":["name","name"]}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"budgets","columns":["currency"]}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"recent","columns":["name"]}]}}`,
+	} {
+		if code, _ := doSettings(t, http.MethodPut, body); code != 400 {
+			t.Errorf("%s: want 400, got %d", body, code)
+		}
+	}
+}
+
 func TestSettingsLegacyDashboardBecomesItems(t *testing.T) {
 	withTestStore(t)
 	// saved before widgets were reusable: one per type, hidden ones off the dashboard,
