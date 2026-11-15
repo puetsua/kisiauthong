@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, username TEXT NOT NULL DEFAULT '', display_name TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL DEFAULT '', is_admin INTEGER NOT NULL DEFAULT 0,
   totp_secret TEXT NOT NULL DEFAULT '', totp_enabled INTEGER NOT NULL DEFAULT 0, totp_last_step INTEGER NOT NULL DEFAULT 0,
+  recovery_codes TEXT NOT NULL DEFAULT '',
   avatar BLOB, avatar_type TEXT NOT NULL DEFAULT '', avatar_color TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS users_username ON users(username COLLATE NOCASE) WHERE username <> '';
@@ -121,6 +122,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateAccountIcons,              // 6
 	migrateTransactionTime,           // 7
 	migrateMultiUser,                 // 8
+	migrateRecoveryCodes,             // 9
 }
 
 func (s *Store) migrate() error {
@@ -175,6 +177,16 @@ func migrateMultiUser(tx *sql.Tx) error {
 		}
 	}
 	_, err := tx.Exec(`INSERT OR IGNORE INTO users(id,is_admin,created_at) VALUES(?,1,?)`, OwnerID, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+// Migration 9: TOTP recovery codes (hashes) on users.
+func migrateRecoveryCodes(tx *sql.Tx) error {
+	has, err := hasColumn(tx, "users", "recovery_codes")
+	if err != nil || has {
+		return err
+	}
+	_, err = tx.Exec(`ALTER TABLE users ADD COLUMN recovery_codes TEXT NOT NULL DEFAULT ''`)
 	return err
 }
 

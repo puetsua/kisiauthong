@@ -32,6 +32,13 @@ and sign them in with a password, TOTP and passkeys.
   sample books. On a database from before users existed, migration 8 gave
   every row to an owner without credentials, and setup claims that owner,
   keeping the books.
+- **TOTP** (RFC 6238: SHA-1, 6 digits, 30 s, ±1 step) is an optional
+  second factor. Turning it on needs a code from the new secret (shown as
+  a QR code generated on the server); a used step is not accepted again.
+  Ten one-time recovery codes are issued then, stored as hashes. Signing
+  in with a password then returns a five-minute ticket instead of a
+  session, and the session starts once a code or recovery code is given.
+  Turning TOTP off needs a code. Migration 9 adds `users.recovery_codes`.
 - Failed sign-ins are limited per client address (10 per 15 minutes), and
   an unknown username costs the same time as a wrong password.
 - Account management (password, TOTP, passkeys, API keys, users) needs a

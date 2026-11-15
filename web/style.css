@@ -398,4 +398,23 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .sc .inline{display:flex;gap:8px;align-items:center}
 .sc .inline input{flex:1;min-width:0}
 .sabout span{display:flex;flex-direction:column}
-.sabout .avatar{align-self:center;line-height:1}
+.sabout .avatar{display:inline-grid;align-self:center;line-height:1}
+
+/* two-step verification */
+.authback{margin-top:10px;align-self:center}
+.small{font-size:.84rem}
+.totpsetup{display:flex;gap:22px;align-items:flex-start;padding:18px 20px;flex-wrap:wrap}
+.totpsetup .qr{border:1px solid var(--line);border-radius:10px;image-rendering:pixelated;background:#fff}
+.totpsetup>div{flex:1;min-width:240px}
+.steps{margin:0 0 12px;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+.secret{font-family:ui-monospace,Consolas,monospace;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:2px 6px;word-break:break-all}
+.totpsetup .inline{display:flex;gap:8px;flex-wrap:wrap}
+.totpsetup input{width:9em;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:1.05rem;letter-spacing:.15em}
+.recovery{padding:18px 20px}
+.recovery p{margin:0 0 12px}
+.codes{list-style:none;margin:0 0 14px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.codes code{display:block;text-align:center;font-family:ui-monospace,Consolas,monospace;font-size:1rem;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.82rem;font-weight:700}
+.pill.on{background:var(--posbg);color:var(--pos)}
+.pill.off{background:var(--track);color:var(--muted)}
+.sbtns{align-items:center}

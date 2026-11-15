@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -57,23 +58,30 @@ func (p *Principal) can(scope string) bool { return p.scopes == nil || p.scopes[
 
 // User is a user as the API shows them; secrets never leave the server.
 type User struct {
-	ID          string `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"displayName"`
-	IsAdmin     bool   `json:"isAdmin"`
-	TOTPEnabled bool   `json:"totpEnabled"`
-	HasAvatar   bool   `json:"hasAvatar"`
-	AvatarColor string `json:"avatarColor"`
-	CreatedAt   string `json:"createdAt"`
+	ID           string `json:"id"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"displayName"`
+	IsAdmin      bool   `json:"isAdmin"`
+	TOTPEnabled  bool   `json:"totpEnabled"`
+	RecoveryLeft int    `json:"recoveryCodesLeft,omitempty"`
+	HasAvatar    bool   `json:"hasAvatar"`
+	AvatarColor  string `json:"avatarColor"`
+	CreatedAt    string `json:"createdAt"`
 }
 
-const userCols = `id,username,display_name,is_admin,totp_enabled,avatar IS NOT NULL,avatar_color,created_at`
+const userCols = `id,username,display_name,is_admin,totp_enabled,recovery_codes,avatar IS NOT NULL,avatar_color,created_at`
 
 func scanUser(row interface{ Scan(...interface{}) error }) (*User, error) {
 	var u User
 	var admin, totp, avatar int
-	if err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &admin, &totp, &avatar, &u.AvatarColor, &u.CreatedAt); err != nil {
+	var rec string
+	if err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &admin, &totp, &rec, &avatar, &u.AvatarColor, &u.CreatedAt); err != nil {
 		return nil, err
+	}
+	if totp != 0 {
+		var hashes []string
+		_ = json.Unmarshal([]byte(rec), &hashes)
+		u.RecoveryLeft = len(hashes)
 	}
 	u.IsAdmin, u.TOTPEnabled, u.HasAvatar = admin != 0, totp != 0, avatar != 0
 	if u.DisplayName == "" {
@@ -472,6 +480,12 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	signinFailures.reset(key)
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	var totp int
+	_ = store.db.QueryRow(`SELECT totp_enabled FROM users WHERE id=?`, uid).Scan(&totp)
+	if totp != 0 { // the password passed; the session waits for the code
+		writeJSON(w, 200, map[string]interface{}{"totpRequired": true, "ticket": newTicket(uid)})
+		return
+	}
 	finishSignIn(w, r, uid)
 }
 

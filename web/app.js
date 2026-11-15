@@ -1428,9 +1428,33 @@ function showAuth(mode) {
     const f = Object.fromEntries(new FormData(form).entries()), err = $("#authErr");
     err.hidden = true;
     try {
-      await post(setup ? "/api/auth/setup" : "/api/auth/login", f);
+      const res = await post(setup ? "/api/auth/setup" : "/api/auth/login", f);
+      if (res.totpRequired) { showCodeStep(res.ticket); return; }
       await boot();
     } catch (x) { err.textContent = x.message; err.hidden = false; }
+  });
+}
+// second sign-in step: a code from the authenticator app, or a recovery code
+function showCodeStep(ticket) {
+  const box = $("#authScreen");
+  box.innerHTML = `<form class="authcard" id="authForm">
+      <div class="authbrand"><span lang="nan-Hant-TW">記數通</span><small>KiSiauThong</small></div>
+      <h1>${esc(__("Two-step verification"))}</h1>
+      <label><span>${esc(__("Code from your authenticator app"))}</span><input name="code" autocomplete="one-time-code" inputmode="numeric" required autocapitalize="none" spellcheck="false" maxlength="12"></label>
+      <p class="muted small">${esc(__("Lost your phone? Enter one of your recovery codes instead."))}</p>
+      <p class="autherr" id="authErr" role="alert" hidden></p>
+      <button class="primarybtn big" type="submit">${esc(__("Verify"))}</button>
+      <button class="linkbtn authback" type="button" id="authBack">${esc(__("‹ Back"))}</button>
+    </form>`;
+  const form = $("#authForm");
+  form.elements.code.focus();
+  $("#authBack").addEventListener("click", () => showAuth("login"));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const err = $("#authErr");
+    err.hidden = true;
+    try { await post("/api/auth/totp", { ticket, code: form.elements.code.value }); await boot(); }
+    catch (x) { err.textContent = x.message; err.hidden = false; form.elements.code.select(); }
   });
 }
 function renderUserBtn() {
@@ -1472,6 +1496,7 @@ function screenAccount(v) {
       <div class="sabout">${avatarHTML(u, 56)}<span><b>${esc(u.displayName || u.username)}</b><small class="muted">@${esc(u.username)}${u.isAdmin ? " · " + esc(__("Administrator")) : ""}</small></span></div>
       <form id="profileForm">${row(__("Display name"), `<div class="inline"><input name="displayName" maxlength="60" value="${esc(u.displayName || "")}"><button class="smallbtn" type="submit">${esc(__("Save"))}</button></div>`)}</form>
     </div></section>
+    <section class="ssec"><h3>${esc(__("Two-step verification"))}</h3><div class="scard" id="totpCard"></div></section>
     <section class="ssec"><h3>${esc(__("Password"))}</h3><div class="scard">
       <form id="pwForm">
         ${row(__("Current password"), `<input name="current" type="password" autocomplete="current-password" required>`)}
@@ -1481,6 +1506,7 @@ function screenAccount(v) {
       </form>
     </div></section>
   </div></div>`;
+  drawTotp();
   $("#profileForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     try { state.me = await put("/api/me", { displayName: e.target.elements.displayName.value }); renderUserBtn(); msg(__("Profile saved.")); render(); }
@@ -1491,6 +1517,50 @@ function screenAccount(v) {
     const f = Object.fromEntries(new FormData(e.target).entries());
     if (f.new !== f.confirm) { msg(__("The new passwords do not match."), "error"); return; }
     try { await post("/api/me/password", { current: f.current, new: f.new }); e.target.reset(); msg(__("Password changed. Other devices were signed out.")); }
+    catch (err) { errMsg(err); }
+  });
+}
+
+// Two-step verification card: off -> scan + verify -> recovery codes -> on
+async function refreshMe() { state.me = await api("/api/me"); renderUserBtn(); }
+function drawTotp(stage, data) {
+  const card = $("#totpCard"), u = state.me;
+  const row = (label, control) => `<div class="srow"><span class="sl">${esc(label)}</span><div class="sc">${control}</div></div>`;
+  if (stage === "setup") {
+    card.innerHTML = `<div class="totpsetup">
+        <img class="qr" src="${esc(data.qr)}" alt="${esc(__("QR code for your authenticator app"))}" width="180" height="180">
+        <div><ol class="steps"><li>${esc(__("Scan the QR code with an authenticator app (Google Authenticator, 1Password, Authy…)."))}</li>
+          <li>${esc(__("Or enter this key by hand:"))} <code class="secret">${esc(data.secret.replace(/(.{4})/g, "$1 ").trim())}</code></li>
+          <li>${esc(__("Enter the 6-digit code it shows:"))}</li></ol>
+        <form id="totpEnable" class="inline"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required placeholder="123456"><button class="primarybtn" type="submit">${esc(__("Verify"))}</button><button class="smallbtn" type="button" id="totpCancel">${esc(__("Cancel"))}</button></form></div></div>`;
+    card.querySelector("[name=code]").focus();
+    $("#totpCancel").addEventListener("click", () => drawTotp());
+    $("#totpEnable").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try { const res = await post("/api/me/totp/enable", { code: e.target.elements.code.value }); await refreshMe(); drawTotp("codes", res.recoveryCodes); }
+      catch (err) { errMsg(err); }
+    });
+    return;
+  }
+  if (stage === "codes") {
+    const text = data.join("\n");
+    card.innerHTML = `<div class="recovery"><p><b>${esc(__("Two-step verification is on."))}</b> ${esc(__("Save these recovery codes somewhere safe. Each works once if you lose your phone; they will not be shown again."))}</p>
+        <ul class="codes">${data.map((c) => `<li><code>${esc(c)}</code></li>`).join("")}</ul>
+        <div class="sbtns"><button class="smallbtn" type="button" id="rcCopy">${esc(__("Copy"))}</button><a class="smallbtn" download="kisiauthong-recovery-codes.txt" href="data:text/plain;charset=utf-8,${encodeURIComponent(text + "\n")}">${esc(__("Download"))}</a><button class="primarybtn" type="button" id="rcDone">${esc(__("Done"))}</button></div></div>`;
+    $("#rcCopy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(text); msg(__("Copied.")); } catch (e) { msg(__("Copy failed; select the codes instead."), "error"); } });
+    $("#rcDone").addEventListener("click", () => drawTotp());
+    return;
+  }
+  if (!u.totpEnabled) {
+    card.innerHTML = row(__("Authenticator app"), `<div class="sbtns"><span class="pill off">${esc(__("Off"))}</span><button class="smallbtn" type="button" id="totpOn">${esc(__("Turn on"))}</button></div>`);
+    $("#totpOn").addEventListener("click", async () => { try { drawTotp("setup", await post("/api/me/totp/setup")); } catch (e) { errMsg(e); } });
+    return;
+  }
+  card.innerHTML = row(__("Authenticator app"), `<div class="sbtns"><span class="pill on">${esc(__("On"))}</span><small class="muted">${esc(__("{n} recovery code(s) left", { n: u.recoveryCodesLeft || 0 }))}</small></div>`)
+    + `<form id="totpOff">${row(__("Turn off"), `<div class="inline"><input name="code" autocomplete="one-time-code" maxlength="12" required placeholder="${esc(__("Current code"))}"><button class="smallbtn danger" type="submit">${esc(__("Turn off"))}</button></div>`)}</form>`;
+  $("#totpOff").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try { await post("/api/me/totp/disable", { code: e.target.elements.code.value }); await refreshMe(); msg(__("Two-step verification is off.")); drawTotp(); }
     catch (err) { errMsg(err); }
   });
 }

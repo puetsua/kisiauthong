@@ -160,6 +160,10 @@ func newMux(webDir string) *http.ServeMux {
 	mux.HandleFunc("/api/auth/setup", handleSetup)
 	mux.HandleFunc("/api/auth/login", handleLogin)
 	mux.HandleFunc("/api/auth/logout", handleLogout)
+	mux.HandleFunc("/api/auth/totp", handleLoginTOTP)
+	mux.HandleFunc("/api/me/totp/setup", sessionOnly(handleTOTPSetup))
+	mux.HandleFunc("/api/me/totp/enable", sessionOnly(handleTOTPEnable))
+	mux.HandleFunc("/api/me/totp/disable", sessionOnly(handleTOTPDisable))
 	mux.HandleFunc("/api/me", sessionOnly(handleMe))
 	mux.HandleFunc("/api/me/password", sessionOnly(handleChangePassword))
 
