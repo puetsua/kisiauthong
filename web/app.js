@@ -457,13 +457,13 @@ function screenTransactions(v) {
       <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div>
     <div id="txnResults"></div>`;
   const today = state.data.today;
-  const nav = (p, where) => {
+  const nav = (p) => {
     const atLatest = p.end >= today;
-    return `<nav class="periodnav ${where}" aria-label="${esc(__("Period"))}">
+    return `<nav class="periodnav" aria-label="${esc(__("Period"))}">
         <button class="smallbtn" data-shift="-1">${esc(__("‹ Previous"))}</button>
         <span class="plabel">${esc(periodLabel(p))}</span>
         <button class="smallbtn" data-shift="1" ${atLatest ? "disabled" : ""}>${esc(__("Next ›"))}</button>
-        ${where === "top" && !(today >= p.start && today <= p.end) ? `<button class="smallbtn" data-today>${esc(__("Back to today"))}</button>` : ""}</nav>`;
+        ${!(today >= p.start && today <= p.end) ? `<button class="smallbtn" data-today>${esc(__("Back to today"))}</button>` : ""}</nav>`;
   };
   const drawResults = () => {
     const p = currentPeriod(), all = filteredTxns();
@@ -472,9 +472,9 @@ function screenTransactions(v) {
     const list = all.filter((t) => t.state !== "planned" && t.date >= p.start && t.date <= p.end);
     const modes = Object.keys(PERIOD_L).map((m) => `<button type="button" data-mode="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(PERIOD_L[m]))}</button>`).join("");
     const custom = p.mode === "custom" ? `<span class="prange"><input type="date" id="pStart" value="${esc(p.start)}" aria-label="${esc(__("Start date"))}"> – <input type="date" id="pEnd" value="${esc(p.end)}" aria-label="${esc(__("End date"))}"></span>` : "";
-    const head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p, "top")}</div>`;
+    const head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
     const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, edit: true })).join("")}</ul></section>` : "";
-    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(list, openDays())}</section>` + nav(p, "bottom")
+    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(list, openDays())}</section>`
       : `<div class="empty">${esc(__("No transactions in this period."))}</div>`;
     $("#txnResults").innerHTML = expectedHTML + head + postedHTML;
     const box = $("#txnResults");
@@ -488,7 +488,6 @@ function screenTransactions(v) {
     box.querySelectorAll("[data-shift]").forEach((b) => b.addEventListener("click", () => {
       setPeriod(shiftPeriod(p, parseInt(b.dataset.shift, 10)));
       drawResults();
-      if (b.closest(".bottom")) $("#view").scrollIntoView({ block: "start" });
     }));
     const todayBtn = box.querySelector("[data-today]");
     if (todayBtn) todayBtn.addEventListener("click", () => {

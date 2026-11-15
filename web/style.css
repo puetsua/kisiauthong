@@ -98,8 +98,6 @@ tr.unconfirmed td{background:#fdf0cd}
 .smallbtn{background:#fff;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:5px 11px;font-weight:600;cursor:pointer;font-size:.85rem}
 .smallbtn.danger{color:var(--red);border-color:var(--red)}
 .smallbtn:disabled{opacity:.35;cursor:default}
-.pager{display:flex;align-items:center;justify-content:center;gap:14px;margin:14px 0;flex-wrap:wrap}
-.pager span{color:var(--muted);font-size:.9rem;font-variant-numeric:tabular-nums}
 .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.filters input,.filters select{padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff}
 .datehead{font-family:Georgia,serif;font-weight:700;margin:18px 0 4px}
 .empty{border:1px dashed var(--line);border-radius:10px;padding:26px;text-align:center;color:var(--muted);background:#fff}
@@ -181,9 +179,7 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .periodbar .seg button{padding:6px 14px}
 .prange{display:flex;align-items:center;gap:6px;color:var(--muted)}
 .prange input{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;font:inherit;color:var(--ink)}
-.periodnav{display:flex;align-items:center;gap:12px}
-.periodnav.top{margin-left:auto}
-.periodnav.bottom{justify-content:center;margin:14px 0}
+.periodnav{display:flex;align-items:center;gap:12px;margin-left:auto}
 .plabel{font-weight:600;font-variant-numeric:tabular-nums;min-width:9em;text-align:center}
 /* notifications */
 .bell{position:relative;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;color:var(--muted)}
@@ -236,7 +232,7 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .dashedit details{margin-left:0}
   .flow{flex-direction:column}
   .notifpanel{left:12px;width:auto}
-  .periodnav.top{margin-left:0;width:100%;justify-content:space-between}
+  .periodnav{margin-left:0;width:100%;justify-content:space-between}
   .plabel{min-width:0}
   .txhero .big{font-size:1.6rem}
   .dialoghead h2{font-size:1.2rem}
