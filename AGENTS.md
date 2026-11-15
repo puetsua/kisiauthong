@@ -118,7 +118,7 @@ All ids are UUIDs generated on the client so offline creation never needs the se
 
 ## 4. Money, dates, and numbers — hard rules
 
-1. Money is **integer minor units + currency code** everywhere: DB, API, client. Display formatting is the only place a decimal point appears.
+1. Money is **integer minor units + currency code** everywhere: DB, API, client. Display formatting is the only place a decimal point appears. Minor units follow each currency's ISO 4217 precision (JPY 0, USD 2, KWD 3). Display drops the decimals of currencies whose minor unit exists only on paper (TWD, HUF) unless an amount actually has a fraction; calculated figures (per-day amounts, averages, forecasts) always show full precision.
 2. Never use floating point for money math, budget totals, or balances. Percentages for reports may use floats only at render time.
 3. Multi-currency: each account has one currency; each transaction is in its account's currency. Cross-currency transfers record both amounts and the rate used. Reports convert with a stored/recorded rate or show per-currency subtotals — never silently invent an FX rate.
 4. Sum/balance/budget logic lives in `packages/core` (clients) and is mirrored by server tests; if the two disagree, that is a bug, not a platform difference.

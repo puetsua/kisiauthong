@@ -3,8 +3,23 @@
 "use strict";
 const $ = (s) => document.querySelector(s);
 const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashSel: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
-const EXP = { JPY: 0, KRW: 0 };
-const expOf = (c) => (c in EXP ? EXP[c] : 2);
+// Money is stored in minor units at each currency's ISO 4217 precision (JPY 0, USD 2, KWD 3…).
+const EXP = {};
+const expOf = (c) => {
+  if (!(c in EXP)) {
+    try { EXP[c] = new Intl.NumberFormat("en", { style: "currency", currency: c }).resolvedOptions().maximumFractionDigits; } catch (e) { EXP[c] = 2; }
+  }
+  return EXP[c];
+};
+// Currencies whose minor unit exists only on paper: shown without decimals unless an amount has a fraction.
+const WHOLE_UNITS = { TWD: true, HUF: true };
+// digits to show for an amount: whole-unit currencies drop ".00", but never hide a real fraction;
+// calculated figures (per day, averages, forecasts) always show the full precision.
+function shownDigits(minor, c, calc) {
+  const e = expOf(c);
+  if (calc || !WHOLE_UNITS[c]) return e;
+  return Math.round(minor || 0) % Math.pow(10, e) === 0 ? 0 : e;
+}
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
 const OPEN_DAY_CHOICES = [1, 3, 7, 14, 30];
 const openDays = () => (state.general && state.general.openDays) || 7;
@@ -30,9 +45,10 @@ function currencyOptions(selected) {
     + (rest.length ? `<optgroup label="${esc(__("All currencies"))}">${rest.map((c) => curOption(c, sel)).join("")}</optgroup>` : "");
 }
 const toMinor = (a, c) => Math.round(parseFloat(a || 0) * Math.pow(10, expOf(c)));
-function fmt(minor, currency) {
-  const e = expOf(currency || defCur()), v = (minor || 0) / Math.pow(10, e);
-  return (currency || "") + " " + v.toLocaleString(LANG, { minimumFractionDigits: e, maximumFractionDigits: e });
+// fmt(minor, currency, calc): "TWD 1,580" / "USD 12.50"; calc = a calculated figure, shown at full precision
+function fmt(minor, currency, calc = false) {
+  const c = currency || defCur(), e = expOf(c), d = shownDigits(minor, c, calc), v = (minor || 0) / Math.pow(10, e);
+  return (currency || "") + " " + v.toLocaleString(LANG, { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 // msg shows a short toast at the bottom of the page; errors stay longer and can be clicked away.
@@ -58,7 +74,8 @@ async function api(path, opts) {
 }
 const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
 const put = (path, body) => api(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
-const decimal = (minor, currency) => ((minor || 0) / Math.pow(10, expOf(currency || defCur()))).toFixed(expOf(currency || defCur()));
+// an amount for a form field: "1500" for TWD 1,500, "12.50" for USD
+const decimal = (minor, currency) => { const c = currency || defCur(); return ((minor || 0) / Math.pow(10, expOf(c))).toFixed(shownDigits(minor, c, false)); };
 // state.data.accounts holds the user's own accounts; externals (kind "external") are kept apart.
 const EXT_ID = "acc-external"; // the anonymous external account (ADR 0002)
 const accById = (id) => (state.data.allAccounts || state.data.accounts).find((a) => a.id === id);
@@ -184,7 +201,7 @@ function widgetBody(type, o) {
     case "balances": {
       const perCur = {};
       d.accounts.forEach((a) => { if (inc(a.currency)) perCur[a.currency] = (perCur[a.currency] || 0) + a.balanceMinor; });
-      return `<div class="cards">${Object.entries(perCur).map(([c, val]) => `<div class="card"><span class="lab">${esc(__("Balance · {currency}", { currency: c }))}</span><b>${fmt(val, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span></div>`).join("")}</div>`;
+      return `<div class="cards">${Object.entries(perCur).map(([c, val]) => `<div class="card"><span class="lab">${esc(__("Balance"))}</span><b>${fmt(val, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span></div>`).join("")}</div>`;
     }
     case "budgets": {
       const list = d.tags.filter((t) => t.limitMinor !== undefined && inc(t.id)).map((t) => ({ ...t, pct: t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0 }));
@@ -757,7 +774,7 @@ function accountCard(a) {
       <span class="tfoot"><small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.unallocatedMinor, a.currency) }))}</small><small><b class="dot earmarked"></b>${esc(__("Earmarked {amount}", { amount: fmt(a.allocatedMinor, a.currency) }))}</small></span>`;
   }
   return `<button type="button" class="tcard acard" data-detail-account="${esc(a.id)}">
-    <span class="thead">${accIcon(a)}<span class="aname"><b>${esc(a.name)}</b></span><small class="cur">${esc(a.currency)}</small></span>
+    <span class="thead">${accIcon(a)}<span class="aname"><b>${esc(a.name)}</b></span></span>
     <span class="bamount${neg ? " neg" : ""}"><b>${fmt(a.balanceMinor, a.currency)}</b></span>
     ${detail}
     <small class="last">${esc(act.last ? __("Last activity {date}", { date: dayLabel(act.last) }) : __("No transactions yet"))}</small></button>`;
@@ -770,7 +787,7 @@ function screenAccounts(v) {
   const curs = [...new Set(accs.map((a) => a.currency))];
   const totals = curs.map((c) => {
     const xs = accs.filter((a) => a.currency === c), sum = (k) => xs.reduce((n, a) => n + (a[k] || 0), 0);
-    return `<div class="totcard"><span class="lab">${esc(__("Total · {currency}", { currency: c }))}</span><b>${fmt(sum("balanceMinor"), c)}</b>
+    return `<div class="totcard"><span class="lab">${esc(__("Total"))}</span><b>${fmt(sum("balanceMinor"), c)}</b>
       <small>${esc(__("{n} account(s)", { n: xs.length }))}${sum("allocatedMinor") ? " · " + esc(__("Earmarked {amount}", { amount: fmt(sum("allocatedMinor"), c) })) : ""}</small></div>`;
   }).join("");
   const ordered = accs; // by name, as the server lists them
@@ -812,7 +829,7 @@ function budgetCard(t) {
   const daysLeft = started && !ended ? spanDays(today, t.periodEnd) : 0;
   const left = t.remainingMinor >= 0 ? __("{amount} left", { amount: fmt(t.remainingMinor, t.currency) }) : __("{amount} over", { amount: fmt(-t.remainingMinor, t.currency) });
   const pace = !started ? __("Starts {date}", { date: dayLabel(t.periodStart) }) : ended ? __("Ended {date}", { date: dayLabel(t.periodEnd) })
-    : t.remainingMinor > 0 ? __("{amount} a day for {n} day(s)", { amount: fmt(Math.floor(t.remainingMinor / daysLeft), t.currency), n: daysLeft }) : __("{n} day(s) left", { n: daysLeft });
+    : t.remainingMinor > 0 ? __("{amount} a day for {n} day(s)", { amount: fmt(Math.floor(t.remainingMinor / daysLeft), t.currency, true), n: daysLeft }) : __("{n} day(s) left", { n: daysLeft });
   return `<button type="button" class="tcard bcard ${barCls(p)}" data-detail-tag="${esc(t.id)}">
     <span class="thead"><b>${esc(t.name)}</b><small>${esc(budgetPeriodText(t))}</small></span>
     <span class="bamount"><b>${fmt(t.spentMinor, t.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(t.limitMinor, t.currency) }))}</small></span>
@@ -1050,9 +1067,9 @@ function openAccountDialog(editId, presetKind) {
   openDialog(a ? __("Edit account") : ext ? __("New external account") : __("New account"), dialogForm(
     field(N_("Name"), `<input name="name" required maxlength="100" placeholder="${esc(ext ? __("Employer") : __("Savings A"))}" value="${a ? esc(accName(a.id)) : ""}">`, ext ? "wide" : "") +
     (ext ? "" : field("Currency", `<select name="currency" required>${currencyOptions(a && a.currency)}</select>`) +
-      field(N_("Opening balance"), `<input name="opening" type="number" step="0.01" value="${a ? decimal(a.openingBalanceMinor, a.currency) : "0"}">`) +
+      field(N_("Opening balance"), `<input name="opening" type="number" step="any" value="${a ? decimal(a.openingBalanceMinor, a.currency) : "0"}">`) +
       // a card or a loan is an account that runs negative; its limit tracks how much is owed
-      field(N_("Limit"), `<input name="limit" type="number" step="0.01" min="0.01" placeholder="${esc(__("Optional"))}" value="${a && a.limitMinor ? decimal(a.limitMinor, a.currency) : ""}">`)) +
+      field(N_("Limit"), `<input name="limit" type="number" step="any" min="0.01" placeholder="${esc(__("Optional"))}" value="${a && a.limitMinor ? decimal(a.limitMinor, a.currency) : ""}">`)) +
     iconPicker(iconName(a || { kind: ext ? "external" : "own" })),
     a ? __("Save changes") : __("Add account")));
   $("#dialogForm").addEventListener("submit", async (e) => {
@@ -1076,7 +1093,7 @@ function calendarStart(cycle, iso) {
   if (cycle === "yearly") { d.setMonth(0); d.setDate(1); }
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-const moneyField = (label, name, minor, cur, cls) => field(label, `<span class="moneyrow"><select name="${name}Cur" aria-label="${esc(__("Currency"))}">${currencyOptions(cur)}</select><input name="${name}" type="number" step="0.01" min="0.01" value="${minor != null ? decimal(minor, cur) : ""}"></span>`, cls);
+const moneyField = (label, name, minor, cur, cls) => field(label, `<span class="moneyrow"><select name="${name}Cur" aria-label="${esc(__("Currency"))}">${currencyOptions(cur)}</select><input name="${name}" type="number" step="any" min="0.01" value="${minor != null ? decimal(minor, cur) : ""}"></span>`, cls);
 function openTagDialog(kind, editId) {
   const t = editId ? state.data.tags.find((x) => x.id === editId) : null;
   const k = t ? t.kind : kind || "category", cur = (t && t.currency) || defCur();
@@ -1148,10 +1165,10 @@ function openTemplateDialog(editId) {
     field("Generates", `<select name="type">${enumOptions(TYPE_L, ["expense", "income", "allocate"], mode)}</select>`) +
     field("Account", `<select name="accountId">${acc}</select>`) +
     field("Money box", `<select name="tagId">${tagOptions(tp && tp.template.tagId, isGoal, false)}</select>`, "f-goal") +
-    field("Amount", `<input name="amount" type="number" step="0.01" min="0.01" required value="${tp ? decimal(tp.template.amountMinor, tp.template.currency) : ""}">`) +
+    field("Amount", `<input name="amount" type="number" step="any" min="0.01" required value="${tp ? decimal(tp.template.amountMinor, tp.template.currency) : ""}">`) +
     field(N_("Frequency"), `<select name="frequency">${enumOptions(FREQ_L, ["monthly", "quarterly", "yearly", "weekly", "daily"], tp ? tp.schedule.frequency : "monthly")}</select>`) +
-    field(N_("Expected min (variable bill, optional)"), `<input name="rangeMin" type="number" step="0.01" value="${rng ? decimal(rng.min, tp.template.currency) : ""}">`, "f-range") +
-    field(N_("Expected max (variable bill, optional)"), `<input name="rangeMax" type="number" step="0.01" value="${rng ? decimal(rng.max, tp.template.currency) : ""}">`, "f-range") +
+    field(N_("Expected min (variable bill, optional)"), `<input name="rangeMin" type="number" step="any" value="${rng ? decimal(rng.min, tp.template.currency) : ""}">`, "f-range") +
+    field(N_("Expected max (variable bill, optional)"), `<input name="rangeMax" type="number" step="any" value="${rng ? decimal(rng.max, tp.template.currency) : ""}">`, "f-range") +
     field(N_("Day of month"), `<input name="dayOfMonth" type="number" min="1" max="31" value="${tp ? tp.schedule.dayOfMonth || 1 : 1}">`, "f-dom") +
     field(N_("Start date"), `<input name="startDate" type="date" required value="${tp ? esc(tp.schedule.startDate) : ""}">`) +
     field("Title", `<input name="note" maxlength="200" value="${tp ? esc(tp.template.note || "") : ""}">`, "wide"),
