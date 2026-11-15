@@ -118,6 +118,61 @@ func (d *Data) BudgetSpent(tagID, ref string) int64 {
 	return total
 }
 
+// TagSpend is posted expense in one currency for one category tag; TagID ""
+// collects expenses with no category tag.
+type TagSpend struct {
+	TagID       string `json:"tagId"`
+	Currency    string `json:"currency"`
+	AmountMinor int64  `json:"amountMinor"`
+}
+
+// SpendingByCategory sums posted expenses in ref's calendar month per
+// (category tag, currency), largest first. Currencies are never mixed. An
+// expense linked to two category tags counts toward both, as in BudgetSpent.
+func (d *Data) SpendingByCategory(ref string) []TagSpend {
+	month := ref[:7]
+	category := map[string]bool{}
+	for _, t := range d.Tags {
+		if t.Kind == "category" {
+			category[t.ID] = true
+		}
+	}
+	cats := map[string][]string{}
+	for _, tt := range d.TransactionTags {
+		if category[tt.TagID] {
+			cats[tt.TransactionID] = append(cats[tt.TransactionID], tt.TagID)
+		}
+	}
+	type key struct{ tag, cur string }
+	sums := map[key]int64{}
+	for _, t := range d.Transactions {
+		if t.State != "posted" || t.Type != "expense" || len(t.Date) < 7 || t.Date[:7] != month {
+			continue
+		}
+		tags := cats[t.ID]
+		if len(tags) == 0 {
+			tags = []string{""}
+		}
+		for _, tag := range tags {
+			sums[key{tag, t.Currency}] += t.AmountMinor
+		}
+	}
+	out := make([]TagSpend, 0, len(sums))
+	for k, v := range sums {
+		out = append(out, TagSpend{TagID: k.tag, Currency: k.cur, AmountMinor: v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Currency != out[j].Currency {
+			return out[i].Currency < out[j].Currency
+		}
+		if out[i].AmountMinor != out[j].AmountMinor {
+			return out[i].AmountMinor > out[j].AmountMinor
+		}
+		return out[i].TagID < out[j].TagID
+	})
+	return out
+}
+
 func daysInMonth(y int, m time.Month) int {
 	return time.Date(y, m+1, 0, 0, 0, 0, 0, time.UTC).Day()
 }

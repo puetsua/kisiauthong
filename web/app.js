@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "", state: "" } };
+const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "", state: "" } };
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
@@ -46,81 +46,199 @@ function row(cells) {
 
 /* ---------- screens ---------- */
 const DASH_WIDGETS = [
-  { id: "balances", label: "Balances by currency" },
-  { id: "budgets", label: "Budgets this month" },
-  { id: "expected", label: "Expected to confirm" },
-  { id: "moneyboxes", label: "Money boxes" },
-  { id: "accounts", label: "Accounts" },
-  { id: "recent", label: "Recent transactions" },
+  { id: "balances", label: "Balances by currency", pick: "currencies" },
+  { id: "budgets", label: "Budgets this month", pick: "budgets" },
+  { id: "expected", label: "Expected to confirm", rows: 6 },
+  { id: "spending", label: "Spending this month", rows: 8 },
+  { id: "moneyboxes", label: "Money boxes", pick: "goals" },
+  { id: "accounts", label: "Accounts", pick: "accounts" },
+  { id: "recent", label: "Recent transactions", rows: 6 },
 ];
-const DASH_DEFAULT = { order: DASH_WIDGETS.map((w) => w.id), hidden: [] };
+const DASH_DEFAULT = { order: DASH_WIDGETS.map((w) => w.id), hidden: [], widgets: {} };
+const widgetDef = (id) => DASH_WIDGETS.find((w) => w.id === id);
 function dashLayout() {
   const s = state.dashboard || DASH_DEFAULT;
-  const order = (s.order || []).filter((id) => DASH_WIDGETS.some((w) => w.id === id));
+  const order = (s.order || []).filter(widgetDef);
   DASH_WIDGETS.forEach((w) => { if (!order.includes(w.id)) order.push(w.id); });
-  return { order, hidden: (s.hidden || []).filter((id) => DASH_WIDGETS.some((w) => w.id === id)) };
+  const widgets = {};
+  Object.entries(s.widgets || {}).forEach(([id, o]) => { if (widgetDef(id)) widgets[id] = JSON.parse(JSON.stringify(o)); });
+  return { order, hidden: (s.hidden || []).filter(widgetDef), widgets };
+}
+// Items a widget can be narrowed to ("Show" checkboxes in Customize).
+function pickItems(kind) {
+  const d = state.data;
+  if (kind === "currencies") return [...new Set(d.accounts.map((a) => a.currency))].map((c) => ({ id: c, label: c }));
+  if (kind === "budgets") return d.tags.filter((t) => t.limitMinor !== undefined).map((t) => ({ id: t.id, label: t.name }));
+  if (kind === "goals") return d.tags.filter((t) => t.targetMinor !== undefined).map((t) => ({ id: t.id, label: t.name }));
+  if (kind === "accounts") return d.accounts.map((a) => ({ id: a.id, label: a.name }));
+  return [];
+}
+function widgetBody(id, o) {
+  const d = state.data, def = widgetDef(id), rows = o.rows || def.rows;
+  const inc = (x) => !(o.include && o.include.length) || o.include.includes(x);
+  const planned = d.transactions.filter((t) => t.state === "planned");
+  switch (id) {
+    case "balances": {
+      const perCur = {};
+      d.accounts.forEach((a) => { if (inc(a.currency)) perCur[a.currency] = (perCur[a.currency] || 0) + a.balanceMinor; });
+      return `<div class="cards">${Object.entries(perCur).map(([c, val]) => `<div class="card"><span class="lab">Balance · ${esc(c)}</span><b>${fmt(val, c)}</b><span class="muted">${d.accounts.filter((a) => a.currency === c).length} account(s)</span></div>`).join("")}<div class="card"><span class="lab">Expected to confirm</span><b>${planned.length}</b><span class="muted">Not yet posted</span></div></div>`;
+    }
+    case "budgets": {
+      const list = d.tags.filter((t) => t.limitMinor !== undefined && inc(t.id)).map((t) => {
+        const p = t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0;
+        return row([{ l: "Budget", v: `<button class="titlelink" data-detail-tag="${esc(t.id)}">${esc(t.name)}</button>` }, { l: "Spent", v: `${fmt(t.spentMinor, t.currency)} of ${fmt(t.limitMinor, t.currency)}` }, { l: "Progress", v: `<div class="bar"><i class="${barCls(p)}" style="width:${Math.min(100, p)}%"></i></div>` }, { l: "Remaining", v: fmt(t.remainingMinor, t.currency), num: 1 }]);
+      }).join("");
+      return list ? table([{ t: "Budget" }, { t: "Spent" }, { t: "Progress" }, { t: "Remaining", num: 1 }], list) : '<p class="muted">No budgets yet.</p>';
+    }
+    case "expected": {
+      const list = planned.slice(0, rows).map((t) => row([{ l: "Date", v: esc(t.date) }, { l: "Expected", v: `<button class="titlelink" data-detail-txn="${esc(t.id)}">${esc(t.note || t.type)}</button> <span class="chip due">UNCONFIRMED</span>` }, { l: "Account", v: esc(accName(t.accountId)) }, { l: "Amount", v: fmt(t.amountMinor, t.currency), num: 1 }])).join("");
+      return list ? table([{ t: "Date" }, { t: "Expected" }, { t: "Account" }, { t: "Amount", num: 1 }], list) : '<p class="muted">Nothing waiting. Templates generate here when due.</p>';
+    }
+    case "spending": {
+      // server returns rows grouped by currency, largest first; bars compare within one currency only
+      const byCur = {};
+      (d.spendingThisMonth || []).forEach((x) => { (byCur[x.currency] = byCur[x.currency] || []).push(x); });
+      const list = Object.entries(byCur).map(([c, xs]) => xs.slice(0, rows).map((x) => row([
+        { l: "Category", v: x.tagId ? `<button class="titlelink" data-detail-tag="${esc(x.tagId)}">${esc(tagName(x.tagId))}</button>` : '<span class="muted">Uncategorised</span>' },
+        { l: "Share", v: `<div class="bar"><i style="width:${xs[0].amountMinor ? x.amountMinor / xs[0].amountMinor * 100 : 0}%"></i></div>` },
+        { l: "Spent", v: fmt(x.amountMinor, c), num: 1 }])).join("")).join("");
+      return list ? table([{ t: "Category" }, { t: "Share" }, { t: "Spent", num: 1 }], list) : '<p class="muted">No posted expenses this month.</p>';
+    }
+    case "moneyboxes": {
+      const goals = d.tags.filter((t) => t.targetMinor !== undefined && inc(t.id));
+      return goals.length ? goals.map(goalCard).join("") : '<p class="muted">No money boxes yet.</p>';
+    }
+    case "accounts": {
+      const list = d.accounts.filter((a) => inc(a.id)).map((a) => row([{ l: "Account", v: `<button class="titlelink" data-detail-account="${esc(a.id)}">${esc(a.name)}</button> <span class="chip">${esc(a.kind.replace("_", " "))}</span>` }, { l: "Balance", v: fmt(a.balanceMinor, a.currency), num: 1 }, { l: "Earmarked", v: fmt(a.allocatedMinor, a.currency), num: 1 }, { l: "Free", v: fmt(a.unallocatedMinor, a.currency), num: 1 }])).join("");
+      return table([{ t: "Account" }, { t: "Balance", num: 1 }, { t: "Earmarked", num: 1 }, { t: "Free", num: 1 }], list);
+    }
+    case "recent": {
+      const list = [...d.transactions].sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id)).slice(0, rows).map((t) =>
+        row([{ l: "Date", v: esc(t.date) }, { l: "Transaction", v: `<button class="titlelink" data-detail-txn="${esc(t.id)}">${esc(t.note || t.type)}</button>` }, { l: "Account", v: esc(t.type === "transfer" ? accName(t.fromAccountId) + " → " + accName(t.toAccountId) : accName(t.accountId)) }, { l: "State", v: t.state === "planned" ? '<span class="chip due">UNCONFIRMED</span>' : "posted" }, { l: "Amount", v: signed(t) + fmt(t.amountMinor, t.currency), num: 1 }])).join("");
+      return table([{ t: "Date" }, { t: "Transaction" }, { t: "Account" }, { t: "State" }, { t: "Amount", num: 1 }], list);
+    }
+  }
+  return "";
+}
+function dashGrid(layout) {
+  const visible = layout.order.filter((id) => !layout.hidden.includes(id));
+  if (!visible.length) return '<div class="empty">All widgets are hidden. Customize the dashboard to bring some back.</div>';
+  return `<div class="dashgrid">${visible.map((id) => {
+    const o = layout.widgets[id] || {}, size = o.size === "half" ? " half" : "";
+    // balances are bare cards: a heading only when the user gave it a title
+    if (id === "balances") return `<section class="dw bare${size}">${o.title ? `<h3>${esc(o.title)}</h3>` : ""}${widgetBody(id, o)}</section>`;
+    return `<section class="panel dw${size}"><h3>${esc(o.title || widgetDef(id).label)}</h3>${widgetBody(id, o)}</section>`;
+  }).join("")}</div>`;
+}
+function setWidgetOpt(id, key, val) {
+  const ws = state.dashDraft.widgets, o = ws[id] || {};
+  if (val === undefined || val === "" || (Array.isArray(val) && !val.length)) delete o[key]; else o[key] = val;
+  if (Object.keys(o).length) ws[id] = o; else delete ws[id];
+}
+function dashEditorRow(id, i, draft) {
+  const w = widgetDef(id), o = draft.widgets[id] || {}, n = draft.order.length;
+  const items = w.pick ? pickItems(w.pick) : [];
+  const shown = (x) => !(o.include && o.include.length) || o.include.includes(x);
+  const opts = [`<label>Title <input type="text" data-dash-title="${esc(id)}" value="${esc(o.title || "")}" placeholder="${esc(w.label)}" maxlength="60"></label>`];
+  if (w.rows) opts.push(`<label>Rows <input type="number" data-dash-rows="${esc(id)}" min="1" max="50" value="${o.rows || w.rows}"></label>`);
+  if (items.length) opts.push(`<fieldset><legend>Show</legend>${items.map((it) => `<label><input type="checkbox" data-dash-inc="${esc(id)}" value="${esc(it.id)}" ${shown(it.id) ? "checked" : ""}> ${esc(it.label)}</label>`).join("")}</fieldset>`);
+  return `<li draggable="true" data-dash-item="${esc(id)}">
+    <div class="dashrow"><span class="grip" aria-hidden="true">⠿</span>
+      <label class="grow"><input type="checkbox" data-dash-vis="${esc(id)}" ${draft.hidden.includes(id) ? "" : "checked"}> <span class="wname">${esc(o.title || w.label)}</span></label>
+      <select data-dash-size="${esc(id)}" aria-label="Width of ${esc(w.label)}"><option value="full">Full width</option><option value="half" ${o.size === "half" ? "selected" : ""}>Half width</option></select>
+      <button class="smallbtn" data-dash-up="${esc(id)}" aria-label="Move up" ${i === 0 ? "disabled" : ""}>↑</button><button class="smallbtn" data-dash-down="${esc(id)}" aria-label="Move down" ${i === n - 1 ? "disabled" : ""}>↓</button></div>
+    <details data-dash-open="${esc(id)}" ${state.dashOpen.includes(id) ? "open" : ""}><summary>Options</summary><div class="dashopts">${opts.join("")}</div></details></li>`;
+}
+function screenDashboardEditor(v) {
+  const draft = state.dashDraft;
+  v.innerHTML = `<section class="panel"><div class="panelhead"><h3>Customize dashboard</h3><span><button class="smallbtn" id="dashReset">Reset to default</button> <button class="smallbtn" id="dashCancel">Cancel</button> <button class="smallbtn" id="dashSave">Save</button></span></div>
+      <ol class="dashedit">${draft.order.map((id, i) => dashEditorRow(id, i, draft)).join("")}</ol></section>
+    <h3 class="previewhead">Preview</h3><div id="dashPreview"></div>`;
+  const preview = () => { $("#dashPreview").innerHTML = dashGrid(draft); bindConfirm($("#dashPreview")); };
+  const each = (sel, ev, fn) => v.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, () => fn(el)));
+  each("[data-dash-vis]", "change", (c) => {
+    const id = c.dataset.dashVis;
+    draft.hidden = c.checked ? draft.hidden.filter((x) => x !== id) : [...draft.hidden, id];
+    preview();
+  });
+  each("[data-dash-size]", "change", (s) => { setWidgetOpt(s.dataset.dashSize, "size", s.value === "half" ? "half" : undefined); preview(); });
+  each("[data-dash-title]", "input", (t) => {
+    const id = t.dataset.dashTitle;
+    setWidgetOpt(id, "title", t.value.trim());
+    t.closest("li").querySelector(".wname").textContent = t.value.trim() || widgetDef(id).label;
+    preview();
+  });
+  each("[data-dash-rows]", "change", (r) => {
+    const id = r.dataset.dashRows, n = Math.min(50, Math.max(1, parseInt(r.value, 10) || widgetDef(id).rows));
+    r.value = n;
+    setWidgetOpt(id, "rows", n === widgetDef(id).rows ? undefined : n);
+    preview();
+  });
+  each("[data-dash-inc]", "change", (c) => {
+    const id = c.dataset.dashInc, boxes = [...v.querySelectorAll(`[data-dash-inc="${CSS.escape(id)}"]`)];
+    const on = boxes.filter((b) => b.checked).map((b) => b.value);
+    if (!on.length) { c.checked = true; msg("Keep at least one item, or untick the widget to hide it."); return; }
+    setWidgetOpt(id, "include", on.length === boxes.length ? undefined : on);
+    preview();
+  });
+  each("[data-dash-open]", "toggle", (dt) => {
+    const id = dt.dataset.dashOpen;
+    state.dashOpen = dt.open ? [...new Set([...state.dashOpen, id])] : state.dashOpen.filter((x) => x !== id);
+  });
+  const moveTo = (id, j) => {
+    const o = draft.order, i = o.indexOf(id);
+    if (i < 0 || j < 0 || j >= o.length || i === j) return;
+    o.splice(i, 1); o.splice(j, 0, id);
+    render();
+  };
+  each("[data-dash-up]", "click", (b) => moveTo(b.dataset.dashUp, draft.order.indexOf(b.dataset.dashUp) - 1));
+  each("[data-dash-down]", "click", (b) => moveTo(b.dataset.dashDown, draft.order.indexOf(b.dataset.dashDown) + 1));
+  // drag and drop with a pointer; ↑ ↓ stay for keyboard and touch
+  const clearDrop = () => v.querySelectorAll(".dropbefore,.dropafter").forEach((x) => x.classList.remove("dropbefore", "dropafter"));
+  const after = (li, e) => { const r = li.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
+  v.querySelectorAll("[data-dash-item]").forEach((li) => {
+    li.addEventListener("dragstart", (e) => {
+      if (e.target !== li) return;
+      state.dragId = li.dataset.dashItem; li.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", state.dragId);
+    });
+    li.addEventListener("dragend", () => { li.classList.remove("dragging"); clearDrop(); state.dragId = null; });
+    li.addEventListener("dragover", (e) => {
+      if (!state.dragId) return;
+      e.preventDefault(); clearDrop();
+      li.classList.add(after(li, e) ? "dropafter" : "dropbefore");
+    });
+    li.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const from = state.dragId, target = li.dataset.dashItem;
+      clearDrop();
+      if (!from || from === target) return;
+      const rest = draft.order.filter((x) => x !== from);
+      moveTo(from, rest.indexOf(target) + (after(li, e) ? 1 : 0));
+    });
+  });
+  // selecting text in an input must not start dragging its row
+  each(".dashopts input, .dashrow select", "mousedown", (el) => { el.closest("li").draggable = false; });
+  each(".dashopts input, .dashrow select", "mouseup", (el) => { el.closest("li").draggable = true; });
+  $("#dashCancel").addEventListener("click", () => { state.customizing = false; render(); });
+  $("#dashReset").addEventListener("click", () => { state.dashDraft = JSON.parse(JSON.stringify(DASH_DEFAULT)); render(); });
+  $("#dashSave").addEventListener("click", async () => {
+    try {
+      const saved = await put("/api/settings", { dashboard: draft });
+      state.dashboard = saved.dashboard;
+      state.customizing = false;
+      msg("Dashboard saved.");
+      render();
+    } catch (e) { msg("Error: " + e.message); }
+  });
+  preview();
 }
 function screenDashboard(v) {
-  const d = state.data;
-  const perCur = {};
-  d.accounts.forEach((a) => { perCur[a.currency] = (perCur[a.currency] || 0) + a.balanceMinor; });
-  const planned = d.transactions.filter((t) => t.state === "planned");
-  const budgets = d.tags.filter((t) => t.limitMinor !== undefined).map((t) => {
-    const p = t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0;
-    return row([{ l: "Budget", v: `<button class="titlelink" data-detail-tag="${esc(t.id)}">${esc(t.name)}</button>` }, { l: "Spent", v: `${fmt(t.spentMinor, t.currency)} of ${fmt(t.limitMinor, t.currency)}` }, { l: "Progress", v: `<div class="bar"><i class="${barCls(p)}" style="width:${Math.min(100, p)}%"></i></div>` }, { l: "Remaining", v: fmt(t.remainingMinor, t.currency), num: 1 }]);
-  }).join("");
-  const goals = d.tags.filter((t) => t.targetMinor !== undefined);
-  const upcoming = planned.slice(0, 6).map((t) => row([{ l: "Date", v: esc(t.date) }, { l: "Expected", v: `<button class="titlelink" data-detail-txn="${esc(t.id)}">${esc(t.note || t.type)}</button> <span class="chip due">UNCONFIRMED</span>` }, { l: "Account", v: esc(accName(t.accountId)) }, { l: "Amount", v: fmt(t.amountMinor, t.currency), num: 1 }])).join("");
-  const recent = [...d.transactions].sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id)).slice(0, 6).map((t) =>
-    row([{ l: "Date", v: esc(t.date) }, { l: "Transaction", v: `<button class="titlelink" data-detail-txn="${esc(t.id)}">${esc(t.note || t.type)}</button>` }, { l: "Account", v: esc(t.type === "transfer" ? accName(t.fromAccountId) + " → " + accName(t.toAccountId) : accName(t.accountId)) }, { l: "State", v: t.state === "planned" ? '<span class="chip due">UNCONFIRMED</span>' : "posted" }, { l: "Amount", v: signed(t) + fmt(t.amountMinor, t.currency), num: 1 }])).join("");
-  const accRows = d.accounts.map((a) => row([{ l: "Account", v: `<button class="titlelink" data-detail-account="${esc(a.id)}">${esc(a.name)}</button> <span class="chip">${esc(a.kind.replace("_", " "))}</span>` }, { l: "Balance", v: fmt(a.balanceMinor, a.currency), num: 1 }, { l: "Earmarked", v: fmt(a.allocatedMinor, a.currency), num: 1 }, { l: "Free", v: fmt(a.unallocatedMinor, a.currency), num: 1 }])).join("");
-  const widgets = {
-    balances: `<div class="cards">${Object.entries(perCur).map(([c, val]) => `<div class="card"><span class="lab">Balance · ${esc(c)}</span><b>${fmt(val, c)}</b><span class="muted">${d.accounts.filter((a) => a.currency === c).length} account(s) · never mixed with other currencies</span></div>`).join("")}<div class="card"><span class="lab">Expected to confirm</span><b>${planned.length}</b><span class="muted">Generated by templates, not yet posted</span></div></div>`,
-    budgets: `<section class="panel"><h3>Budgets this month</h3>${budgets ? table([{ t: "Budget" }, { t: "Spent" }, { t: "Progress" }, { t: "Remaining", num: 1 }], budgets) : '<p class="muted">No budgets yet.</p>'}</section>`,
-    expected: `<section class="panel"><h3>Expected to confirm</h3>${upcoming ? table([{ t: "Date" }, { t: "Expected" }, { t: "Account" }, { t: "Amount", num: 1 }], upcoming) : '<p class="muted">Nothing waiting. Templates generate here when due.</p>'}</section>`,
-    moneyboxes: goals.length ? `<section class="panel"><h3>Money boxes</h3>${goals.map(goalCard).join("")}</section>` : "",
-    accounts: `<section class="panel"><h3>Accounts</h3>${table([{ t: "Account" }, { t: "Balance", num: 1 }, { t: "Earmarked", num: 1 }, { t: "Free", num: 1 }], accRows)}</section>`,
-    recent: `<section class="panel"><h3>Recent transactions</h3>${table([{ t: "Date" }, { t: "Transaction" }, { t: "Account" }, { t: "State" }, { t: "Amount", num: 1 }], recent)}</section>`,
-  };
-  if (state.customizing) {
-    const draft = state.dashDraft;
-    v.innerHTML = `<section class="panel"><div class="panelhead"><h3>Customize dashboard</h3><span><button class="smallbtn" id="dashReset">Reset to default</button> <button class="smallbtn" id="dashCancel">Cancel</button> <button class="smallbtn" id="dashSave">Save</button></span></div>
-      <p class="muted">Tick to show a widget, use ↑ ↓ to reorder. Saved on the server, so it follows you across browsers.</p>
-      ${draft.order.map((id, i) => {
-        const w = DASH_WIDGETS.find((x) => x.id === id);
-        return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)"><label style="flex:1"><input type="checkbox" data-dash-vis="${esc(id)}" ${draft.hidden.includes(id) ? "" : "checked"}> ${esc(w.label)}</label><button class="smallbtn" data-dash-up="${esc(id)}" ${i === 0 ? "disabled" : ""}>↑</button><button class="smallbtn" data-dash-down="${esc(id)}" ${i === draft.order.length - 1 ? "disabled" : ""}>↓</button></div>`;
-      }).join("")}</section>`;
-    v.querySelectorAll("[data-dash-vis]").forEach((c) => c.addEventListener("change", () => {
-      const id = c.dataset.dashVis;
-      state.dashDraft.hidden = c.checked ? state.dashDraft.hidden.filter((x) => x !== id) : [...state.dashDraft.hidden, id];
-    }));
-    const move = (id, dir) => {
-      const o = state.dashDraft.order, i = o.indexOf(id), j = i + dir;
-      if (j < 0 || j >= o.length) return;
-      [o[i], o[j]] = [o[j], o[i]];
-      render();
-    };
-    v.querySelectorAll("[data-dash-up]").forEach((b) => b.addEventListener("click", () => move(b.dataset.dashUp, -1)));
-    v.querySelectorAll("[data-dash-down]").forEach((b) => b.addEventListener("click", () => move(b.dataset.dashDown, 1)));
-    $("#dashCancel").addEventListener("click", () => { state.customizing = false; render(); });
-    $("#dashReset").addEventListener("click", () => { state.dashDraft = JSON.parse(JSON.stringify(DASH_DEFAULT)); render(); });
-    $("#dashSave").addEventListener("click", async () => {
-      try {
-        const saved = await put("/api/settings", { dashboard: state.dashDraft });
-        state.dashboard = saved.dashboard;
-        state.customizing = false;
-        msg("Dashboard saved.");
-        render();
-      } catch (e) { msg("Error: " + e.message); }
-    });
-    return;
-  }
-  const layout = dashLayout();
-  const visible = layout.order.filter((id) => !layout.hidden.includes(id));
-  v.innerHTML = `<div class="panelhead" style="margin-bottom:14px"><span class="muted">Your dashboard, your order.</span><button class="smallbtn" id="dashCustomize">Customize dashboard</button></div>`
-    + (visible.length ? visible.map((id) => widgets[id] || "").join("") : '<div class="empty">All widgets are hidden. Customize the dashboard to bring some back.</div>');
+  if (state.customizing) { screenDashboardEditor(v); return; }
+  v.innerHTML = `<div class="dashhead"><button class="smallbtn" id="dashCustomize">Customize dashboard</button></div>` + dashGrid(dashLayout());
   $("#dashCustomize").addEventListener("click", () => {
-    state.dashDraft = JSON.parse(JSON.stringify(dashLayout()));
+    state.dashDraft = dashLayout();
+    state.dashOpen = [];
     state.customizing = true;
     render();
   });
@@ -311,7 +429,8 @@ function screenSettings(v) {
     saveGeneral({ currencies: favCurs().filter((x) => x !== c) }, c + " removed.");
   }));
   $("#setCustomize").addEventListener("click", () => {
-    state.dashDraft = JSON.parse(JSON.stringify(dashLayout()));
+    state.dashDraft = dashLayout();
+    state.dashOpen = [];
     state.customizing = true;
     location.hash = "#dashboard";
   });

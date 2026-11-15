@@ -53,3 +53,39 @@ func TestBudgetSpentCurrentMonthOnly(t *testing.T) {
 		t.Fatalf("spent Nov = %d, want 0", got)
 	}
 }
+
+func TestSpendingByCategoryPerCurrencyAndMonth(t *testing.T) {
+	d := Data{
+		Tags: []Tag{{ID: "food", Kind: "category"}, {ID: "fun", Kind: "category"}, {ID: "trip", Kind: "label"}},
+		Transactions: []Transaction{
+			{ID: "1", Type: "expense", State: "posted", AmountMinor: 500, Currency: "TWD", Date: "2026-11-02"},
+			{ID: "2", Type: "expense", State: "posted", AmountMinor: 300, Currency: "TWD", Date: "2026-11-30"},
+			{ID: "3", Type: "expense", State: "posted", AmountMinor: 1000, Currency: "JPY", Date: "2026-11-10"},
+			{ID: "4", Type: "expense", State: "planned", AmountMinor: 9999, Currency: "TWD", Date: "2026-11-12"},
+			{ID: "5", Type: "expense", State: "posted", AmountMinor: 7777, Currency: "TWD", Date: "2026-10-31"},
+			{ID: "6", Type: "income", State: "posted", AmountMinor: 8888, Currency: "TWD", Date: "2026-11-05"},
+			{ID: "7", Type: "expense", State: "posted", AmountMinor: 40, Currency: "TWD", Date: "2026-11-06"},
+			{ID: "8", Type: "expense", State: "posted", AmountMinor: 200, Currency: "TWD", Date: "2026-11-07"},
+		},
+		TransactionTags: []TransactionTag{
+			{TransactionID: "1", TagID: "food"}, {TransactionID: "2", TagID: "food"}, {TransactionID: "3", TagID: "food"},
+			{TransactionID: "4", TagID: "food"}, {TransactionID: "5", TagID: "food"}, {TransactionID: "6", TagID: "food"},
+			{TransactionID: "8", TagID: "fun"}, {TransactionID: "8", TagID: "trip"},
+		},
+	}
+	got := d.SpendingByCategory("2026-11-15")
+	want := []TagSpend{
+		{TagID: "food", Currency: "JPY", AmountMinor: 1000},
+		{TagID: "food", Currency: "TWD", AmountMinor: 800},
+		{TagID: "fun", Currency: "TWD", AmountMinor: 200},
+		{TagID: "", Currency: "TWD", AmountMinor: 40},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("row %d: got %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}

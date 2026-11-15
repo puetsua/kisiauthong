@@ -10,15 +10,31 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // dashboardWidgets is the known widget set, in default order.
-var dashboardWidgets = []string{"balances", "budgets", "expected", "moneyboxes", "accounts", "recent"}
+var dashboardWidgets = []string{"balances", "budgets", "expected", "spending", "moneyboxes", "accounts", "recent"}
+
+// WidgetOptions customises one dashboard widget. Zero values mean "default".
+type WidgetOptions struct {
+	Size    string   `json:"size,omitempty"`    // "full" or "half"
+	Title   string   `json:"title,omitempty"`   // overrides the built-in label
+	Rows    int      `json:"rows,omitempty"`    // row limit for list widgets
+	Include []string `json:"include,omitempty"` // item ids / currency codes to show; empty = all
+}
 
 type DashboardSettings struct {
-	Order  []string `json:"order"`
-	Hidden []string `json:"hidden"`
+	Order   []string                 `json:"order"`
+	Hidden  []string                 `json:"hidden"`
+	Widgets map[string]WidgetOptions `json:"widgets"`
 }
+
+const (
+	maxWidgetTitle   = 60
+	maxWidgetRows    = 50
+	maxWidgetInclude = 200
+)
 
 type GeneralSettings struct {
 	DefaultCurrency string `json:"defaultCurrency"`
@@ -58,6 +74,33 @@ func (d *DashboardSettings) validate() error {
 		if !known[id] {
 			return fmt.Errorf("unknown dashboard widget: %s", id)
 		}
+	}
+	if d.Widgets == nil {
+		d.Widgets = map[string]WidgetOptions{}
+	}
+	for id, w := range d.Widgets {
+		if !known[id] {
+			return fmt.Errorf("unknown dashboard widget: %s", id)
+		}
+		if w.Size != "" && w.Size != "full" && w.Size != "half" {
+			return fmt.Errorf("widget %s: size must be full or half", id)
+		}
+		w.Title = strings.TrimSpace(w.Title)
+		if utf8.RuneCountInString(w.Title) > maxWidgetTitle {
+			return fmt.Errorf("widget %s: title longer than %d characters", id, maxWidgetTitle)
+		}
+		if w.Rows < 0 || w.Rows > maxWidgetRows {
+			return fmt.Errorf("widget %s: rows must be 1-%d", id, maxWidgetRows)
+		}
+		if len(w.Include) > maxWidgetInclude {
+			return fmt.Errorf("widget %s: too many items in include", id)
+		}
+		for _, x := range w.Include {
+			if x == "" || len(x) > 64 {
+				return fmt.Errorf("widget %s: invalid include entry", id)
+			}
+		}
+		d.Widgets[id] = w
 	}
 	if d.Order == nil {
 		d.Order = []string{}
@@ -108,6 +151,9 @@ func (s *Store) loadSettings() (Settings, error) {
 		if err := json.Unmarshal([]byte(v), &out.Dashboard); err != nil {
 			return out, fmt.Errorf("stored dashboard setting is invalid JSON")
 		}
+	}
+	if out.Dashboard.Widgets == nil {
+		out.Dashboard.Widgets = map[string]WidgetOptions{}
 	}
 	if v, ok, err := s.getSetting("general"); err != nil {
 		return out, err

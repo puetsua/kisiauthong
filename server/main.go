@@ -80,6 +80,7 @@ func stateView() map[string]interface{} {
 	return map[string]interface{}{
 		"accounts": accounts, "transactions": d.Transactions, "tags": tags,
 		"transactionTags": d.TransactionTags, "transactionTemplates": templates, "today": today,
+		"spendingThisMonth": d.SpendingByCategory(today),
 	}
 }
 

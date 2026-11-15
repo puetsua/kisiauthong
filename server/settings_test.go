@@ -98,6 +98,28 @@ func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
 	}
 }
 
+func TestSettingsDashboardWidgetOptions(t *testing.T) {
+	withTestStore(t)
+	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"order":["spending","recent"],"hidden":[],"widgets":{"recent":{"size":"half","title":"  Latest  ","rows":10},"accounts":{"include":["acc-a","acc-b"]}}}}`)
+	if code != 200 {
+		t.Fatalf("PUT: %d", code)
+	}
+	r := s.Dashboard.Widgets["recent"]
+	if r.Size != "half" || r.Title != "Latest" || r.Rows != 10 {
+		t.Fatalf("recent options: %+v", r)
+	}
+	if strings.Join(s.Dashboard.Widgets["accounts"].Include, ",") != "acc-a,acc-b" {
+		t.Fatalf("accounts include: %+v", s.Dashboard.Widgets["accounts"])
+	}
+	// a layout saved before widget options existed still loads with an empty map
+	if err := store.setSetting("dashboard", `{"order":["recent"],"hidden":[]}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, s = doSettings(t, http.MethodGet, ""); s.Dashboard.Widgets == nil {
+		t.Fatalf("widgets map should default to empty")
+	}
+}
+
 func TestSettingsRejectsInvalid(t *testing.T) {
 	withTestStore(t)
 	for _, body := range []string{
@@ -106,6 +128,12 @@ func TestSettingsRejectsInvalid(t *testing.T) {
 		`{"general":{"currencies":["USD","US"]}}`,
 		`{"general":{"currencies":"USD"}}`,
 		`{"dashboard":{"order":["nope"],"hidden":[]}}`,
+		`{"dashboard":{"order":[],"hidden":[],"widgets":{"nope":{}}}}`,
+		`{"dashboard":{"order":[],"hidden":[],"widgets":{"recent":{"size":"huge"}}}}`,
+		`{"dashboard":{"order":[],"hidden":[],"widgets":{"recent":{"rows":51}}}}`,
+		`{"dashboard":{"order":[],"hidden":[],"widgets":{"recent":{"rows":-1}}}}`,
+		`{"dashboard":{"order":[],"hidden":[],"widgets":{"recent":{"title":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}}`,
+		`{"dashboard":{"order":[],"hidden":[],"widgets":{"accounts":{"include":[""]}}}}`,
 		`{}`,
 		`not json`,
 	} {
