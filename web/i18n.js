@@ -23,8 +23,8 @@ const I18N = {
     "{name} is at {pct}% of its limit": "{name}已用到上限的 {pct}%",
     "Free {amount}": "可用 {amount}", "Earmarked {amount}": "已預留 {amount}", "Last activity {date}": "最近交易 {date}",
     "No transactions yet": "還沒有交易", "Total · {currency}": "總額 · {currency}",
-    "No budgets yet. Give a category a limit to track it here.": "還沒有預算。替分類設定上限，就會在這裡追蹤。", "No other categories.": "沒有其他分類。",
-    "+ New category": "+ 新增分類", "Edit money box": "編輯存錢筒", "Edit category": "編輯分類", "New money box": "新增存錢筒", "New category": "新增分類",
+    "No budgets yet. Give a category a limit to track it here.": "還沒有預算。替分類設定上限，就會在這裡追蹤。", 
+    "Edit money box": "編輯存錢筒", "Edit category": "編輯分類", "New money box": "新增存錢筒", "New category": "新增分類",
     "Set a budget": "設定預算", "Every": "每", "First period starts": "第一期開始日", "From": "從", "To": "到",
     "Add money box": "新增存錢筒", "Add category": "新增分類", "Money box added.": "已新增存錢筒。", "Category added.": "已新增分類。",
     "{spent} of {limit} spent · {period}": "已花 {spent}／{limit} · {period}",
@@ -82,7 +82,6 @@ const I18N = {
     "Tag updated.": "標籤已更新。", "Target date": "目標日期", "House fund": "購屋基金", "Food": "餐飲",
     "History": "紀錄", "History — {name}": "紀錄：{name}",
     // money boxes
-    "+ New money box": "＋ 新增存錢筒",
     // templates
     "Transaction templates": "交易範本", "Generate due": "產生到期項目", "+ New template": "＋ 新增範本", "No templates yet.": "還沒有範本。",
     "Enabled": "啟用中", "Paused": "已暫停", "Pause": "暫停", "Resume": "繼續",

@@ -762,6 +762,8 @@ function accountCard(a) {
     ${detail}
     <small class="last">${esc(act.last ? __("Last activity {date}", { date: dayLabel(act.last) }) : __("No transactions yet"))}</small></button>`;
 }
+// the "add" tile that ends a card grid
+const addTile = (id, label, cls = "") => `<button type="button" class="addtile ${cls}" id="${id}"><span aria-hidden="true">+</span>${esc(label)}</button>`;
 function screenAccounts(v) {
   const accs = state.data.accounts;
   // totals per currency: what you have, and how much of it money boxes claim
@@ -776,7 +778,6 @@ function screenAccounts(v) {
     const act = accountActivity(a.id);
     return `<button type="button" class="xcard" data-detail-account="${esc(a.id)}">${accIcon(a)}<span><b>${esc(accName(a.id))}</b><small>${esc(__("{n} transaction(s)", { n: act.n }))}</small></span></button>`;
   }).join("");
-  const addTile = (id, label, cls) => `<button type="button" class="addtile ${cls}" id="${id}"><span aria-hidden="true">+</span>${esc(label)}</button>`;
   v.innerHTML = `<div class="totals">${totals}</div>
     <section class="tsection"><div class="tgrid">${ordered.map(accountCard).join("")}${addTile("newAccount", __("New account"), "")}</div></section>
     <section class="tsection"><div class="tsechead"><h3>${esc(__("External accounts"))}</h3></div>
@@ -844,11 +845,12 @@ function screenTags(v) {
   const budgets = tags.filter((t) => t.kind === "category" && t.limitMinor !== undefined);
   const cats = tags.filter((t) => t.kind === "category" && t.limitMinor === undefined);
   const boxes = tags.filter((t) => t.kind === "goal");
-  const section = (title, list, card, empty, btn) => `<section class="tsection"><div class="tsechead"><h3>${esc(title)}</h3>${btn}</div>
-    ${list.length ? `<div class="tgrid">${list.map(card).join("")}</div>` : `<div class="empty">${esc(empty)}</div>`}</section>`;
-  v.innerHTML = section(__("Budgets"), budgets, budgetCard, __("No budgets yet. Give a category a limit to track it here."), "")
-    + section(__("Categories"), cats, categoryCard, __("No other categories."), `<button class="smallbtn" id="newCategory">${esc(__("+ New category"))}</button>`)
-    + section(__("Money boxes"), boxes, boxCard, __("No money boxes yet."), `<button class="smallbtn" id="newBox">${esc(__("+ New money box"))}</button>`);
+  // each grid ends with its "add" tile; budgets come from categories, so they have none
+  const section = (title, list, card, tail) => `<section class="tsection"><div class="tsechead"><h3>${esc(title)}</h3></div>
+    ${list.length || tail ? `<div class="tgrid">${list.map(card).join("")}${tail}</div>` : `<div class="empty">${esc(__("No budgets yet. Give a category a limit to track it here."))}</div>`}</section>`;
+  v.innerHTML = section(__("Budgets"), budgets, budgetCard, "")
+    + section(__("Categories"), cats, categoryCard, addTile("newCategory", __("New category")))
+    + section(__("Money boxes"), boxes, boxCard, addTile("newBox", __("New money box")));
   $("#newCategory").addEventListener("click", () => openTagDialog("category"));
   $("#newBox").addEventListener("click", () => openTagDialog("goal"));
   bindDetails(v);
