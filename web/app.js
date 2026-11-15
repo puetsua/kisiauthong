@@ -195,7 +195,7 @@ function screenTransactions(v) {
     <div id="txnResults"></div>`;
   const drawResults = () => {
     const list = filteredTxns();
-    $("#txnResults").innerHTML = list.length ? table([{ t: "Date" }, { t: "Transaction" }, { t: "Account" }, { t: "State" }, { t: "Amount", num: 1 }], txnRows(list.slice(0, 120))) : '<div class="empty">No transactions match. Add your first with “+ Add transaction”.</div>';
+    $("#txnResults").innerHTML = list.length ? table([{ t: "Date" }, { t: "Transaction" }, { t: "Account" }, { t: "State" }, { t: "Amount", num: 1 }], txnRows(list.slice(0, 120))) : '<div class="empty">No transactions match. Add your first with the + button.</div>';
     bindTxnActions($("#txnResults"));
   };
   const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, state: $("#fstate").value }; drawResults(); };
