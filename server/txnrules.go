@@ -117,7 +117,7 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 		if left := d.allocatedExcept(a.ID, tag.ID, t.ID) + t.AmountMinor; left < 0 {
 			return fmt.Errorf("cannot take out more than is allocated: %s holds less than that in this account", tag.Name)
 		}
-		t.FromAccountID, t.ToAccountID = "", ""
+		t.FromAccountID, t.ToAccountID, t.TagIDs = "", "", nil
 		t.Currency = a.Currency
 		t.State = "posted" // a decision moves no cash, there is nothing to confirm
 	case "transfer":
@@ -128,21 +128,40 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 		if err != nil {
 			return err
 		}
-		if t.TagID != "" {
-			tag := d.tagByID(t.TagID)
-			if tag == nil {
-				return fmt.Errorf("tagId must be an existing tag")
-			}
-			if tag.Kind == "goal" {
-				return fmt.Errorf("a money box tag is only for allocations")
-			}
+		ids, err := d.categoryIDs(t.TagIDs, t.TagID)
+		if err != nil {
+			return err
 		}
+		t.TagIDs, t.TagID = ids, ""
 		t.AccountID = ""
 		t.Currency = cur
 	default:
 		return fmt.Errorf("type must be transfer or allocate (expense, income and release are accepted as shorthands)")
 	}
 	return nil
+}
+
+// categoryIDs checks the categories of a transfer: tagIds plus, from older
+// clients, a single tagId. Each must be an existing tag that is not a money
+// box; duplicates are dropped and the order is kept (ADR 0010).
+func (d *Data) categoryIDs(ids []string, one string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, id := range append(append([]string{}, ids...), one) {
+		if id == "" || seen[id] {
+			continue
+		}
+		tag := d.tagByID(id)
+		if tag == nil {
+			return nil, fmt.Errorf("unknown tag %q", id)
+		}
+		if tag.Kind == "goal" {
+			return nil, fmt.Errorf("a money box tag is only for allocations")
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 // expandShorthand turns expense/income into a transfer with an external side.
@@ -215,18 +234,18 @@ func (d *Data) normalizeTemplate(b *TemplateBody) error {
 		if tag := d.tagByID(b.TagID); tag == nil || tag.Kind != "goal" {
 			return fmt.Errorf("an allocate template needs a money box (goal tag)")
 		}
-		b.FromAccountID, b.ToAccountID, b.ExpectedRangeMinor = "", "", nil
+		b.FromAccountID, b.ToAccountID, b.ExpectedRangeMinor, b.TagIDs = "", "", nil, nil
 		b.Currency = a.Currency
 	case "transfer":
 		cur, err := d.transferCurrency(b.FromAccountID, b.ToAccountID)
 		if err != nil {
 			return err
 		}
-		if b.TagID != "" {
-			if tag := d.tagByID(b.TagID); tag == nil || tag.Kind == "goal" {
-				return fmt.Errorf("template tagId must be an existing non-money-box tag")
-			}
+		ids, err := d.categoryIDs(b.TagIDs, b.TagID)
+		if err != nil {
+			return err
 		}
+		b.TagIDs, b.TagID = ids, ""
 		b.AccountID = ""
 		b.Currency = cur
 	default:

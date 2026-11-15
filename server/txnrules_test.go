@@ -33,6 +33,8 @@ func TestNormalizeTransactionRejects(t *testing.T) {
 		"transfer of zero":        {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID},
 		"negative transfer":       {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID, AmountMinor: -5},
 		"allocation of zero":      {Type: "allocate", AccountID: "acc-a", TagID: "tag-house"},
+		"categories with a box":   {Type: "expense", AccountID: "acc-a", TagIDs: []string{"tag-food", "tag-house"}},
+		"unknown category":        {Type: "expense", AccountID: "acc-a", AmountMinor: 1, TagIDs: []string{"tag-nope"}},
 	}
 	for name, tx := range cases {
 		if err := d.normalizeTransaction(&tx); err == nil {
@@ -52,7 +54,7 @@ func TestExpenseAndIncomeBecomeTransfers(t *testing.T) {
 	if err := d.normalizeTransaction(&exp); err != nil {
 		t.Fatal(err)
 	}
-	if exp.Type != "transfer" || exp.FromAccountID != "acc-jpy" || exp.ToAccountID != ExternalAccountID || exp.AccountID != "" || exp.Currency != "JPY" || exp.TagID != "tag-travel" {
+	if exp.Type != "transfer" || exp.FromAccountID != "acc-jpy" || exp.ToAccountID != ExternalAccountID || exp.AccountID != "" || exp.Currency != "JPY" || exp.TagID != "" || len(exp.TagIDs) != 1 || exp.TagIDs[0] != "tag-travel" {
 		t.Errorf("expense shorthand: %+v", exp)
 	}
 	named := Transaction{Type: "expense", AccountID: "acc-b", ToAccountID: "acc-shop", AmountMinor: 500}

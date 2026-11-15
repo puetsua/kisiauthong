@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -459,7 +460,7 @@ func (b *Book) reload() error {
 		d.Tags = append(d.Tags, t)
 	}
 	tg.Close()
-	tt, err := db.Query(`SELECT transaction_id,tag_id FROM transaction_tags WHERE user_id=?`, uid)
+	tt, err := db.Query(`SELECT transaction_id,tag_id FROM transaction_tags WHERE user_id=? ORDER BY rowid`, uid)
 	if err != nil {
 		return err
 	}
@@ -472,6 +473,23 @@ func (b *Book) reload() error {
 		d.TransactionTags = append(d.TransactionTags, x)
 	}
 	tt.Close()
+	// a transfer's categories are its tag links; one left in the old tag_id column joins them (ADR 0010)
+	links := map[string][]string{}
+	for _, x := range d.TransactionTags {
+		links[x.TransactionID] = append(links[x.TransactionID], x.TagID)
+	}
+	for i := range d.Transactions {
+		t := &d.Transactions[i]
+		if t.Type != "transfer" {
+			continue
+		}
+		ids := links[t.ID]
+		if t.TagID != "" && !slices.Contains(ids, t.TagID) {
+			ids = append(ids, t.TagID)
+			d.TransactionTags = append(d.TransactionTags, TransactionTag{TransactionID: t.ID, TagID: t.TagID})
+		}
+		t.TagIDs, t.TagID = ids, ""
+	}
 	tp, err := db.Query(`SELECT id,name,enabled,template_json,schedule_json FROM transaction_templates WHERE user_id=? ORDER BY name`, uid)
 	if err != nil {
 		return err
@@ -490,6 +508,12 @@ func (b *Book) reload() error {
 		}
 		if err := json.Unmarshal([]byte(sj), &x.Schedule); err != nil {
 			return err
+		}
+		if t := &x.Template; t.Type == "transfer" && t.TagID != "" { // saved before ADR 0010
+			if !slices.Contains(t.TagIDs, t.TagID) {
+				t.TagIDs = append(t.TagIDs, t.TagID)
+			}
+			t.TagID = ""
 		}
 		d.TransactionTemplates = append(d.TransactionTemplates, x)
 	}
@@ -598,7 +622,7 @@ func (b *Book) insertTemplate(t TransactionTemplate) error {
 	return err
 }
 
-// linkTag links a transaction to a tag (its category or money box).
+// linkTag links a transfer to one of its categories.
 func (b *Book) linkTag(txID, tagID string) error {
 	_, err := b.exec(`INSERT OR IGNORE INTO transaction_tags(user_id,transaction_id,tag_id) VALUES(?,?,?)`, txID, tagID)
 	return err
@@ -639,15 +663,13 @@ func (b *Book) updateTransaction(t Transaction) error {
 		t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, b.uid, t.ID); err != nil {
 		return err
 	}
-	// refresh category links: replace with the single tagId link for transfers, keep the money box on allocations
-	if t.Type == "transfer" {
-		if _, err := b.exec(`DELETE FROM transaction_tags WHERE user_id=? AND transaction_id=?`, t.ID); err != nil {
+	// the links are the transfer's categories; an allocation has none (its money box is tag_id)
+	if _, err := b.exec(`DELETE FROM transaction_tags WHERE user_id=? AND transaction_id=?`, t.ID); err != nil {
+		return err
+	}
+	for _, id := range t.TagIDs {
+		if err := b.linkTag(t.ID, id); err != nil {
 			return err
-		}
-		if t.TagID != "" {
-			if err := b.linkTag(t.ID, t.TagID); err != nil {
-				return err
-			}
 		}
 	}
 	return b.reload()

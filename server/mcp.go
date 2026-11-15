@@ -241,6 +241,9 @@ func enum(desc string, vals ...string) map[string]interface{} {
 func num(desc string) map[string]interface{} {
 	return map[string]interface{}{"type": []string{"string", "number"}, "description": desc}
 }
+func strs(desc string) map[string]interface{} {
+	return map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": desc}
+}
 func integer(desc string) map[string]interface{} {
 	return map[string]interface{}{"type": "integer", "description": desc}
 }
@@ -276,7 +279,8 @@ func init() {
 				"accountId":     str("The own account (spending, income, allocate)"),
 				"fromAccountId": str("Where the money comes from (transfer; optional external payer for income)"),
 				"toAccountId":   str("Where the money goes (transfer; optional external payee for spending)"),
-				"tagId":         str("Category of spending/income/transfer, or the money box of an allocate"),
+				"tagId":         str("The money box of an allocate, or a single category"),
+				"tagIds":        strs("Categories of spending, income or a transfer; a transaction can have several"),
 				"date":          str("YYYY-MM-DD, local; today when left out"),
 				"time":          str("HH:MM, local, optional"),
 				"tz":            str("IANA time zone of date and time, e.g. Asia/Taipei; needed with time"),
@@ -287,7 +291,8 @@ func init() {
 		{"update_transaction", "Change fields of a transaction; fields left out stay as they are.", ScopeTransactions, obj(map[string]interface{}{
 			"id":     str("Transaction id"),
 			"amount": num("New decimal amount in the transaction's currency"),
-			"tagId":  str("New category or money box; empty string removes the category"),
+			"tagId":  str("New money box of an allocate; on other transactions it sets one category, empty string removes them"),
+			"tagIds": strs("New categories (replace the current ones); empty list removes them"),
 			"date":   str("YYYY-MM-DD"),
 			"time":   str("HH:MM; empty string removes the time"),
 			"tz":     str("IANA time zone"),
@@ -555,6 +560,7 @@ func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, e
 		Amount                                json.Number
 		AccountID, FromAccountID, ToAccountID string
 		TagID, Date, Time, TZ                 string
+		TagIDs                                []string
 		Title, Note, State                    string
 	}](raw)
 	if err != nil {
@@ -562,7 +568,7 @@ func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, e
 	}
 	types := map[string]string{"spending": "expense", "income": "income", "transfer": "transfer", "allocate": "allocate"}
 	t := Transaction{Type: types[in.Kind], AccountID: in.AccountID, FromAccountID: in.FromAccountID, ToAccountID: in.ToAccountID,
-		TagID: in.TagID, Date: in.Date, Time: in.Time, TZ: in.TZ, Note: in.Title, Memo: in.Note, State: in.State}
+		TagID: in.TagID, TagIDs: in.TagIDs, Date: in.Date, Time: in.Time, TZ: in.TZ, Note: in.Title, Memo: in.Note, State: in.State}
 	if t.Type == "" {
 		return nil, fmt.Errorf("kind must be spending, income, transfer or allocate")
 	}
@@ -583,10 +589,12 @@ func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, e
 			return nil, fmt.Errorf("amount must be positive")
 		}
 	}
-	if t.TagID != "" && b.data.tagByID(t.TagID) == nil {
-		return nil, fmt.Errorf("unknown tag %q: call list_tags for ids", t.TagID)
+	for _, id := range append([]string{t.TagID}, t.TagIDs...) {
+		if id != "" && b.data.tagByID(id) == nil {
+			return nil, fmt.Errorf("unknown tag %q: call list_tags for ids", id)
+		}
 	}
-	saved, err := b.addTransaction(t, nil)
+	saved, err := b.addTransaction(t)
 	if err != nil {
 		return nil, err
 	}
@@ -598,6 +606,7 @@ func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 		ID                                        string
 		Amount                                    *json.Number
 		TagID, Date, Time, TZ, Title, Note, State *string
+		TagIDs                                    *[]string
 	}](raw)
 	if err != nil {
 		return nil, err
@@ -617,7 +626,17 @@ func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 			*dst = *v
 		}
 	}
-	set(&t.TagID, in.TagID)
+	switch {
+	case in.TagIDs != nil:
+		t.TagIDs = *in.TagIDs
+	case in.TagID != nil && t.Type == "allocate":
+		t.TagID = *in.TagID
+	case in.TagID != nil: // one category in place of the current ones
+		t.TagIDs = nil
+		if *in.TagID != "" {
+			t.TagIDs = []string{*in.TagID}
+		}
+	}
 	set(&t.Date, in.Date)
 	set(&t.Time, in.Time)
 	set(&t.TZ, in.TZ)

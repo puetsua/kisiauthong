@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -170,7 +171,7 @@ func (d *Data) tagInUse(id string) bool {
 		}
 	}
 	for _, tp := range d.TransactionTemplates {
-		if tp.Template.TagID == id {
+		if tp.Template.TagID == id || slices.Contains(tp.Template.TagIDs, id) {
 			return true
 		}
 	}

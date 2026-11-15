@@ -147,6 +147,10 @@ tr.unconfirmed td{background:#fdf0cd}
 .drawer{position:fixed;top:0;right:0;height:100dvh;width:min(420px,100vw);background:#fff;z-index:9;padding:20px;overflow-y:auto;box-shadow:-8px 0 24px rgba(0,0,0,.18)}
 .drawerhead{display:flex;justify-content:space-between;align-items:center}.drawerhead h2{font-family:Georgia,serif;margin:0}
 .drawer label{display:block;font-size:.86rem;color:var(--muted);margin-top:13px}
+.drawerfield{font-size:.86rem;color:var(--muted);margin-top:13px}.drawerfield[hidden]{display:none}
+.tagpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tagpick button{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:5px 12px;font-size:.9rem;cursor:pointer}
+.tagpick button[aria-pressed=true]{background:var(--accentsoft);border-color:var(--accent);color:var(--accent);font-weight:600}
 .drawer textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;margin-top:4px;font:inherit;font-size:1rem;color:var(--ink);background:#fff;resize:vertical;min-height:4.5em}
 .drawer input,.drawer select{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;margin-top:4px;font-size:1rem;color:var(--ink);background:#fff}
 .seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}.seg button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 12px;cursor:pointer}

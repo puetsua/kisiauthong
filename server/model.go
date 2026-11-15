@@ -17,23 +17,24 @@ type Account struct {
 }
 
 type Transaction struct {
-	ID                    string `json:"id"`
-	AccountID             string `json:"accountId"`
-	FromAccountID         string `json:"fromAccountId,omitempty"`
-	ToAccountID           string `json:"toAccountId,omitempty"`
-	TagID                 string `json:"tagId,omitempty"`
-	Type                  string `json:"type"`
-	State                 string `json:"state"`
-	AmountMinor           int64  `json:"amountMinor"`
-	Currency              string `json:"currency"`
-	Date                  string `json:"date"`           // local date where it happened (YYYY-MM-DD)
-	Time                  string `json:"time,omitempty"` // optional local time "HH:MM" on Date (ADR 0006)
-	TZ                    string `json:"tz,omitempty"`   // IANA zone of Date and Time; set when Time is
-	At                    string `json:"at,omitempty"`   // derived: the instant in UTC (RFC 3339), never stored
-	Note                  string `json:"note"`           // short title shown in lists
-	Memo                  string `json:"memo,omitempty"` // longer free-text note
-	TransactionTemplateID string `json:"transactionTemplateId,omitempty"`
-	OccurrenceDate        string `json:"occurrenceDate,omitempty"`
+	ID                    string   `json:"id"`
+	AccountID             string   `json:"accountId"`
+	FromAccountID         string   `json:"fromAccountId,omitempty"`
+	ToAccountID           string   `json:"toAccountId,omitempty"`
+	TagID                 string   `json:"tagId,omitempty"`  // the money box of an allocate
+	TagIDs                []string `json:"tagIds,omitempty"` // categories of a transfer (ADR 0010)
+	Type                  string   `json:"type"`
+	State                 string   `json:"state"`
+	AmountMinor           int64    `json:"amountMinor"`
+	Currency              string   `json:"currency"`
+	Date                  string   `json:"date"`           // local date where it happened (YYYY-MM-DD)
+	Time                  string   `json:"time,omitempty"` // optional local time "HH:MM" on Date (ADR 0006)
+	TZ                    string   `json:"tz,omitempty"`   // IANA zone of Date and Time; set when Time is
+	At                    string   `json:"at,omitempty"`   // derived: the instant in UTC (RFC 3339), never stored
+	Note                  string   `json:"note"`           // short title shown in lists
+	Memo                  string   `json:"memo,omitempty"` // longer free-text note
+	TransactionTemplateID string   `json:"transactionTemplateId,omitempty"`
+	OccurrenceDate        string   `json:"occurrenceDate,omitempty"`
 }
 
 type Range struct {
@@ -42,15 +43,16 @@ type Range struct {
 }
 
 type TemplateBody struct {
-	AccountID          string `json:"accountId,omitempty"`
-	FromAccountID      string `json:"fromAccountId,omitempty"`
-	ToAccountID        string `json:"toAccountId,omitempty"`
-	TagID              string `json:"tagId,omitempty"`
-	Type               string `json:"type"`
-	AmountMinor        int64  `json:"amountMinor"`
-	ExpectedRangeMinor *Range `json:"expectedRangeMinor,omitempty"`
-	Currency           string `json:"currency"`
-	Note               string `json:"note"`
+	AccountID          string   `json:"accountId,omitempty"`
+	FromAccountID      string   `json:"fromAccountId,omitempty"`
+	ToAccountID        string   `json:"toAccountId,omitempty"`
+	TagID              string   `json:"tagId,omitempty"`  // money box of an allocate
+	TagIDs             []string `json:"tagIds,omitempty"` // categories of a transfer
+	Type               string   `json:"type"`
+	AmountMinor        int64    `json:"amountMinor"`
+	ExpectedRangeMinor *Range   `json:"expectedRangeMinor,omitempty"`
+	Currency           string   `json:"currency"`
+	Note               string   `json:"note"`
 }
 
 type Schedule struct {

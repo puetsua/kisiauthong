@@ -248,7 +248,7 @@ func (b *Book) GenerateDue(today string) (int, error) {
 			t := Transaction{
 				ID:        fmt.Sprintf("txn-%s-%s", tpl.ID, occ),
 				AccountID: tpl.Template.AccountID, FromAccountID: tpl.Template.FromAccountID,
-				ToAccountID: tpl.Template.ToAccountID, TagID: tpl.Template.TagID,
+				ToAccountID: tpl.Template.ToAccountID, TagID: tpl.Template.TagID, TagIDs: tpl.Template.TagIDs,
 				Type: tpl.Template.Type, State: state, AmountMinor: tpl.Template.AmountMinor,
 				Currency: tpl.Template.Currency, Date: occ, Note: tpl.Template.Note,
 				TransactionTemplateID: tpl.ID, OccurrenceDate: occ,
@@ -257,11 +257,11 @@ func (b *Book) GenerateDue(today string) (int, error) {
 				return created, err
 			}
 			b.data.Transactions = append(b.data.Transactions, t)
-			if t.Type == "transfer" && t.TagID != "" { // category link, as for hand-entered transactions
-				if err := b.linkTag(t.ID, t.TagID); err != nil {
+			for _, id := range t.TagIDs { // category links, as for hand-entered transactions
+				if err := b.linkTag(t.ID, id); err != nil {
 					return created, err
 				}
-				b.data.TransactionTags = append(b.data.TransactionTags, TransactionTag{TransactionID: t.ID, TagID: t.TagID})
+				b.data.TransactionTags = append(b.data.TransactionTags, TransactionTag{TransactionID: t.ID, TagID: id})
 			}
 			created++
 		}

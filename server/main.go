@@ -427,14 +427,11 @@ func handleCreateTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
 		writeErr(w, 405, "POST only")
 		return
 	}
-	var body struct {
-		Transaction
-		TagIDs []string `json:"tagIds"`
-	}
+	var body Transaction
 	if !decode(w, r, &body) {
 		return
 	}
-	t, err := b.addTransaction(body.Transaction, body.TagIDs)
+	t, err := b.addTransaction(body)
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
@@ -442,8 +439,8 @@ func handleCreateTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
 	writeJSON(w, 201, t)
 }
 
-// addTransaction validates and stores a new transaction with its tag links.
-func (b *Book) addTransaction(t Transaction, tagIDs []string) (Transaction, error) {
+// addTransaction validates and stores a new transaction with its category links.
+func (b *Book) addTransaction(t Transaction) (Transaction, error) {
 	if t.Date == "" {
 		t.Date = time.Now().Format("2006-01-02")
 	}
@@ -460,16 +457,8 @@ func (b *Book) addTransaction(t Transaction, tagIDs []string) (Transaction, erro
 	if err := b.insertTransaction(t); err != nil {
 		return t, err
 	}
-	for _, tagID := range tagIDs {
-		if b.data.tagByID(tagID) == nil {
-			continue // only the caller's own tags
-		}
-		if err := b.linkTag(t.ID, tagID); err != nil {
-			return t, err
-		}
-	}
-	if t.TagID != "" && t.Type == "transfer" {
-		if err := b.linkTag(t.ID, t.TagID); err != nil {
+	for _, id := range t.TagIDs {
+		if err := b.linkTag(t.ID, id); err != nil {
 			return t, err
 		}
 	}
@@ -484,14 +473,10 @@ func handleTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
 	}
 	switch {
 	case r.Method == http.MethodPut && action == "":
-		var body struct {
-			Transaction
-			TagIDs []string `json:"tagIds"`
-		}
-		if !decode(w, r, &body) {
+		var t Transaction
+		if !decode(w, r, &t) {
 			return
 		}
-		t := body.Transaction
 		t.ID = id
 		if t.Type == "" || t.Date == "" {
 			writeErr(w, 400, "type and date required")

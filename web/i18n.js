@@ -74,7 +74,7 @@ const I18N = {
     "{spent} of {limit} spent · {period}": "已花 {spent}／{limit} · {period}",
     "Daily": "每日", "Weekly": "每週", "Monthly": "每月", "Quarterly": "每季", "Yearly": "每年",
     // common columns and fields
-    "Account": "帳戶", "Amount": "金額", "Date": "日期", "Tag": "標籤", "Note": "備註", "Status": "狀態", "Kind": "類型",
+    "Account": "帳戶", "Amount": "金額", "Date": "日期", "Note": "備註", "Status": "狀態", "Kind": "類型",
     "Name": "名稱", "Currency": "幣別", "Balance": "餘額", "Earmarked": "已預留", "Free": "可用",
     "Budget": "預算", "Spent": "已花費", "Progress": "進度", "Remaining": "剩餘", "Share": "佔比",
     "Template": "範本", "Generates": "產生", "Schedule": "排程", "Next due": "下次到期", "Decision": "決定", "To account": "轉入帳戶", "Title": "標題", "Rows": "列數", "Show": "顯示",
@@ -97,7 +97,7 @@ const I18N = {
     "{spent} of {limit}": "{spent}／{limit}", "{saved} of {target} · {pct}%": "{saved}／{target} · {pct}%", "by {date}": "{date} 前",
     "No allocations yet": "還沒有分配",
     // transactions
-    "All accounts": "所有帳戶", "All types": "所有類型", "All categories": "所有分類",
+    "All accounts": "所有帳戶", "All types": "所有類型", "All categories": "所有分類", "No categories yet.": "還沒有分類。",
     "Clear": "清除", "Today": "今天", "Expected range {min} – {max}.": "預計範圍 {min} – {max}。",
     "Expected on {date}, not confirmed yet. Check the amount and save to confirm it.": "預計在 {date}，尚未確認。核對金額後儲存即可確認。",
     "Has a note": "有備註",
