@@ -264,10 +264,9 @@ func main() {
 		t.ID = newID("txn")
 		store.mu.Lock()
 		defer store.mu.Unlock()
-		if t.Currency == "" {
-			if a := store.data.accountByID(t.AccountID); a != nil {
-				t.Currency = a.Currency
-			}
+		if err := store.data.normalizeTransaction(&t); err != nil {
+			writeErr(w, 400, err.Error())
+			return
 		}
 		if err := store.insertTransaction(t); err != nil {
 			writeErr(w, 500, err.Error())
@@ -325,6 +324,10 @@ func main() {
 			}
 			if !exists {
 				writeErr(w, 404, "transaction not found")
+				return
+			}
+			if err := store.data.normalizeTransaction(&t); err != nil {
+				writeErr(w, 400, err.Error())
 				return
 			}
 			if err := store.updateTransaction(t); err != nil {

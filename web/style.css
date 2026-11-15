@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 :root{--page-max:1120px;--ink:#20261f;--muted:#68736a;--bg:#f7f5ef;--panel:#fff;--line:#ddd8c8;--side:#17351f;--side2:#2a5233;--green:#14532d;--green2:#1b6b3c;--amber:#b45309;--amberbg:#fdf3e3;--red:#b3261e;--redbg:#fdecea}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
+.formnote{margin:8px 0 0;font-size:.86rem;color:var(--amber)}
 html[data-width="wide"]{--page-max:1440px}
 html[data-width="full"]{--page-max:none}
 body{margin:0;font-family:"Segoe UI",system-ui,"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;color:var(--ink);background:var(--bg);line-height:1.5}
