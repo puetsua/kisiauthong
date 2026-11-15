@@ -2,7 +2,7 @@
 // All user-visible strings go through __() / N_() from i18n.js (English source strings).
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "", state: "" }, page: 0 };
+const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, page: 0 };
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
@@ -63,7 +63,6 @@ const lbl = (map, x) => __(map[x] || x);
 const enumOptions = (map, keys, sel) => keys.map((k) => `<option value="${esc(k)}" ${k === sel ? "selected" : ""}>${esc(lbl(map, k))}</option>`).join("");
 const txnTitle = (t) => t.note || lbl(TYPE_L, t.type);
 const unconfirmed = () => `<span class="chip due">${esc(__("UNCONFIRMED"))}</span>`;
-const stateCell = (t) => t.state === "planned" ? unconfirmed() : esc(__("posted"));
 const transferAcct = (t) => t.type === "transfer" ? accName(t.fromAccountId) + " → " + accName(t.toAccountId) : accName(t.accountId);
 
 /* ---------- screens ---------- */
@@ -137,9 +136,8 @@ function widgetBody(id, o) {
       return table([{ t: "Account" }, { t: "Balance", num: 1 }, { t: "Earmarked", num: 1 }, { t: "Free", num: 1 }], list);
     }
     case "recent": {
-      const list = [...d.transactions].sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id)).slice(0, rows).map((t) =>
-        row([{ l: "Date", v: esc(t.date) }, { l: N_("Transaction"), v: `<button class="titlelink" data-detail-txn="${esc(t.id)}">${esc(txnTitle(t))}</button>` }, { l: "Account", v: esc(transferAcct(t)) }, { l: N_("State"), v: stateCell(t) }, { l: "Amount", v: signed(t) + fmt(t.amountMinor, t.currency), num: 1 }])).join("");
-      return table([{ t: "Date" }, { t: "Transaction" }, { t: "Account" }, { t: "State" }, { t: "Amount", num: 1 }], list);
+      const list = d.transactions.filter((t) => t.state === "posted").sort(byNewest).slice(0, rows);
+      return list.length ? feedHTML(list) : `<p class="muted">${esc(__("No transactions yet."))}</p>`;
     }
   }
   return "";
@@ -307,49 +305,77 @@ function detailTable(pairs) {
   return `<table class="detail"><tbody>${pairs.map(([k, v]) => `<tr><td data-label="">${esc(__(k))}</td><td data-label="">${v}</td></tr>`).join("")}</tbody></table>`;
 }
 
-function txnRows(list) {
-  const tagOf = {};
-  state.data.transactionTags.forEach((tt) => { (tagOf[tt.transactionId] = tagOf[tt.transactionId] || []).push(tagName(tt.tagId)); });
-  return list.map((t) => {
-    const tags = [...new Set([t.tagId ? tagName(t.tagId) : "", ...(tagOf[t.id] || [])].filter(Boolean))].join(", ");
-    return `<tr class="${t.state === "planned" ? "planned unconfirmed" : ""}">` + [
-      { l: "Date", v: esc(t.date) }, { l: "Transaction", v: `<button class="titlelink" data-detail-txn="${esc(t.id)}">${esc(txnTitle(t))}</button><br><span class="muted">${esc(lbl(TYPE_L, t.type))}${tags ? " · " + esc(tags) : ""}</span>` },
-      { l: "Account", v: esc(transferAcct(t)) }, { l: "State", v: stateCell(t) },
-      { l: "Amount", v: signed(t) + fmt(t.amountMinor, t.currency), num: 1 },
-    ].map((c) => `<td data-label="${esc(__(c.l))}" class="${c.num ? "num" : ""}">${c.v}</td>`).join("") + "</tr>";
-  }).join("");
+/* ---------- transaction feed ---------- */
+const byNewest = (a, b) => (b.date + b.id).localeCompare(a.date + a.id);
+// stroke icons (24px grid): money out, money in, between accounts, into / out of a money box
+const ICON_PATH = { expense: "M7 17 17 7M9 7h8v8", income: "M17 7 7 17M15 17H7V9", transfer: "M4 8h15l-3-3M20 16H5l3 3", allocate: "M4 13v6h16v-6M12 4v10M8 10l4 4 4-4", release: "M4 13v6h16v-6M12 14V4M8 8l4-4 4 4" };
+const typeIcon = (type) => `<svg viewBox="0 0 24 24" width="18" height="18"><path d="${ICON_PATH[type] || "M12 12h.01"}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+function txnTagNames(t) {
+  const ids = new Set([t.tagId, ...state.data.transactionTags.filter((x) => x.transactionId === t.id).map((x) => x.tagId)].filter(Boolean));
+  return [...ids].map(tagName);
+}
+// What a row says under its title: where the money went, in words a person uses.
+function txnSubtitle(t) {
+  if (t.type === "transfer") return accName(t.fromAccountId) + " → " + accName(t.toAccountId);
+  if (t.type === "allocate") return accName(t.accountId) + " → " + tagName(t.tagId);
+  if (t.type === "release") return tagName(t.tagId) + " → " + accName(t.accountId);
+  return [txnTagNames(t).join(", "), accName(t.accountId)].filter(Boolean).join(" · ");
+}
+const amountText = (t) => signed(t) + fmt(t.amountMinor, t.currency);
+const amountCls = (t) => t.type === "income" ? "in" : t.type === "expense" ? "out" : "move";
+const isoDay = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+function dayLabel(iso) {
+  if (iso === state.data.today) return __("Today");
+  const [y, m, d] = iso.split("-").map(Number), day = new Date(y, m - 1, d); // local calendar date, never shifted through UTC
+  if (isoDay(new Date(y, m - 1, d + 1)) === state.data.today) return __("Yesterday");
+  try { return new Intl.DateTimeFormat(LANG, { weekday: "short", year: "numeric", month: "short", day: "numeric" }).format(day); } catch (e) { return iso; }
+}
+// dayNet: income minus spending per currency for one day (transfers and money-box decisions net to zero)
+function dayNet(list) {
+  const net = {};
+  list.forEach((t) => { if (t.type === "income") net[t.currency] = (net[t.currency] || 0) + t.amountMinor; if (t.type === "expense") net[t.currency] = (net[t.currency] || 0) - t.amountMinor; });
+  return Object.entries(net).filter(([, v]) => v).map(([c, v]) => (v > 0 ? "+" : "−") + fmt(Math.abs(v), c)).join(" · ");
+}
+function feedRow(t, opts = {}) {
+  const sub = txnSubtitle(t) + (opts.withDate ? " · " + dayLabel(t.date) : "");
+  return `<li><button type="button" class="feedrow" data-detail-txn="${esc(t.id)}">
+      <span class="ficon t-${esc(t.type)}" aria-hidden="true">${typeIcon(t.type)}</span>
+      <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, t.type))}</span><span class="fsub"><span class="sr">${esc(lbl(TYPE_L, t.type))} · </span>${esc(sub)}</span></span>
+      <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button>${opts.confirm ? `<button type="button" class="smallbtn" data-confirm="${esc(t.id)}">${esc(__("Confirm…"))}</button>` : ""}</li>`;
+}
+// feedHTML groups a newest-first list by day.
+function feedHTML(list) {
+  const days = [];
+  list.forEach((t) => { const last = days[days.length - 1]; if (last && last.date === t.date) last.items.push(t); else days.push({ date: t.date, items: [t] }); });
+  return days.map((d) => `<section class="fday"><h4><span>${esc(dayLabel(d.date))}</span><span class="fnet">${d.items.length > 1 ? esc(dayNet(d.items)) : ""}</span></h4><ul class="feed">${d.items.map((t) => feedRow(t)).join("")}</ul></section>`).join("");
 }
 async function deleteTxn(id) {
   if (!confirm(__("Delete this transaction? This cannot be undone."))) return false;
   try { await api("/api/transactions/" + id, { method: "DELETE" }); msg(__("Deleted.")); await load(); return true; }
   catch (e) { errMsg(e); return false; }
 }
-function bindTxnActions(root) {
-  bindConfirm(root);
-  root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.edit)));
-  root.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => deleteTxn(b.dataset.del)));
-}
 function filteredTxns() {
-  const f = state.filter;
-  let list = [...state.data.transactions].sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
-  if (f.q) list = list.filter((t) => (t.note + t.type + lbl(TYPE_L, t.type) + accName(t.accountId)).toLowerCase().includes(f.q.toLowerCase()));
+  const f = state.filter, q = f.q.trim().toLowerCase();
+  let list = [...state.data.transactions].sort(byNewest);
+  if (q) list = list.filter((t) => [t.note, lbl(TYPE_L, t.type), txnSubtitle(t), fmt(t.amountMinor, t.currency)].join(" ").toLowerCase().includes(q));
   if (f.account) list = list.filter((t) => t.accountId === f.account || t.fromAccountId === f.account || t.toAccountId === f.account);
   if (f.type) list = list.filter((t) => t.type === f.type);
-  if (f.state) list = list.filter((t) => t.state === f.state);
   return list;
 }
 function screenTransactions(v) {
   const f = state.filter;
   const accOpts = `<option value="">${esc(__("All accounts"))}</option>` + state.data.accounts.map((a) => `<option value="${esc(a.id)}" ${f.account === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("");
   v.innerHTML = `<div class="filters">
-      <input id="fq" type="search" placeholder="${esc(__("Search note, type, account…"))}" value="${esc(f.q)}">
+      <input id="fq" type="search" placeholder="${esc(__("Search note, tag, account…"))}" value="${esc(f.q)}">
       <select id="faccount">${accOpts}</select>
       <select id="ftype"><option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}</select>
-      <select id="fstate"><option value="">${esc(__("Posted + expected"))}</option><option value="posted" ${f.state === "posted" ? "selected" : ""}>${esc(__("Posted only"))}</option><option value="planned" ${f.state === "planned" ? "selected" : ""}>${esc(__("Expected only"))}</option></select>
       <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div>
     <div id="txnResults"></div>`;
   const drawResults = () => {
-    const list = filteredTxns(), size = perPage(), pages = Math.max(1, Math.ceil(list.length / size));
+    const all = filteredTxns();
+    // unconfirmed items wait in their own section (oldest first) instead of carrying a state on every row
+    const expected = all.filter((t) => t.state === "planned").reverse(), list = all.filter((t) => t.state !== "planned");
+    const size = perPage(), pages = Math.max(1, Math.ceil(list.length / size));
     state.page = Math.min(Math.max(0, state.page), pages - 1);
     const from = state.page * size, shown = list.slice(from, from + size);
     // always shown, even for one page, so paging is discoverable
@@ -357,15 +383,19 @@ function screenTransactions(v) {
         <button class="smallbtn" data-page="${state.page - 1}" ${state.page === 0 ? "disabled" : ""}>${esc(__("‹ Previous"))}</button>
         <span>${esc(__("{from}–{to} of {total}", { from: from + 1, to: from + shown.length, total: list.length }))}</span>
         <button class="smallbtn" data-page="${state.page + 1}" ${state.page >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button></nav>`;
-    $("#txnResults").innerHTML = list.length ? table([{ t: "Date" }, { t: "Transaction" }, { t: "Account" }, { t: "State" }, { t: "Amount", num: 1 }], txnRows(shown)) + pager : `<div class="empty">${esc(__("No transactions match. Add your first with the + button."))}</div>`;
+    const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, confirm: true })).join("")}</ul></section>` : "";
+    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(shown)}</section>` + pager : "";
+    $("#txnResults").innerHTML = expectedHTML + postedHTML || `<div class="empty">${esc(__("No transactions match. Add your first with the + button."))}</div>`;
     $("#txnResults").querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => { state.page = parseInt(b.dataset.page, 10); drawResults(); $("#view").scrollIntoView({ block: "start" }); }));
-    bindTxnActions($("#txnResults"));
+    bindConfirm($("#txnResults"));
   };
-  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, state: $("#fstate").value }; state.page = 0; drawResults(); };
-  ["faccount", "ftype", "fstate"].forEach((id) => $("#" + id).addEventListener("change", upd));
+  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value }; state.page = 0; drawResults(); };
+  ["faccount", "ftype"].forEach((id) => $("#" + id).addEventListener("change", upd));
   $("#fq").addEventListener("input", upd);
-  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", state: "" }; state.page = 0; render(); });
+  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "" }; state.page = 0; render(); });
   drawResults();
+  if (state.scrollToExpected && $("#expectedSec")) $("#expectedSec").scrollIntoView({ block: "start" });
+  state.scrollToExpected = false;
 }
 
 const owedText = (a) => __("{owed} owed of {limit} ({pct}%)", { owed: fmt(a.owedMinor, a.currency), limit: fmt(a.creditLimitMinor, a.currency), pct: Math.round((a.utilisation || 0) * 100) });
@@ -711,8 +741,8 @@ function openTxnDetail(id) {
   const tags = [...new Set([t.tagId ? tagName(t.tagId) : "", ...tagOf].filter(Boolean))].join(", ") || "—";
   const tpl = t.transactionTemplateId && state.data.transactionTemplates.find((x) => x.id === t.transactionTemplateId);
   openDialog(txnTitle(t), detailTable([
-    ["Status", t.state === "planned" ? `<span class="chip due">${esc(__("UNCONFIRMED — expected"))}</span>` : esc(__("Confirmed (posted)"))],
-    [N_("Type"), esc(lbl(TYPE_L, t.type))], ["Date", esc(t.date)], ["Account", esc(transferAcct(t))], ["Tag", esc(tags)],
+    ...(t.state === "planned" ? [["Status", `<span class="chip due">${esc(__("UNCONFIRMED — expected"))}</span>`]] : []),
+    [N_("Type"), esc(lbl(TYPE_L, t.type))], ["Date", esc(t.date)], ["Account", esc(transferAcct(t))], ...(t.type === "transfer" ? [] : [["Tag", esc(tags)]]),
     ["Amount", fmt(t.amountMinor, t.currency)],
     ...(t.transactionTemplateId ? [[N_("Generated by"), esc(tpl ? tpl.name : t.transactionTemplateId)]] : []),
   ]) + `<div class="pane-actions">${t.state === "planned" ? `<button class="smallbtn" id="paneConfirm">${esc(__("Confirm…"))}</button>` : ""}<button class="smallbtn" id="paneEdit">${esc(__("Edit"))}</button><button class="smallbtn danger" id="paneDelete">${esc(__("Delete"))}</button></div>`);
@@ -767,7 +797,7 @@ async function generateDue() {
   try { const r = await post("/api/generate", {}); msg(__("Generated {n} due transaction(s).", { n: r.created })); await load(); }
   catch (e) { errMsg(e); }
 }
-$("#dueBtn").addEventListener("click", () => { location.hash = "#transactions"; state.filter.state = "planned"; state.page = 0; render(); });
+$("#dueBtn").addEventListener("click", () => { state.scrollToExpected = true; if (location.hash === "#transactions") render(); else location.hash = "#transactions"; });
 
 /* ---------- routing ---------- */
 const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], budgets: [N_("Budgets"), screenBudgets], moneyboxes: ["Money boxes", screenMoneyboxes], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings] };
