@@ -285,6 +285,19 @@ func TestSettingsLegacyDashboardBecomesItems(t *testing.T) {
 	}
 }
 
+func TestSettingsTimeZone(t *testing.T) {
+	withTestStore(t)
+	if _, s := doSettings(t, http.MethodGet, ""); s.General.TimeZone != "" {
+		t.Fatalf("default should follow the device: %q", s.General.TimeZone)
+	}
+	if code, s := doSettings(t, http.MethodPut, `{"general":{"timeZone":"Asia/Tokyo"}}`); code != 200 || s.General.TimeZone != "Asia/Tokyo" {
+		t.Fatalf("set zone: %d %q", code, s.General.TimeZone)
+	}
+	if code, s := doSettings(t, http.MethodPut, `{"general":{"timeZone":""}}`); code != 200 || s.General.TimeZone != "" {
+		t.Fatalf("back to auto: %d %q", code, s.General.TimeZone)
+	}
+}
+
 func TestSettingsRejectsInvalid(t *testing.T) {
 	withTestStore(t)
 	for _, body := range []string{
@@ -302,6 +315,7 @@ func TestSettingsRejectsInvalid(t *testing.T) {
 		`{"dashboard":{"items":[{"id":"a","type":"recent","rows":-1}]}}`,
 		`{"dashboard":{"items":[{"id":"a","type":"recent","title":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}}`,
 		`{"dashboard":{"items":[{"id":"a","type":"accounts","include":[""]}]}}`,
+		`{"general":{"timeZone":"Mars/Olympus"}}`,
 		`{}`,
 		`not json`,
 	} {

@@ -56,6 +56,9 @@ func (d *Data) tagByID(id string) *Tag {
 //     not take out more than the account has allocated to that money box.
 //     "release" is accepted as a shorthand for a negative allocation.
 func (d *Data) normalizeTransaction(t *Transaction) error {
+	if err := normalizeWhen(t); err != nil {
+		return err
+	}
 	t.Note, t.Memo = strings.TrimSpace(t.Note), strings.TrimSpace(t.Memo)
 	if utf8.RuneCountInString(t.Note) > maxTitleRunes {
 		return fmt.Errorf("title longer than %d characters", maxTitleRunes)

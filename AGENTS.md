@@ -114,7 +114,7 @@ The stored kernel is exactly four elements — **Account, Transaction, Tag, Tran
 - **Attachment** — files stored server-side with metadata rows, referenced by id from Transactions, never embedded as blobs in sync payloads.
 - **Sync metadata** on every syncable row: `updated_at` (server-assigned revision or Lamport/version counter per §7), `deleted_at` for tombstones.
 
-All ids are UUIDs generated on the client so offline creation never needs the server. All timestamps are UTC ISO 8601 on the wire; dates the user thinks in (`transaction_date`) are plain `YYYY-MM-DD` in the user's timezone — never shift them through UTC conversion.
+All ids are UUIDs generated on the client so offline creation never needs the server. All timestamps are UTC ISO 8601 on the wire; dates the user thinks in (`transaction_date`) are plain `YYYY-MM-DD` in the user's timezone — never shift them through UTC conversion. A transaction may also carry `transaction_time` (`HH:MM`, local) with the IANA `tz` it was entered in; the server derives the UTC instant (`at`) from date + time + tz, clients show timed transactions in the display zone (Settings, or the device's when Auto), and budgets/reports keep using the stored local date (ADR 0006).
 
 ## 4. Money, dates, and numbers — hard rules
 

@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   id TEXT PRIMARY KEY, account_id TEXT NOT NULL DEFAULT '', from_account_id TEXT NOT NULL DEFAULT '',
   to_account_id TEXT NOT NULL DEFAULT '', tag_id TEXT NOT NULL DEFAULT '', type TEXT NOT NULL,
   state TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL,
+  time TEXT NOT NULL DEFAULT '', tz TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT,
   UNIQUE(transaction_template_id, occurrence_date));
 CREATE TABLE IF NOT EXISTS tags (
@@ -126,6 +127,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateTagKinds,                  // 4
 	migrateBudgetPeriods,             // 5
 	migrateAccountIcons,              // 6
+	migrateTransactionTime,           // 7
 }
 
 func (s *Store) migrate() error {
@@ -172,6 +174,23 @@ func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
 		}
 	}
 	return false, rows.Err()
+}
+
+// Migration 7 (ADR 0006): transactions may carry a local time and its time zone.
+// Existing transactions stay date-only.
+func migrateTransactionTime(tx *sql.Tx) error {
+	for _, c := range []string{"time", "tz"} {
+		has, err := hasColumn(tx, "transactions", c)
+		if err != nil {
+			return err
+		}
+		if !has {
+			if _, err := tx.Exec(`ALTER TABLE transactions ADD COLUMN ` + c + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Migration 6 (ADR 0005): own accounts lose their type. The type becomes the
@@ -317,7 +336,7 @@ func (s *Store) reload() error {
 		d.Accounts = append(d.Accounts, a)
 	}
 	rows.Close()
-	tr, err := s.db.Query(`SELECT id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,note,memo,transaction_template_id,occurrence_date FROM transactions ORDER BY date,id`)
+	tr, err := s.db.Query(`SELECT id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date FROM transactions ORDER BY date,time,id`)
 	if err != nil {
 		return err
 	}
@@ -325,9 +344,10 @@ func (s *Store) reload() error {
 	for tr.Next() {
 		var t Transaction
 		var tplID, occ sql.NullString
-		if err := tr.Scan(&t.ID, &t.AccountID, &t.FromAccountID, &t.ToAccountID, &t.TagID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Note, &t.Memo, &tplID, &occ); err != nil {
+		if err := tr.Scan(&t.ID, &t.AccountID, &t.FromAccountID, &t.ToAccountID, &t.TagID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Time, &t.TZ, &t.Note, &t.Memo, &tplID, &occ); err != nil {
 			return err
 		}
+		t.At = instant(t.Date, t.Time, t.TZ)
 		t.TransactionTemplateID = tplID.String
 		t.OccurrenceDate = occ.String
 		d.Transactions = append(d.Transactions, t)
@@ -428,8 +448,8 @@ func (s *Store) insertTag(t Tag) error {
 	return err
 }
 func (s *Store) insertTransaction(t Transaction) error {
-	_, err := s.db.Exec(`INSERT INTO transactions(id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,note,memo,transaction_template_id,occurrence_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Note, t.Memo, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate))
+	_, err := s.db.Exec(`INSERT INTO transactions(id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate))
 	return err
 }
 func (s *Store) getSetting(key string) (string, bool, error) {
@@ -464,8 +484,8 @@ func (s *Store) updateTag(t Tag) error {
 	return s.reload()
 }
 func (s *Store) updateTransaction(t Transaction) error {
-	_, err := s.db.Exec(`UPDATE transactions SET account_id=?,from_account_id=?,to_account_id=?,tag_id=?,type=?,state=?,amount_minor=?,currency=?,date=?,note=?,memo=? WHERE id=?`,
-		t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Note, t.Memo, t.ID)
+	_, err := s.db.Exec(`UPDATE transactions SET account_id=?,from_account_id=?,to_account_id=?,tag_id=?,type=?,state=?,amount_minor=?,currency=?,date=?,time=?,tz=?,note=?,memo=? WHERE id=?`,
+		t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, t.ID)
 	if err != nil {
 		return err
 	}

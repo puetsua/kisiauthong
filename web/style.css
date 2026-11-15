@@ -336,3 +336,8 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .iconpick label:hover .aicon{color:var(--accent);background:var(--accentsoft)}
 .iconpick input:checked+.aicon{border-color:var(--accent);background:var(--accentsoft);color:var(--accent)}
 .iconpick input:focus-visible+.aicon{outline:3px solid var(--accent2);outline-offset:2px}
+
+/* transaction date + time side by side; time shown before a feed row's subtitle */
+.daterow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px}
+.ftime{font-variant-numeric:tabular-nums;margin-right:6px;color:var(--ink);opacity:.8}
+.ftime[title]{cursor:help}

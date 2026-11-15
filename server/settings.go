@@ -110,6 +110,8 @@ type GeneralSettings struct {
 	PageWidth string `json:"pageWidth"`
 	// OpenDays is how many of the newest days start expanded in the transaction list.
 	OpenDays int `json:"openDays"`
+	// TimeZone shows transaction times in this IANA zone; "" follows the device (for travelling).
+	TimeZone string `json:"timeZone"`
 }
 
 const (
@@ -262,6 +264,11 @@ func normCurrency(c string) string { return strings.ToUpper(strings.TrimSpace(c)
 // validate normalises codes and drops duplicates. The default currency is
 // always on the list and always first; the rest keep the user's order.
 func (g *GeneralSettings) validate() error {
+	if g.TimeZone != "" {
+		if _, err := time.LoadLocation(g.TimeZone); err != nil || g.TimeZone == "Local" {
+			return fmt.Errorf("unknown time zone: %s", g.TimeZone)
+		}
+	}
 	g.DefaultCurrency = normCurrency(g.DefaultCurrency)
 	if !currencyRe.MatchString(g.DefaultCurrency) {
 		return fmt.Errorf("defaultCurrency must be a 3-letter ISO 4217 code")

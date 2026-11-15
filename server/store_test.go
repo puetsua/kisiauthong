@@ -163,6 +163,9 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 	mustExec(`PRAGMA user_version = 0`)
 	// a database from before migration 3 has no memo column
 	mustExec(`ALTER TABLE transactions DROP COLUMN memo`)
+	// before migration 7 transactions had no time
+	mustExec(`ALTER TABLE transactions DROP COLUMN time`)
+	mustExec(`ALTER TABLE transactions DROP COLUMN tz`)
 	// before migration 4 tags could be labels and payees; before 5 budgets had no period columns
 	mustExec(`INSERT INTO tags(id,name,kind) VALUES('old-label','trip-2026','label'),('old-payee','7-Eleven','payee')`)
 	for _, c := range []string{"cycle_every", "cycle_start", "cycle_end"} {
@@ -228,6 +231,17 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 	for _, x := range s.data.Transactions {
 		if x.ID == "old-exp" && x.Memo != "Paid in cash" {
 			t.Errorf("memo not stored: %+v", x)
+		}
+	}
+	// migration 7: a time and zone round-trip and give an instant
+	timed := byID["old-inc"]
+	timed.Time, timed.TZ = "08:15", "Asia/Taipei"
+	if err := s.updateTransaction(timed); err != nil {
+		t.Fatalf("update with time: %v", err)
+	}
+	for _, x := range s.data.Transactions {
+		if x.ID == "old-inc" && (x.Time != "08:15" || x.At != "2026-11-02T00:15:00Z") {
+			t.Errorf("time not stored: %+v", x)
 		}
 	}
 	var v int

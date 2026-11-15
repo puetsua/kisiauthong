@@ -543,7 +543,8 @@ function detailTable(pairs) {
 }
 
 /* ---------- transaction feed ---------- */
-const byNewest = (a, b) => (b.date + b.id).localeCompare(a.date + a.id);
+const whenKey = (t) => { const w = txnWhen(t); return w.date + " " + w.time + " " + t.id; };
+const byNewest = (a, b) => whenKey(b).localeCompare(whenKey(a));
 // stroke icons (24px grid): money out, money in, between accounts, into / out of a money box
 const ICON_PATH = { expense: "M7 17 17 7M9 7h8v8", income: "M17 7 7 17M15 17H7V9", transfer: "M4 8h15l-3-3M20 16H5l3 3", allocate: "M4 13v6h16v-6M12 4v10M8 10l4 4 4-4", release: "M4 13v6h16v-6M12 14V4M8 8l4-4 4 4" };
 const typeIcon = (type) => `<svg viewBox="0 0 24 24" width="18" height="18"><path d="${ICON_PATH[type] || "M12 12h.01"}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -562,6 +563,45 @@ function txnSubtitle(t) {
 const amountText = (t) => t.type === "allocate" ? (t.amountMinor < 0 ? "−" : "+") + fmt(Math.abs(t.amountMinor), t.currency) : signed(t) + fmt(t.amountMinor, t.currency);
 const iconKind = (t) => (t.type === "allocate" && t.amountMinor < 0 ? "release" : flow(t));
 const amountCls = (t) => { const k = flow(t); return k === "income" ? "in" : k === "expense" ? "out" : "move"; };
+// Time zones (ADR 0006). A timed transaction has an instant (t.at, UTC); it is shown and grouped in the
+// display zone: the one chosen in Settings, or this device's when set to Auto (follows you when travelling).
+// Date-only transactions stay on their date in every zone.
+const deviceTZ = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; } };
+const displayTZ = () => (state.general && state.general.timeZone) || deviceTZ();
+const zoneFmts = {};
+// zoneParts(date, tz) -> { date: "YYYY-MM-DD", time: "HH:MM" } as a clock in tz shows it
+function zoneParts(when, tz) {
+  const f = zoneFmts[tz] || (zoneFmts[tz] = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }));
+  const p = Object.fromEntries(f.formatToParts(when).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
+}
+const txnWhen = (t) => (t.at ? zoneParts(new Date(t.at), displayTZ()) : { date: t.date, time: "" });
+const txnDay = (t) => txnWhen(t).date;
+// "14:05" in the viewer's locale and display zone; the tooltip gives the local time where it happened
+function txnClock(t) {
+  if (!t.at) return "";
+  const at = new Date(t.at), dz = displayTZ();
+  const shown = new Intl.DateTimeFormat(LANG, { hour: "numeric", minute: "2-digit", timeZone: dz }).format(at);
+  const there = t.tz && t.tz !== dz ? __("{time} in {zone}", { time: new Intl.DateTimeFormat(LANG, { hour: "numeric", minute: "2-digit", timeZone: t.tz }).format(at), zone: zoneCity(t.tz) }) : "";
+  return `<span class="ftime"${there ? ` title="${esc(there)}"` : ""}>${esc(shown)}${there ? "*" : ""}</span>`;
+}
+const zoneCity = (tz) => tz.split("/").pop().replace(/_/g, " ");
+let zoneOptionsCache = null;
+// every IANA zone as "Asia/Taipei (GMT+8)", built once
+function zoneOptions(sel) {
+  if (!zoneOptionsCache) {
+    let zones = [];
+    try { zones = Intl.supportedValuesOf("timeZone"); } catch (e) { zones = [deviceTZ()]; }
+    if (!zones.includes(deviceTZ())) zones.unshift(deviceTZ());
+    const now = new Date();
+    zoneOptionsCache = zones.map((z) => {
+      let off = "";
+      try { off = new Intl.DateTimeFormat("en", { timeZone: z, timeZoneName: "shortOffset" }).formatToParts(now).find((x) => x.type === "timeZoneName").value; } catch (e) { /* offset is a nicety */ }
+      return [z, off ? `${z.replace(/_/g, " ")} (${off})` : z.replace(/_/g, " ")];
+    });
+  }
+  return zoneOptionsCache.map(([z, label]) => `<option value="${esc(z)}" ${z === sel ? "selected" : ""}>${esc(label)}</option>`).join("");
+}
 const isoDay = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 function dayLabel(iso) {
   if (iso === state.data.today) return __("Today");
@@ -576,10 +616,10 @@ function dayNet(list) {
   return Object.entries(net).filter(([, v]) => v).map(([c, v]) => (v > 0 ? "+" : "−") + fmt(Math.abs(v), c)).join(" · ");
 }
 function feedRow(t, opts = {}) {
-  const sub = txnSubtitle(t) + (opts.withDate ? " · " + dayLabel(t.date) : "");
+  const sub = txnSubtitle(t) + (opts.withDate ? " · " + dayLabel(txnDay(t)) : "");
   return `<li><button type="button" class="feedrow" ${opts.edit ? "data-edit-txn" : "data-detail-txn"}="${esc(t.id)}">
       <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span>
-      <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub"><span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
+      <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub">${txnClock(t)}<span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
       <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button></li>`;
 }
 /* ---------- transaction periods (the list pages by calendar period, not by entry count) ---------- */
@@ -637,7 +677,7 @@ function setPeriod(p) {
 // and a day the user opened or closed keeps that choice (state.dayOpen) across re-renders.
 function feedHTML(list, open = Infinity) {
   const days = [];
-  list.forEach((t) => { const last = days[days.length - 1]; if (last && last.date === t.date) last.items.push(t); else days.push({ date: t.date, items: [t] }); });
+  list.forEach((t) => { const day = txnDay(t), last = days[days.length - 1]; if (last && last.date === day) last.items.push(t); else days.push({ date: day, items: [t] }); });
   return days.map((d, i) => {
     const byDefault = i < open, isOpen = d.date in state.dayOpen ? state.dayOpen[d.date] : byDefault;
     return `<details class="fday" data-day="${esc(d.date)}" data-default="${byDefault ? 1 : 0}" ${isOpen ? "open" : ""}><summary><span class="fdate">${esc(dayLabel(d.date))}</span><span class="fcount">${esc(__("{n} transaction(s)", { n: d.items.length }))}</span><span class="fnet">${d.items.length > 1 ? esc(dayNet(d.items)) : ""}</span></summary><ul class="feed">${d.items.map((t) => feedRow(t)).join("")}</ul></details>`;
@@ -686,7 +726,7 @@ function screenTransactions(v) {
     const p = currentPeriod(), all = filteredTxns();
     // unconfirmed items wait in their own section (oldest first, any date) instead of carrying a state on every row
     const expected = all.filter((t) => t.state === "planned").reverse();
-    const list = all.filter((t) => t.state !== "planned" && t.date >= p.start && t.date <= p.end);
+    const list = all.filter((t) => { const d = txnDay(t); return t.state !== "planned" && d >= p.start && d <= p.end; });
     const modes = Object.keys(PERIOD_L).map((m) => `<button type="button" data-mode="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(PERIOD_L[m]))}</button>`).join("");
     const custom = p.mode === "custom" ? `<span class="prange"><input type="date" id="pStart" value="${esc(p.start)}" aria-label="${esc(__("Start date"))}"> – <input type="date" id="pEnd" value="${esc(p.end)}" aria-label="${esc(__("End date"))}"></span>` : "";
     const head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
@@ -881,6 +921,7 @@ function screenSettings(v) {
       <div class="setrow"><label>${esc(__("Language"))} <select id="setLang">${langOpts}</select></label>
         <label>${esc(__("Default currency"))} <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label>
         <label>${esc(__("Page width"))} <select id="setWidth">${enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())}</select></label>
+        <label>${esc(__("Time zone"))} <select id="setTz"><option value="">${esc(__("Auto (this device · {zone})", { zone: deviceTZ().replace(/_/g, " ") }))}</option>${zoneOptions(state.general && state.general.timeZone)}</select></label>
         <label>${esc(__("Days open by default"))} <select id="setOpenDays">${[...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
       <div class="setlabel">${esc(__("Frequently used currencies"))}</div>
       <div class="curchips">${favCurs().map((c) => `<span class="chip cur${c === defCur() ? " def" : ""}" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="${esc(__("Remove {currency}", { currency: c }))}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}</div>
@@ -908,6 +949,7 @@ function screenSettings(v) {
   $("#setLang").addEventListener("change", (e) => saveGeneral({ language: e.target.value }, () => __("Language saved.")));
   $("#setDefCur").addEventListener("change", (e) => saveGeneral({ defaultCurrency: e.target.value }, () => __("Default currency saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
+  $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
   $("#setOpenDays").addEventListener("change", (e) => { state.dayOpen = {}; saveGeneral({ openDays: parseInt(e.target.value, 10) }, () => __("Days open by default saved.")); });
   $("#setAddCur").addEventListener("change", (e) => { const c = e.target.value; if (c) saveGeneral({ currencies: [...favCurs(), c] }, () => __("{currency} added.", { currency: c })); });
   v.querySelectorAll("[data-cur-del]").forEach((b) => b.addEventListener("click", () => {
@@ -983,7 +1025,10 @@ function openDrawer(type, tagId) {
   $("#fDelete").hidden = true;
   fillSelects();
   $("#txnForm").reset();
-  $("#txnForm").elements.date.value = new Date().toISOString().slice(0, 10);
+  // now, as this device's clock shows it (not UTC: before 08:00 in Taipei that was still yesterday)
+  const now = zoneParts(new Date(), deviceTZ()), el = $("#txnForm").elements;
+  el.date.value = now.date; el.time.value = now.time; $("#fTz").innerHTML = zoneOptions(deviceTZ());
+  syncTz();
   setTxnType(type || "expense", tagId);
   $("#fPlannedNote").hidden = true;
   $("#drawerTitle").textContent = type === "allocate" ? __("Allocate to money box") : __("Add transaction");
@@ -1004,6 +1049,9 @@ function openEditTxn(id) {
   if (mode === "expense" || mode === "income") $("#fExt").value = extAcc(t);
   form.elements.amount.value = decimal(t.amountMinor, t.currency);
   form.elements.date.value = t.date;
+  form.elements.time.value = t.time || "";
+  $("#fTz").innerHTML = zoneOptions(t.tz || deviceTZ());
+  syncTz();
   form.elements.note.value = t.note || "";
   form.elements.memo.value = t.memo || "";
   // an expected transaction is confirmed by saving it here
@@ -1018,6 +1066,9 @@ function openEditTxn(id) {
 }
 function closeDrawer() { $("#drawer").hidden = true; $("#drawerBackdrop").hidden = true; }
 $("#drawerClose").addEventListener("click", closeDrawer);
+// the zone only matters with a time, so it is shown only while a time is entered
+function syncTz() { const el = $("#txnForm").elements; $("#fTzWrap").hidden = !el.time.value; }
+$("#txnForm").elements.time.addEventListener("input", syncTz);
 $("#fDelete").addEventListener("click", async () => { if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
 $("#drawerBackdrop").addEventListener("click", closeDrawer);
 document.querySelectorAll("#typeSeg button").forEach((b) => b.addEventListener("click", () => setTxnType(b.dataset.type)));
@@ -1034,7 +1085,7 @@ $("#txnForm").addEventListener("submit", async (e) => {
     const held = state.data.transactions.filter((t) => t.id !== state.editingTxn && t.type === "allocate" && t.state === "posted" && t.accountId === f.accountId && t.tagId === f.tagId).reduce((n, t) => n + t.amountMinor, 0);
     if (held + toMinor(f.amount, cur) < 0) { msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: tagName(f.tagId), amount: fmt(Math.max(0, held), cur), account: accName(f.accountId) }), "error"); return; }
   }
-  const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", memo: f.memo || "", state: "posted" }; // saving confirms an expected transaction
+  const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", memo: f.memo || "", time: f.time || "", tz: f.time ? f.tz : "", state: "posted" }; // saving confirms an expected transaction
   if (type === "expense" || type === "income") { // stored as a transfer with an external side
     const ext = f.extAccountId || EXT_ID;
     Object.assign(body, { type: "transfer", accountId: "", fromAccountId: type === "expense" ? f.accountId : ext, toAccountId: type === "expense" ? ext : f.accountId });
@@ -1324,6 +1375,7 @@ async function load() {
   } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
+  state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render();
 }
 setLang(pickLang(""));

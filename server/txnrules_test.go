@@ -115,6 +115,42 @@ func TestSignedAllocations(t *testing.T) {
 	}
 }
 
+func TestTransactionTime(t *testing.T) {
+	d := seededData(t)
+	tx := Transaction{Type: "expense", AccountID: "acc-b", AmountMinor: 100, Date: "2026-11-15", Time: "23:30", TZ: "Asia/Taipei"}
+	if err := d.normalizeTransaction(&tx); err != nil || tx.At != "2026-11-15T15:30:00Z" {
+		t.Fatalf("Taipei 23:30: %v %q", err, tx.At)
+	}
+	// the same wall time in Tokyo is an hour earlier in UTC; the stored date stays the local one
+	tokyo := Transaction{Type: "expense", AccountID: "acc-b", AmountMinor: 100, Date: "2026-11-16", Time: "00:30", TZ: "Asia/Tokyo"}
+	if err := d.normalizeTransaction(&tokyo); err != nil || tokyo.At != "2026-11-15T15:30:00Z" || tokyo.Date != "2026-11-16" {
+		t.Fatalf("Tokyo 00:30: %v %+v", err, tokyo)
+	}
+	// daylight saving: New York in July is UTC-4
+	ny := Transaction{Type: "expense", AccountID: "acc-b", AmountMinor: 100, Date: "2026-07-04", Time: "09:00", TZ: "America/New_York"}
+	if err := d.normalizeTransaction(&ny); err != nil || ny.At != "2026-07-04T13:00:00Z" {
+		t.Fatalf("New York: %v %q", err, ny.At)
+	}
+	// date-only: no zone, no instant, even if the client sent them
+	plain := Transaction{Type: "expense", AccountID: "acc-b", AmountMinor: 100, Date: "2026-11-15", TZ: "Asia/Taipei", At: "x"}
+	if err := d.normalizeTransaction(&plain); err != nil || plain.TZ != "" || plain.At != "" {
+		t.Fatalf("date-only: %v %+v", err, plain)
+	}
+	for _, bad := range []Transaction{
+		{Date: "2026-11-15", Time: "24:00", TZ: "Asia/Taipei"},
+		{Date: "2026-11-15", Time: "9:00", TZ: "Asia/Taipei"},
+		{Date: "2026-11-15", Time: "09:00"},
+		{Date: "2026-11-15", Time: "09:00", TZ: "Mars/Olympus"},
+		{Date: "2026-11-15", Time: "09:00", TZ: "Local"},
+		{Date: "2026-13-01"},
+	} {
+		bad.Type, bad.AccountID, bad.AmountMinor = "expense", "acc-b", 100
+		if err := d.normalizeTransaction(&bad); err == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+}
+
 func TestTitleAndMemo(t *testing.T) {
 	d := seededData(t)
 	ok := Transaction{Type: "expense", AccountID: "acc-b", AmountMinor: 100, Note: "  Lunch  ", Memo: "  With Alex.\nSplit later.  "}

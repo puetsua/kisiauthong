@@ -26,7 +26,10 @@ type Transaction struct {
 	State                 string `json:"state"`
 	AmountMinor           int64  `json:"amountMinor"`
 	Currency              string `json:"currency"`
-	Date                  string `json:"date"`
+	Date                  string `json:"date"`           // local date where it happened (YYYY-MM-DD)
+	Time                  string `json:"time,omitempty"` // optional local time "HH:MM" on Date (ADR 0006)
+	TZ                    string `json:"tz,omitempty"`   // IANA zone of Date and Time; set when Time is
+	At                    string `json:"at,omitempty"`   // derived: the instant in UTC (RFC 3339), never stored
 	Note                  string `json:"note"`           // short title shown in lists
 	Memo                  string `json:"memo,omitempty"` // longer free-text note
 	TransactionTemplateID string `json:"transactionTemplateId,omitempty"`
