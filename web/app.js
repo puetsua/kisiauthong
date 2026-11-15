@@ -2,7 +2,7 @@
 // All user-visible strings go through __() / N_() from i18n.js (English source strings).
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { me: null, data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashSel: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
+const state = { me: null, data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashSel: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "", tag: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
 // Money is stored in minor units at each currency's ISO 4217 precision (JPY 0, USD 2, KWD 3…).
 const EXP = {};
 const expOf = (c) => {
@@ -718,6 +718,9 @@ function filteredTxns() {
   if (q) list = list.filter((t) => [t.note, t.memo, lbl(TYPE_L, flow(t)), txnSubtitle(t), fmt(t.amountMinor, t.currency)].join(" ").toLowerCase().includes(q));
   if (f.account) list = list.filter((t) => t.accountId === f.account || t.fromAccountId === f.account || t.toAccountId === f.account);
   if (f.type) list = list.filter((t) => flow(t) === f.type);
+  // "none": spending and income without a category (transfers and allocations never take one)
+  if (f.tag === "none") list = list.filter((t) => !t.tagId && (flow(t) === "expense" || flow(t) === "income"));
+  else if (f.tag) list = list.filter((t) => t.tagId === f.tag);
   return list;
 }
 function screenTransactions(v) {
@@ -725,10 +728,15 @@ function screenTransactions(v) {
   const accOpt = (a) => `<option value="${esc(a.id)}" ${f.account === a.id ? "selected" : ""}>${esc(accName(a.id))}</option>`;
   const accOpts = `<option value="">${esc(__("All accounts"))}</option>` + state.data.accounts.map(accOpt).join("")
     + (state.data.externals.length ? `<optgroup label="${esc(__("External accounts"))}">${state.data.externals.map(accOpt).join("")}</optgroup>` : "");
+  const tagOpt = (t) => `<option value="${esc(t.id)}" ${f.tag === t.id ? "selected" : ""}>${esc(t.name)}</option>`;
+  const tagGroup = (label, tags) => (tags.length ? `<optgroup label="${esc(label)}">${tags.map(tagOpt).join("")}</optgroup>` : "");
+  const tagOpts = `<option value="">${esc(__("All categories"))}</option><option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
+    + tagGroup(__("Categories"), state.data.tags.filter((t) => !isGoal(t))) + tagGroup(__("Money boxes"), state.data.tags.filter(isGoal));
   v.innerHTML = `<div class="filters">
       <input id="fq" type="search" placeholder="${esc(__("Search note, tag, account…"))}" value="${esc(f.q)}">
       <select id="faccount">${accOpts}</select>
       <select id="ftype"><option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}</select>
+      <select id="ftag">${tagOpts}</select>
       <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div>
     <div id="txnResults"></div>`;
   const today = state.data.today;
@@ -782,10 +790,10 @@ function screenTransactions(v) {
     bindActions(box);
     bindDays(box);
   };
-  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value }; drawResults(); };
-  ["faccount", "ftype"].forEach((id) => $("#" + id).addEventListener("change", upd));
+  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, tag: $("#ftag").value }; drawResults(); };
+  ["faccount", "ftype", "ftag"].forEach((id) => $("#" + id).addEventListener("change", upd));
   $("#fq").addEventListener("input", upd);
-  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "" }; render(); });
+  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", tag: "" }; render(); });
   drawResults();
   if (state.scrollToExpected && $("#expectedSec")) $("#expectedSec").scrollIntoView({ block: "start" });
   state.scrollToExpected = false;
