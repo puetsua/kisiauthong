@@ -73,18 +73,26 @@ func TestSettingsFrequentCurrencies(t *testing.T) {
 	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "TWD" {
 		t.Fatalf("default list: %v", s.General.Currencies)
 	}
-	// USD, TWD, JPY use case: normalised, de-duplicated, order kept
+	// USD, TWD, JPY use case: normalised, de-duplicated, default pinned first
 	code, s := doSettings(t, http.MethodPut, `{"general":{"currencies":["usd","TWD"," jpy","USD"]}}`)
-	if code != 200 || strings.Join(s.General.Currencies, ",") != "USD,TWD,JPY" || s.General.DefaultCurrency != "TWD" {
+	if code != 200 || strings.Join(s.General.Currencies, ",") != "TWD,USD,JPY" || s.General.DefaultCurrency != "TWD" {
 		t.Fatalf("set list: %d %+v", code, s.General)
 	}
-	// changing only the default keeps the list
-	if _, s = doSettings(t, http.MethodPut, `{"general":{"defaultCurrency":"JPY"}}`); strings.Join(s.General.Currencies, ",") != "USD,TWD,JPY" || s.General.DefaultCurrency != "JPY" {
+	// a new default moves to the front; the rest keep their order
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"defaultCurrency":"JPY"}}`); strings.Join(s.General.Currencies, ",") != "JPY,TWD,USD" || s.General.DefaultCurrency != "JPY" {
 		t.Fatalf("default-only update: %+v", s.General)
 	}
-	// dropping the default from the list keeps it listed
-	if _, s = doSettings(t, http.MethodPut, `{"general":{"currencies":["USD"]}}`); strings.Join(s.General.Currencies, ",") != "USD,JPY" {
+	// a list without the default still shows it, first
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"currencies":["USD"]}}`); strings.Join(s.General.Currencies, ",") != "JPY,USD" {
 		t.Fatalf("default removed from list: %v", s.General.Currencies)
+	}
+	// an empty list still holds the default
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"currencies":[]}}`); strings.Join(s.General.Currencies, ",") != "JPY" {
+		t.Fatalf("empty list: %v", s.General.Currencies)
+	}
+	// a default that was never on the list is added
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"defaultCurrency":"EUR","currencies":["USD","JPY"]}}`); strings.Join(s.General.Currencies, ",") != "EUR,USD,JPY" {
+		t.Fatalf("unlisted default: %v", s.General.Currencies)
 	}
 }
 
@@ -93,7 +101,7 @@ func TestSettingsLegacyGeneralRowGetsList(t *testing.T) {
 	if err := store.setSetting("general", `{"defaultCurrency":"JPY"}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "TWD,JPY" {
+	if _, s := doSettings(t, http.MethodGet, ""); strings.Join(s.General.Currencies, ",") != "JPY,TWD" {
 		t.Fatalf("legacy row: %+v", s.General)
 	}
 }

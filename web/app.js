@@ -5,7 +5,8 @@ const state = { data: null, dashboard: null, general: null, about: null, customi
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
-const favCurs = () => (state.general && state.general.currencies && state.general.currencies.length ? state.general.currencies : [defCur()]);
+// The default currency is always in the frequently used list, first.
+const favCurs = () => { const d = defCur(), l = (state.general && state.general.currencies) || []; return [d, ...l.filter((c) => c !== d)]; };
 const ALL_CURRENCIES = (() => { try { return Intl.supportedValuesOf("currency"); } catch (e) { return []; } })();
 const CUR_NAMES = (() => { try { return new Intl.DisplayNames([document.documentElement.lang || "en"], { type: "currency" }); } catch (e) { return null; } })();
 const curName = (c) => { try { return CUR_NAMES ? CUR_NAMES.of(c) : c; } catch (e) { return c; } };
@@ -402,7 +403,7 @@ function screenSettings(v) {
   v.innerHTML = `<section class="panel"><h3>General</h3>
       <div class="setrow"><label>Default currency <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label></div>
       <div class="setlabel">Frequently used currencies</div>
-      <div class="curchips">${favCurs().map((c) => `<span class="chip cur" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="Remove ${esc(c)}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}</div>
+      <div class="curchips">${favCurs().map((c) => `<span class="chip cur${c === defCur() ? " def" : ""}" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="Remove ${esc(c)}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}</div>
       <div class="setrow"><select id="setAddCur" aria-label="Add currency"><option value="">+ Add currency…</option>${ALL_CURRENCIES.filter((c) => !favCurs().includes(c)).map((c) => curOption(c, "")).join("")}</select></div></section>
     <section class="panel"><h3>Dashboard</h3>
       <div class="setrow"><button class="smallbtn" id="setCustomize">Customize dashboard</button><button class="smallbtn" id="setDashReset">Reset to default</button></div></section>

@@ -22,6 +22,7 @@ body{margin:0;font-family:"Segoe UI",system-ui,"Noto Sans TC",sans-serif;color:v
 .chip.cur button:hover{background:var(--redbg);color:var(--red)}
 .chip.cur button:disabled{display:none}
 .chip.cur:has(button:disabled){padding-right:10px}
+.chip.cur.def{border-color:var(--green);background:#eef5ef;color:var(--green);font-weight:700}
 a.smallbtn{text-decoration:none;display:inline-block}
 .about-name{font-family:Georgia,"Noto Serif TC",serif;font-size:1.3rem;margin:0 0 8px}
 .panel a{color:var(--green)}

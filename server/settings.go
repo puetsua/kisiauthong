@@ -114,14 +114,14 @@ func (d *DashboardSettings) validate() error {
 func normCurrency(c string) string { return strings.ToUpper(strings.TrimSpace(c)) }
 
 // validate normalises codes and drops duplicates. The default currency is
-// always on the list: it is appended when missing.
+// always on the list and always first; the rest keep the user's order.
 func (g *GeneralSettings) validate() error {
 	g.DefaultCurrency = normCurrency(g.DefaultCurrency)
 	if !currencyRe.MatchString(g.DefaultCurrency) {
 		return fmt.Errorf("defaultCurrency must be a 3-letter ISO 4217 code")
 	}
-	seen := map[string]bool{}
-	list := []string{}
+	seen := map[string]bool{g.DefaultCurrency: true}
+	list := []string{g.DefaultCurrency}
 	for _, c := range g.Currencies {
 		c = normCurrency(c)
 		if !currencyRe.MatchString(c) {
@@ -131,9 +131,6 @@ func (g *GeneralSettings) validate() error {
 			seen[c] = true
 			list = append(list, c)
 		}
-	}
-	if !seen[g.DefaultCurrency] {
-		list = append(list, g.DefaultCurrency)
 	}
 	if len(list) > maxCurrencies {
 		return fmt.Errorf("at most %d frequently used currencies", maxCurrencies)
