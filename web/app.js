@@ -279,7 +279,7 @@ function goalCard(t) {
   const p = t.targetMinor > 0 ? t.savedMinor / t.targetMinor * 100 : 0;
   const allocs = goalAllocations(t.id);
   const total = allocs.reduce((s, [, v]) => s + v, 0) || 1;
-  const colors = ["#14532d", "#4c8a5f", "#9dbfa6", "#c9a86a", "#7a9e8a"];
+  const colors = ["#5b2a86", "#8a5cb8", "#b79ad6", "#c9a86a", "#7d6f99"]; // money-box split per account, theme purples
   const stack = allocs.map(([, val], i) => `<i style="width:${val / total * 100}%;background:${colors[i % colors.length]}"></i>`).join("");
   const where = allocs.map(([id, val]) => `${esc(accName(id))} ${fmt(val, t.currency)}`).join(" · ");
   const head = __("{saved} of {target} · {pct}%", { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency), pct: p.toFixed(0) }) + (t.targetDate ? " · " + __("by {date}", { date: t.targetDate }) : "");
