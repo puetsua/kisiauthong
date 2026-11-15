@@ -96,11 +96,13 @@ func decode(w http.ResponseWriter, r *http.Request, v interface{}) bool {
 func main() {
 	dbPath := os.Getenv("KISIAUTHONG_DB")
 	if dbPath == "" {
+		// default: data/ at the repo root, whether started from server/ or from the root.
+		// An explicit KISIAUTHONG_DB is always used as given, even when the file does not exist yet.
 		dbPath = "../data/kisiauthong.db"
-	}
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		if _, err2 := os.Stat("data/kisiauthong.db"); err2 == nil {
-			dbPath = "data/kisiauthong.db"
+		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+			if _, err2 := os.Stat("data/kisiauthong.db"); err2 == nil {
+				dbPath = "data/kisiauthong.db"
+			}
 		}
 	}
 	var err error
