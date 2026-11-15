@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Only server/ and web/ go into the image build; never data or secrets.
+*
+!server/
+!web/
+server/web/
+server/*.exe
+**/*.db
+**/*.db-*
+**/*_test.go

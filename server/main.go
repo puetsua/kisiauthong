@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -130,9 +131,25 @@ func pathID(r *http.Request) (id, action string, ok bool) {
 }
 
 func main() {
+	addr := listenAddr(os.Getenv("KISIAUTHONG_HOST"), os.Getenv("PORT"))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "version", "-version", "--version":
+			fmt.Println("kisiauthong", appVersion)
+			return
+		case "healthcheck": // for container health checks: the image has no shell or curl
+			os.Exit(healthcheck(addr))
+		default:
+			fmt.Fprintf(os.Stderr, "usage: kisiauthong [version|healthcheck]\nsettings come from environment variables, see README.md\n")
+			os.Exit(2)
+		}
+	}
 	dbPath := os.Getenv("KISIAUTHONG_DB")
+	if dbPath == "" && embeddedWeb != nil {
+		dbPath = filepath.Join("data", "kisiauthong.db") // a release build: data/ in the working directory
+	}
 	if dbPath == "" {
-		// default: data/ at the repo root, whether started from server/ or from the root.
+		// in the repository: data/ at its root, whether started from server/ or from the root.
 		// An explicit KISIAUTHONG_DB is always used as given, even when the file does not exist yet.
 		dbPath = "../data/kisiauthong.db"
 		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -147,8 +164,8 @@ func main() {
 		log.Fatalf("open store: %v", err)
 	}
 
-	webDir := os.Getenv("KISIAUTHONG_WEB")
-	if webDir == "" {
+	webDir := os.Getenv("KISIAUTHONG_WEB") // overrides the built-in web UI of a release build
+	if webDir == "" && embeddedWeb == nil {
 		for _, c := range []string{"../web", "web"} {
 			if _, err := os.Stat(c); err == nil {
 				webDir = c
@@ -156,9 +173,32 @@ func main() {
 			}
 		}
 	}
-	addr := listenAddr(os.Getenv("KISIAUTHONG_HOST"), os.Getenv("PORT"))
-	log.Printf("kisiauthong listening on http://%s (db %s, web %s)", addr, dbPath, webDir)
+	web := webDir
+	if web == "" && embeddedWeb != nil {
+		web = "built in"
+	}
+	log.Printf("kisiauthong %s listening on http://%s (db %s, web %s)", appVersion, addr, dbPath, web)
 	log.Fatal(http.ListenAndServe(addr, newMux(webDir)))
+}
+
+// healthcheck asks the server on addr for /healthz: 0 when it answers ok.
+func healthcheck(addr string) int {
+	host, port, _ := net.SplitHostPort(addr)
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	c := &http.Client{Timeout: 3 * time.Second}
+	res, err := c.Get("http://" + net.JoinHostPort(host, port) + "/healthz")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "healthz:", res.Status)
+		return 1
+	}
+	return 0
 }
 
 // newMux wires every route; tests use it too.
@@ -212,8 +252,11 @@ func newMux(webDir string) *http.ServeMux {
 	// MCP for AI agents, with an API key (ADR 0008)
 	mux.HandleFunc("/mcp", handleMCP)
 
-	if webDir != "" {
+	switch {
+	case webDir != "":
 		mux.Handle("/", http.FileServer(http.Dir(webDir)))
+	case embeddedWeb != nil:
+		mux.Handle("/", http.FileServer(http.FS(embeddedWeb)))
 	}
 	return mux
 }

@@ -14,7 +14,12 @@ import (
 // administrators only. It counts sign-in methods and keys but never shows
 // anything from anyone's books.
 
-const appVersion = "0.1.0"
+// appVersion is set by release builds: -ldflags "-X main.appVersion=v1.2.3".
+var appVersion = "dev"
+
+// defaultSourceURL is where users of this server get its source (AGPL §13);
+// whoever runs a modified version sets KISIAUTHONG_SOURCE_URL to theirs.
+const defaultSourceURL = "https://github.com/puetsua/kisiauthong"
 
 var startedAt = time.Now().UTC()
 

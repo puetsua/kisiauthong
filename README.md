@@ -7,9 +7,23 @@ Platforms: web server (self-hosted), desktop (Windows, Linux, macOS), and Androi
 
 - Portal: open `.docs/index.html` in a browser (local-only, not committed)
 - Use cases: open `.docs/use-cases.html` in a browser (local-only, not committed)
-- Contributor and agent guidance: see `agents.md`
+- Contributor and agent guidance: see `AGENTS.md`
 
-## Run the web app
+## Install
+
+**Docker** (Linux amd64, arm64 and armv7):
+
+```sh
+docker run -d --name kisiauthong -p 127.0.0.1:8080:8080 -v kisiauthong-data:/data ghcr.io/puetsua/kisiauthong:latest
+```
+
+or `docker compose -f deploy/docker-compose.yml up -d`. Your books live in the `kisiauthong-data` volume.
+
+**Download**: each [release](https://github.com/puetsua/kisiauthong/releases) has one archive per system (Windows, macOS, Linux; Intel/AMD and ARM). Unpack it and run `kisiauthong` (`kisiauthong.exe` on Windows): it is a single file with the web UI built in and keeps its data in `data/` under the folder you start it from. `kisiauthong version` prints the version.
+
+Then open http://localhost:8080 and create the first user, who is the administrator. Settings are environment variables, listed in `.env.example`. To reach it from other devices, put it behind an HTTPS reverse proxy and set `KISIAUTHONG_ORIGIN`.
+
+## Develop
 
 ```powershell
 cd server
@@ -18,7 +32,7 @@ go test ./...     # domain tests
 node ../scripts/check-i18n.js   # every UI string translated
 ```
 
-Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. The server listens on `127.0.0.1` only (there is no login yet); set `KISIAUTHONG_HOST=0.0.0.0` to reach it from other devices or a container, and only on a network you trust. Passkeys need a host name, so open the app as `http://localhost:8080` (not `127.0.0.1`) or by its domain; behind a proxy set `KISIAUTHONG_ORIGIN` (e.g. `https://books.example.org`). Set `KISIAUTHONG_SOURCE_URL` to the source repository of the code you run; it is shown under Settings → About (AGPL §13). Desktop and Android clients are future plans.
+Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. The server listens on `127.0.0.1` only; set `KISIAUTHONG_HOST=0.0.0.0` to reach it from other devices or a container, ideally behind HTTPS. Passkeys need a host name, so open the app as `http://localhost:8080` (not `127.0.0.1`) or by its domain; behind a proxy set `KISIAUTHONG_ORIGIN` (e.g. `https://books.example.org`). Settings → About links to the source (AGPL §13): this repository by default; if you run a modified version, set `KISIAUTHONG_SOURCE_URL` to yours. Desktop and Android clients are future plans.
 
 Several people can use one server, each with private books. On first visit the app asks for a username and password: on a new install that creates the first user (an administrator) with sample data; on a database from before users existed it claims the existing books. Sign out and My account (profile, password, two-step verification with an authenticator app and recovery codes, passkeys, a photo or colour for the avatar, API keys for scripts and agents with chosen permissions and expiry) are under the avatar at the top right; administrators also get an Administration area, entered from the foot of the sidebar, to add, reset and remove users and see how the server is doing (see `docs/decisions/0007-users-and-sign-in.md`).
 
@@ -35,6 +49,10 @@ Every money movement is a transfer between accounts. Spending is a transfer to a
 Tags are categories and money boxes. Give a category a limit to make it a budget; the Tags page shows budgets, categories and money boxes as cards (see `docs/decisions/0004-tag-kinds-and-budget-periods.md`).
 
 Settings (sidebar → Settings): language (English or 繁體中文（台灣）, default follows the browser), page width (default, wide or full width), number format (1,074,958, groups of four 107,4958, or plain 1074958), time zone (Auto follows the device, or a fixed zone), how many of the newest days the transaction list shows expanded (default 7; each day collapses; the list pages by week, month or a custom range of up to 180 days), default currency and a short list of frequently used currencies (e.g. USD, TWD, JPY) shown first in currency pickers, with every ISO 4217 currency still available below them; dashboard layout (Dashboard → Customize edits the dashboard in place: add widgets from the side pane — any widget can be added more than once, e.g. one Accounts widget per group of accounts — drag or ↑ ↓ to reorder, remove, and set each widget's width, title, row count, columns (show, hide and reorder for the Budgets, Spending and Accounts tables) and which accounts / budgets / money boxes / currencies it shows; works with touch), JSON export of all data (`GET /api/export`), and About.
+
+### Releases and checks
+
+GitHub Actions run the tests (`ci.yml`) and vulnerability scans (`security.yml`: govulncheck, Trivy on the repository and the image, CodeQL) on every push and weekly. Pushing a tag such as `v0.1.0` (`v0.2.0-beta.1` for a pre-release) runs `release.yml`: tests, the downloads built by `scripts/build-release.sh`, the multi-platform image on `ghcr.io/puetsua/kisiauthong`, and the GitHub release.
 
 ## License
 

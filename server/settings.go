@@ -356,7 +356,10 @@ func (s *Book) loadSettings() (Settings, error) {
 	if out.Notifications.Dismissed == nil {
 		out.Notifications.Dismissed = []string{}
 	}
-	out.About.SourceURL = os.Getenv("KISIAUTHONG_SOURCE_URL")
+	out.About.SourceURL = os.Getenv("KISIAUTHONG_SOURCE_URL") // a modified version links its own source (AGPL §13)
+	if out.About.SourceURL == "" {
+		out.About.SourceURL = defaultSourceURL
+	}
 	return out, nil
 }
 

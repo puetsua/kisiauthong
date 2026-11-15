@@ -36,6 +36,8 @@ pnpm-debug.log*
 /server/bin/
 /server/*.exe
 /server/coverage.out
+# release builds copy ../web here to embed it
+/server/web/
 vendor/
 
 # Rust / Tauri desktop
