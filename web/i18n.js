@@ -18,6 +18,7 @@ const I18N = {
     "{amount} left": "剩 {amount}", "{amount} over": "超支 {amount}", "Starts {date}": "{date} 開始", "Ended {date}": "{date} 已結束",
     "{amount} a day for {n} day(s)": "每天 {amount}，還有 {n} 天", "{n} day(s) left": "還有 {n} 天", "of {limit}": "／{limit}",
     "{amount} this month": "本月 {amount}", "Nothing spent this month": "本月沒有支出", "Categories": "分類",
+    "Language & region": "語言與地區", "Money": "金額", "Display": "顯示", "Layout": "版面", "Export all data": "匯出所有資料",
     "Number format": "數字格式", "Groups of three (1,074,958)": "三位一組（1,074,958）", "Groups of four (107,4958)": "四位一組（107,4958）",
     "Plain (1074958)": "不分位（1074958）", "Number format saved.": "已儲存數字格式。",
     "Time": "時間", "Time zone": "時區", "Auto (this device · {zone})": "自動（這台裝置 · {zone}）", "Time zone saved.": "已儲存時區。",
@@ -97,7 +98,7 @@ const I18N = {
     // confirm
     "Confirm expected transaction": "確認預計交易", "Delete": "刪除",
     // settings
-    "General": "一般", "Language": "語言", "Browser default": "依瀏覽器設定", "Language saved.": "語言已儲存。",
+    "Language": "語言", "Browser default": "依瀏覽器設定", "Language saved.": "語言已儲存。",
     "Page width": "頁面寬度", "Default": "預設", "Wide": "加寬", "Page width saved.": "頁面寬度已儲存。",
     "Default currency": "預設幣別", "Default currency saved.": "預設幣別已儲存。", "Frequently used currencies": "常用幣別",
     "Add currency": "新增幣別", "+ Add currency…": "＋ 新增幣別…", "Remove {currency}": "移除 {currency}", "All currencies": "所有幣別",

@@ -926,30 +926,54 @@ function screenTags(v) {
   bindDetails(v);
 }
 
+// Settings: sections of label | control rows; on wide screens a sticky list of the sections.
+const SET_ICON = {
+  region: ACCOUNT_ICONS.globe[1],
+  money: ACCOUNT_ICONS.coins[1],
+  display: "M3 4h18v16H3zM3 9h18M9 9v11",
+  dashboard: "M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z",
+  data: "M12 3v12M7 10l5 5 5-5M4 19h16",
+  about: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7h.01",
+};
+const setIcon = (k) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="${SET_ICON[k]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 function screenSettings(v) {
   const src = state.about && state.about.sourceUrl;
   const pref = (state.general && state.general.language) || "";
   const langOpts = [["", __("Browser default")], ...Object.entries(LANGS)].map(([k, name]) => `<option value="${esc(k)}" ${k === pref ? "selected" : ""} ${k ? `lang="${esc(k)}"` : ""}>${esc(name)}</option>`).join("");
-  v.innerHTML = `<section class="panel"><h3>${esc(__("General"))}</h3>
-      <div class="setrow"><label>${esc(__("Language"))} <select id="setLang">${langOpts}</select></label>
-        <label>${esc(__("Default currency"))} <select id="setDefCur">${favCurs().map((c) => curOption(c, defCur())).join("")}</select></label>
-        <label>${esc(__("Number format"))} <select id="setNumFmt">${enumOptions(NUMFMT_L, Object.keys(NUMFMT_L), numberFormat())}</select></label>
-        <label>${esc(__("Page width"))} <select id="setWidth">${enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())}</select></label>
-        <label>${esc(__("Time zone"))} <select id="setTz"><option value="">${esc(__("Auto (this device · {zone})", { zone: deviceTZ().replace(/_/g, " ") }))}</option>${zoneOptions(state.general && state.general.timeZone)}</select></label>
-        <label>${esc(__("Days open by default"))} <select id="setOpenDays">${[...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
-      <div class="setlabel">${esc(__("Frequently used currencies"))}</div>
-      <div class="curchips">${favCurs().map((c) => `<span class="chip cur${c === defCur() ? " def" : ""}" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="${esc(__("Remove {currency}", { currency: c }))}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}</div>
-      <div class="setrow"><select id="setAddCur" aria-label="${esc(__("Add currency"))}"><option value="">${esc(__("+ Add currency…"))}</option>${ALL_CURRENCIES.filter((c) => !favCurs().includes(c)).map((c) => curOption(c, "")).join("")}</select></div></section>
-    <section class="panel"><h3>${esc(__("Dashboard"))}</h3>
-      <div class="setrow"><button class="smallbtn" id="setCustomize">${esc(__("Customize dashboard"))}</button><button class="smallbtn" id="setDashReset">${esc(__("Reset to default"))}</button></div></section>
-    <section class="panel"><h3>${esc(__("Data"))}</h3>
-      <div class="setrow"><a class="smallbtn" href="/api/export" download>${esc(__("Export JSON"))}</a></div></section>
-    <section class="panel"><h3>${esc(__("About"))}</h3>
-      <p class="about-name"><span lang="nan-Hant-TW">記數通</span> KiSiauThong</p>
-      ${detailTable([
-        [N_("License"), '<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0-or-later</a>'],
-        [N_("Source"), src ? `<a href="${esc(src)}" target="_blank" rel="noopener">${esc(src)}</a>` : `<span class="muted">${esc(__("Set KISIAUTHONG_SOURCE_URL"))}</span>`],
-      ])}</section>`;
+  const row = (label, control, forId) => `<div class="srow"><${forId ? `label for="${forId}"` : "span"} class="sl">${esc(label)}</${forId ? "label" : "span"}><div class="sc">${control}</div></div>`;
+  const select = (id, opts) => `<select id="${id}">${opts}</select>`;
+  const SECTIONS = [
+    ["region", __("Language & region"), [
+      row(__("Language"), select("setLang", langOpts), "setLang"),
+      row(__("Time zone"), select("setTz", `<option value="">${esc(__("Auto (this device · {zone})", { zone: deviceTZ().replace(/_/g, " ") }))}</option>${zoneOptions(state.general && state.general.timeZone)}`), "setTz"),
+      row(__("Number format"), select("setNumFmt", enumOptions(NUMFMT_L, Object.keys(NUMFMT_L), numberFormat())), "setNumFmt"),
+    ]],
+    ["money", __("Money"), [
+      row(__("Default currency"), select("setDefCur", favCurs().map((c) => curOption(c, defCur())).join("")), "setDefCur"),
+      row(__("Frequently used currencies"), `<div class="curchips">${favCurs().map((c) => `<span class="chip cur${c === defCur() ? " def" : ""}" title="${esc(curName(c))}">${esc(c)}<button type="button" data-cur-del="${esc(c)}" aria-label="${esc(__("Remove {currency}", { currency: c }))}" ${c === defCur() ? "disabled" : ""}>×</button></span>`).join("")}
+        <select id="setAddCur" class="addchip" aria-label="${esc(__("Add currency"))}"><option value="">${esc(__("+ Add currency…"))}</option>${ALL_CURRENCIES.filter((c) => !favCurs().includes(c)).map((c) => curOption(c, "")).join("")}</select></div>`),
+    ]],
+    ["display", __("Display"), [
+      row(__("Page width"), select("setWidth", enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())), "setWidth"),
+      row(__("Days open by default"), select("setOpenDays", [...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")), "setOpenDays"),
+    ]],
+    ["dashboard", __("Dashboard"), [
+      row(__("Layout"), `<div class="sbtns"><button class="smallbtn" id="setCustomize">${esc(__("Customize dashboard"))}</button><button class="smallbtn" id="setDashReset">${esc(__("Reset to default"))}</button></div>`),
+    ]],
+    ["data", __("Data"), [
+      row(__("Export all data"), `<div class="sbtns"><a class="smallbtn" href="/api/export" download>${esc(__("Export JSON"))}</a></div>`),
+    ]],
+    ["about", __("About"), [
+      `<div class="sabout"><span class="slogo" lang="nan-Hant-TW">記數通</span><span><b>KiSiauThong</b></span></div>`,
+      row(__("License"), '<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0-or-later</a>'),
+      row(__("Source"), src ? `<a href="${esc(src)}" target="_blank" rel="noopener">${esc(src)}</a>` : `<span class="muted">${esc(__("Set KISIAUTHONG_SOURCE_URL"))}</span>`),
+    ]],
+  ];
+  v.innerHTML = `<div class="settings">
+    <nav class="snav" aria-label="${esc(__("Settings"))}">${SECTIONS.map(([k, title]) => `<button type="button" data-goto="${k}">${setIcon(k)}${esc(title)}</button>`).join("")}</nav>
+    <div class="sbody">${SECTIONS.map(([k, title, rows]) => `<section class="ssec" id="set-${k}"><h3>${esc(title)}</h3><div class="scard">${rows.join("")}</div></section>`).join("")}</div></div>`;
+  // the router owns location.hash, so section links scroll instead of navigating
+  v.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => $("#set-" + b.dataset.goto).scrollIntoView({ behavior: "smooth", block: "start" })));
   const saveGeneral = async (patch, done) => {
     try {
       const s = await put("/api/settings", { general: patch });
