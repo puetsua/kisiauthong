@@ -1724,7 +1724,7 @@ async function drawKeys(created) {
   const fresh = created ? `<div class="newkey" role="status"><b>${esc(__("Copy this key now. It will not be shown again."))}</b>
       <div class="keyrow"><code id="newKeyText">${esc(created.key)}</code><button class="smallbtn" type="button" id="newKeyCopy">${esc(__("Copy"))}</button></div>
       <p class="muted small">${esc(__("Send it as a header:"))} <code>Authorization: Bearer ${esc(created.key.slice(0, 8))}…</code></p>
-      ${mcpHint()}</div>` : "";
+      ${mcpHint(created.key)}</div>` : "";
   card.innerHTML = fresh + (list.length ? `<ul class="keylist">${list.map((k) => {
       const expired = k.expiresAt && k.expiresAt < new Date().toISOString();
       return `<li><span class="kmain"><b>${esc(k.name)}</b><code>${esc(k.hint)}</code>
@@ -1739,6 +1739,8 @@ async function drawKeys(created) {
       <button class="primarybtn" type="submit">${esc(__("Create key"))}</button></form>`;
   const copy = $("#newKeyCopy");
   if (copy) copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(created.key); msg(__("Copied.")); } catch (e) { getSelection().selectAllChildren($("#newKeyText")); } });
+  const mcpCopy = $("#mcpCopy");
+  if (mcpCopy) mcpCopy.addEventListener("click", async () => { try { await navigator.clipboard.writeText($("#mcpCmd").textContent); msg(__("Copied.")); } catch (e) { getSelection().selectAllChildren($("#mcpCmd")); } });
   card.querySelectorAll("[data-key-del]").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm(__("Revoke this key? Anything using it stops working at once."))) return;
     try { await api("/api/me/keys/" + encodeURIComponent(b.dataset.keyDel), { method: "DELETE" }); msg(__("Key revoked.")); drawKeys(); } catch (e) { errMsg(e); }
@@ -1751,7 +1753,12 @@ async function drawKeys(created) {
     catch (err) { errMsg(err); }
   });
 }
-const mcpHint = () => "";
+// how an AI agent reaches the books through MCP with this key
+const mcpHint = (key) => {
+  const url = location.origin + "/mcp";
+  return `<p class="muted small">${esc(__("For AI agents (MCP):"))} <code>${esc(url)}</code></p>
+      <div class="keyrow"><code id="mcpCmd">claude mcp add --transport http kisiauthong ${esc(url)} --header "Authorization: Bearer ${esc(key)}"</code><button class="smallbtn" type="button" id="mcpCopy">${esc(__("Copy"))}</button></div>`;
+};
 
 /* ---------- routing ---------- */
 const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount] };

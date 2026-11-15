@@ -197,6 +197,9 @@ func newMux(webDir string) *http.ServeMux {
 	mux.HandleFunc("/api/templates/", api(ScopeTemplates, handleTemplate))
 	mux.HandleFunc("/api/generate", api(ScopeTemplates, handleGenerate))
 
+	// MCP for AI agents, with an API key (ADR 0008)
+	mux.HandleFunc("/mcp", handleMCP)
+
 	if webDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(webDir)))
 	}

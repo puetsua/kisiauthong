@@ -20,7 +20,15 @@ node ../scripts/check-i18n.js   # every UI string translated
 
 Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. The server listens on `127.0.0.1` only (there is no login yet); set `KISIAUTHONG_HOST=0.0.0.0` to reach it from other devices or a container, and only on a network you trust. Passkeys need a host name, so open the app as `http://localhost:8080` (not `127.0.0.1`) or by its domain; behind a proxy set `KISIAUTHONG_ORIGIN` (e.g. `https://books.example.org`). Set `KISIAUTHONG_SOURCE_URL` to the source repository of the code you run; it is shown under Settings → About (AGPL §13). Desktop and Android clients are future plans.
 
-Several people can use one server, each with private books. On first visit the app asks for a username and password: on a new install that creates the first user (an administrator) with sample data; on a database from before users existed it claims the existing books. Sign out and My account (profile, password, two-step verification with an authenticator app and recovery codes, passkeys, a photo or colour for the avatar, API keys for scripts and agents with chosen permissions and expiry; administrators also add, reset and remove users) are under the avatar. An API key is sent as `Authorization: Bearer kst_…` (see `docs/decisions/0008-api-keys-and-mcp.md`) at the top right (see `docs/decisions/0007-users-and-sign-in.md`).
+Several people can use one server, each with private books. On first visit the app asks for a username and password: on a new install that creates the first user (an administrator) with sample data; on a database from before users existed it claims the existing books. Sign out and My account (profile, password, two-step verification with an authenticator app and recovery codes, passkeys, a photo or colour for the avatar, API keys for scripts and agents with chosen permissions and expiry; administrators also add, reset and remove users) are under the avatar at the top right (see `docs/decisions/0007-users-and-sign-in.md`).
+
+An API key is sent as `Authorization: Bearer kst_…` to the REST API, or used by an AI agent through MCP at `/mcp` (Streamable HTTP), where it gets tools to list accounts, categories, money boxes, budgets, transactions and spending, and, if the key allows, to add, change and delete transactions, create accounts and tags and generate due recurring transactions. For Claude Code:
+
+```sh
+claude mcp add --transport http kisiauthong http://localhost:8080/mcp --header "Authorization: Bearer kst_…"
+```
+
+See `docs/decisions/0008-api-keys-and-mcp.md`.
 
 Every money movement is a transfer between accounts. Spending is a transfer to an *external* account and income a transfer from one: the built-in "External" account by default, or one you add (an employer, a shop) under Accounts → External accounts. The add-transaction form keeps simple Expense / Income tabs for this (see `docs/decisions/0002-external-accounts.md`).
 

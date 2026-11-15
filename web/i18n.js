@@ -21,7 +21,7 @@ const I18N = {
     "API keys": "API 金鑰", "Read your books": "讀取你的帳本", "Add and edit transactions": "新增與編輯交易", "Add and edit accounts": "新增與編輯帳戶",
     "Add and edit categories and money boxes": "新增與編輯分類和存錢筒", "Add and edit templates, generate due ones": "新增與編輯範本、產生到期交易",
     "Change settings": "變更設定", "Read": "讀取", "Never": "永不", "30 days": "30 天", "90 days": "90 天", "1 year": "1 年",
-    "Copy this key now. It will not be shown again.": "請立即複製這把金鑰，之後不會再顯示。", "Send it as a header:": "以標頭傳送：",
+    "Copy this key now. It will not be shown again.": "請立即複製這把金鑰，之後不會再顯示。", "Send it as a header:": "以標頭傳送：", "For AI agents (MCP):": "AI 助理（MCP）：",
     "Created {date}": "{date} 建立", "Never used": "從未使用", "Expired {date}": "{date} 已過期", "Expires {date}": "{date} 到期",
     "Revoke": "撤銷", "Create a key": "建立金鑰", "Name, e.g. Budget agent": "名稱，例如：預算助理", "Key name": "金鑰名稱",
     "Permissions": "權限", "Expires": "到期", "Create key": "建立金鑰",
