@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, customizing: false, dashDraft: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "", state: "" } };
+const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "", state: "" } };
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
+const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
 const toMinor = (a, c) => Math.round(parseFloat(a || 0) * Math.pow(10, expOf(c)));
 function fmt(minor, currency) {
-  const e = expOf(currency || "TWD"), v = (minor || 0) / Math.pow(10, e);
+  const e = expOf(currency || defCur()), v = (minor || 0) / Math.pow(10, e);
   return (currency || "") + " " + v.toLocaleString("en-US", { minimumFractionDigits: e, maximumFractionDigits: e });
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -19,9 +20,9 @@ async function api(path, opts) {
 }
 const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
 const put = (path, body) => api(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
-const decimal = (minor, currency) => ((minor || 0) / Math.pow(10, expOf(currency || "TWD"))).toFixed(expOf(currency || "TWD"));
+const decimal = (minor, currency) => ((minor || 0) / Math.pow(10, expOf(currency || defCur()))).toFixed(expOf(currency || defCur()));
 const accName = (id) => (state.data.accounts.find((a) => a.id === id) || {}).name || "—";
-const accCur = (id) => (state.data.accounts.find((a) => a.id === id) || {}).currency || "TWD";
+const accCur = (id) => (state.data.accounts.find((a) => a.id === id) || {}).currency || defCur();
 const tagName = (id) => (state.data.tags.find((t) => t.id === id) || {}).name || "—";
 const signed = (t) => t.type === "income" ? "+" : (t.type === "expense" ? "−" : "");
 const barCls = (p) => p >= 100 ? "over" : p >= 80 ? "warn" : "";
@@ -267,6 +268,48 @@ function screenTags(v) {
   bindDetails(v);
 }
 
+function screenSettings(v) {
+  const src = state.about && state.about.sourceUrl;
+  v.innerHTML = `<section class="panel"><h3>General</h3>
+      <form id="generalForm" class="setrow">
+        <label>Default currency <input name="defaultCurrency" value="${esc(defCur())}" maxlength="3" pattern="[A-Za-z]{3}" required autocomplete="off"></label>
+        <button class="smallbtn" type="submit">Save</button>
+      </form></section>
+    <section class="panel"><h3>Dashboard</h3>
+      <div class="setrow"><button class="smallbtn" id="setCustomize">Customize dashboard</button><button class="smallbtn" id="setDashReset">Reset to default</button></div></section>
+    <section class="panel"><h3>Data</h3>
+      <div class="setrow"><a class="smallbtn" href="/api/export" download>Export JSON</a></div></section>
+    <section class="panel"><h3>About</h3>
+      <p class="about-name"><span lang="nan-Hant-TW">記數通</span> KiSiauThong</p>
+      ${detailTable([
+        ["License", '<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0-or-later</a>'],
+        ["Source", src ? `<a href="${esc(src)}" target="_blank" rel="noopener">${esc(src)}</a>` : '<span class="muted">Set KISIAUTHONG_SOURCE_URL</span>'],
+      ])}</section>`;
+  $("#generalForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const cur = e.target.elements.defaultCurrency.value.trim().toUpperCase();
+    try {
+      const s = await put("/api/settings", { general: { defaultCurrency: cur } });
+      state.general = s.general;
+      msg("Settings saved.");
+      render();
+    } catch (err) { msg("Error: " + err.message); }
+  });
+  $("#setCustomize").addEventListener("click", () => {
+    state.dashDraft = JSON.parse(JSON.stringify(dashLayout()));
+    state.customizing = true;
+    location.hash = "#dashboard";
+  });
+  $("#setDashReset").addEventListener("click", async () => {
+    if (!confirm("Reset the dashboard to its default layout?")) return;
+    try {
+      const s = await put("/api/settings", { dashboard: DASH_DEFAULT });
+      state.dashboard = s.dashboard;
+      msg("Dashboard reset.");
+    } catch (err) { msg("Error: " + err.message); }
+  });
+}
+
 /* ---------- drawer, dialogs, actions ---------- */
 function fillSelects() {
   const acc = state.data.accounts.map((a) => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.currency)})</option>`).join("");
@@ -341,7 +384,7 @@ function openAccountDialog(editId) {
   openDialog(a ? "Edit account" : "New account", dialogForm(`
     <label>Name <input name="name" required placeholder="Savings A" value="${a ? esc(a.name) : ""}"></label>
     <label>Kind <select name="kind">${["bank", "savings", "cash", "credit_card", "ewallet", "investment", "loan"].map((k) => `<option ${a && a.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label>
-    <label>Currency <input name="currency" value="${a ? esc(a.currency) : "TWD"}" maxlength="3" required></label>
+    <label>Currency <input name="currency" value="${a ? esc(a.currency) : esc(defCur())}" maxlength="3" required></label>
     <label>Opening balance <input name="opening" type="number" step="0.01" value="${a ? decimal(a.openingBalanceMinor, a.currency) : "0"}"></label>
     <label>Credit limit (cards only) <input name="creditLimit" type="number" step="0.01" value="${a && a.creditLimitMinor ? decimal(a.creditLimitMinor, a.currency) : ""}"></label>`, a ? "Save changes" : "Add account"));
   $("#dialogForm").addEventListener("submit", async (e) => {
@@ -362,13 +405,13 @@ function openTagDialog(kind, editId) {
   openDialog(t ? "Edit tag" : k === "goal" ? "New money box (goal tag)" : k === "category" ? "New budget (category tag)" : "New tag", dialogForm(`
     <label>Name <input name="name" required placeholder="${k === "goal" ? "House fund" : "Food"}" value="${t ? esc(t.name) : ""}"></label>
     <label>Kind <select name="kind">${["category", "goal", "label", "payee"].map((x) => `<option ${k === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
-    <label>Monthly limit (category, optional) <input name="limit" type="number" step="0.01" value="${t && t.limitMinor !== undefined ? decimal(t.limitMinor, t.currency || "TWD") : ""}"></label>
-    <label>Target (goal, optional) <input name="target" type="number" step="0.01" value="${t && t.targetMinor !== undefined ? decimal(t.targetMinor, t.currency || "TWD") : ""}"></label>
+    <label>Monthly limit (category, optional) <input name="limit" type="number" step="0.01" value="${t && t.limitMinor !== undefined ? decimal(t.limitMinor, t.currency || defCur()) : ""}"></label>
+    <label>Target (goal, optional) <input name="target" type="number" step="0.01" value="${t && t.targetMinor !== undefined ? decimal(t.targetMinor, t.currency || defCur()) : ""}"></label>
     <label>Target date (goal) <input name="targetDate" type="date" value="${t ? esc(t.targetDate || "") : ""}"></label>
-    <label>Currency <input name="currency" value="${t ? esc(t.currency || "TWD") : "TWD"}" maxlength="3"></label>`, t ? "Save changes" : "Add tag"));
+    <label>Currency <input name="currency" value="${t ? esc(t.currency || defCur()) : esc(defCur())}" maxlength="3"></label>`, t ? "Save changes" : "Add tag"));
   $("#dialogForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.target).entries()), cur = (f.currency || "TWD").toUpperCase();
+    const f = Object.fromEntries(new FormData(e.target).entries()), cur = (f.currency || defCur()).toUpperCase();
     const body = { name: f.name, kind: f.kind, currency: cur };
     if (f.limit) { body.limitMinor = toMinor(f.limit, cur); body.cycle = "monthly"; }
     if (f.target) body.targetMinor = toMinor(f.target, cur);
@@ -500,7 +543,7 @@ async function generateDue() {
 $("#dueBtn").addEventListener("click", () => { location.hash = "#transactions"; state.filter.state = "planned"; render(); });
 
 /* ---------- routing ---------- */
-const SCREENS = { dashboard: ["Dashboard", screenDashboard], transactions: ["Transactions", screenTransactions], accounts: ["Accounts", screenAccounts], budgets: ["Budgets", screenBudgets], moneyboxes: ["Money boxes", screenMoneyboxes], templates: ["Templates", screenTemplates], tags: ["Tags", screenTags] };
+const SCREENS = { dashboard: ["Dashboard", screenDashboard], transactions: ["Transactions", screenTransactions], accounts: ["Accounts", screenAccounts], budgets: ["Budgets", screenBudgets], moneyboxes: ["Money boxes", screenMoneyboxes], templates: ["Templates", screenTemplates], tags: ["Tags", screenTags], settings: ["Settings", screenSettings] };
 function currentScreen() { const h = location.hash.replace("#", ""); return SCREENS[h] ? h : "dashboard"; }
 function render() {
   const key = currentScreen();
@@ -517,7 +560,9 @@ async function load() {
   try {
     const s = await api("/api/settings");
     state.dashboard = s.dashboard;
-  } catch (e) { /* default layout */ }
+    state.general = s.general;
+    state.about = s.about;
+  } catch (e) { msg("Settings unavailable, using defaults: " + e.message); }
   render();
 }
 load().catch((e) => { msg("Failed to load: " + e.message); });

@@ -13,7 +13,7 @@ This project is licensed under the **GNU Affero General Public License v3.0 or l
 
 ## 1. What this project is
 
-**kisiauthong** is a self-hostable personal bookkeeping / personal-finance application.
+**kisiauthong** (記數通, *KiSiauThong*; repo/package name `kisiauthong`) is a self-hostable personal bookkeeping / personal-finance application.
 
 Users record and organise their own financial life:
 

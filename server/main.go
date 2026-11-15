@@ -109,56 +109,8 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
-	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		switch r.Method {
-		case http.MethodGet:
-			v, ok, err := store.getSetting("dashboard")
-			if err != nil {
-				writeErr(w, 500, err.Error())
-				return
-			}
-			if !ok {
-				v = `{"order":["balances","budgets","expected","moneyboxes","accounts","recent"],"hidden":[]}`
-			}
-			var parsed interface{}
-			if err := json.Unmarshal([]byte(v), &parsed); err != nil {
-				writeErr(w, 500, "stored dashboard setting is invalid JSON")
-				return
-			}
-			writeJSON(w, 200, map[string]interface{}{"dashboard": parsed})
-		case http.MethodPut:
-			var body struct {
-				Dashboard json.RawMessage `json:"dashboard"`
-			}
-			if !decode(w, r, &body) {
-				return
-			}
-			var dash struct {
-				Order  []string `json:"order"`
-				Hidden []string `json:"hidden"`
-			}
-			if err := json.Unmarshal(body.Dashboard, &dash); err != nil {
-				writeErr(w, 400, "dashboard must be {order:[], hidden:[]}")
-				return
-			}
-			known := map[string]bool{"balances": true, "budgets": true, "expected": true, "moneyboxes": true, "accounts": true, "recent": true}
-			for _, id := range append(append([]string{}, dash.Order...), dash.Hidden...) {
-				if !known[id] {
-					writeErr(w, 400, "unknown dashboard widget: "+id)
-					return
-				}
-			}
-			if err := store.setSetting("dashboard", string(body.Dashboard)); err != nil {
-				writeErr(w, 500, err.Error())
-				return
-			}
-			writeJSON(w, 200, map[string]interface{}{"dashboard": dash})
-		default:
-			writeErr(w, 405, "GET or PUT only")
-		}
-	})
+	mux.HandleFunc("/api/settings", handleSettings)
+	mux.HandleFunc("/api/export", handleExport)
 	mux.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
 		store.mu.Lock()
 		defer store.mu.Unlock()

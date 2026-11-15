@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-# kisiauthong
+# 記數通 KiSiauThong
 
 Self-hosted personal bookkeeping: monthly budgets, billing cycles for memberships and bills, bank and wallet balances, multi-currency wallets (e.g. JPY beside TWD), credit card usage, and money boxes for future plans such as travel.
 
@@ -17,7 +17,9 @@ go run .          # http://localhost:8080  (SQLite at ../data/kisiauthong.db, se
 go test ./...     # domain tests
 ```
 
-Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. Desktop and Android clients are future plans.
+Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. Set `KISIAUTHONG_SOURCE_URL` to the source repository of the code you run; it is shown under Settings → About (AGPL §13). Desktop and Android clients are future plans.
+
+Settings (sidebar → Settings): default currency for new accounts and tags, dashboard layout, JSON export of all data (`GET /api/export`), and About.
 
 ## License
 
