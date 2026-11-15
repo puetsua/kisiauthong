@@ -2,7 +2,7 @@
 // All user-visible strings go through __() / N_() from i18n.js (English source strings).
 "use strict";
 const $ = (s) => document.querySelector(s);
-const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashOpen: [], dragId: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
+const state = { data: null, dashboard: null, general: null, about: null, customizing: false, dashDraft: null, dashSel: null, drag: null, txnType: "expense", editingTxn: null, filter: { q: "", account: "", type: "" }, period: null, dayOpen: {}, dismissed: [], notifOpen: false };
 const EXP = { JPY: 0, KRW: 0 };
 const expOf = (c) => (c in EXP ? EXP[c] : 2);
 const defCur = () => (state.general && state.general.defaultCurrency) || "TWD";
@@ -185,93 +185,147 @@ function setWidgetOpt(id, key, val) {
   if (val === undefined || val === "" || (Array.isArray(val) && !val.length)) delete o[key]; else o[key] = val;
   if (Object.keys(o).length) ws[id] = o; else delete ws[id];
 }
-function dashEditorRow(id, i, draft) {
-  const w = widgetDef(id), o = draft.widgets[id] || {}, n = draft.order.length, label = widgetLabel(id);
+// Dashboard editor: the dashboard itself is the editing surface (left); the pane on the right
+// lists widgets that are not on it, or the settings of the selected one.
+const GEAR = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.4 7.4 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 2.6-1.5l2.4 1 2-3.4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`;
+const ARROW = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const UP = ARROW("M12 19V5M6 11l6-6 6 6"), DOWN = ARROW("M12 5v14M6 13l6 6 6-6");
+const visibleIds = (draft) => draft.order.filter((id) => !draft.hidden.includes(id));
+function dashTile(id, draft) {
+  const o = draft.widgets[id] || {}, name = o.title || widgetLabel(id), vis = visibleIds(draft), i = vis.indexOf(id);
+  return `<section class="panel dw edit${o.size === "half" ? " half" : ""}${state.dashSel === id ? " sel" : ""}" draggable="true" data-tile="${esc(id)}">
+    <div class="tilebar"><span class="grip" aria-hidden="true">⠿</span><button type="button" class="tname" data-tile-edit="${esc(id)}">${esc(name)}</button>
+      <button type="button" class="iconbtn" data-tile-move="-1" aria-label="${esc(__("Move {widget} earlier", { widget: name }))}" ${i === 0 ? "disabled" : ""}>${UP}</button>
+      <button type="button" class="iconbtn" data-tile-move="1" aria-label="${esc(__("Move {widget} later", { widget: name }))}" ${i === vis.length - 1 ? "disabled" : ""}>${DOWN}</button>
+      <button type="button" class="iconbtn" data-tile-edit="${esc(id)}" aria-label="${esc(__("Settings for {widget}", { widget: name }))}" title="${esc(__("Settings"))}">${GEAR}</button>
+      <button type="button" class="iconbtn" data-tile-remove aria-label="${esc(__("Remove {widget}", { widget: name }))}" title="${esc(__("Remove"))}">✕</button></div>
+    <div class="tilebody" inert>${widgetBody(id, o)}</div></section>`;
+}
+function dashPaneHTML(draft) {
+  const id = state.dashSel;
+  if (!id) {
+    const avail = draft.order.filter((x) => draft.hidden.includes(x));
+    return `<h3>${esc(__("Widgets"))}</h3>
+      ${avail.length ? `<ul class="palette">${avail.map((x) => `<li draggable="true" data-pal="${esc(x)}"><span class="grip" aria-hidden="true">⠿</span><span class="grow">${esc((draft.widgets[x] || {}).title || widgetLabel(x))}</span><button type="button" class="smallbtn" data-pal-add="${esc(x)}">${esc(__("Add"))}</button></li>`).join("")}</ul>`
+        : `<p class="muted">${esc(__("All widgets are on the dashboard."))}</p>`}
+      <div class="droptrash">${esc(__("Drop here to remove"))}</div>`;
+  }
+  const w = widgetDef(id), o = draft.widgets[id] || {}, label = widgetLabel(id);
   const items = w.pick ? pickItems(w.pick) : [];
   const shown = (x) => !(o.include && o.include.length) || o.include.includes(x);
-  const opts = [`<label>${esc(__("Title"))} <input type="text" data-dash-title="${esc(id)}" value="${esc(o.title || "")}" placeholder="${esc(label)}" maxlength="60"></label>`];
-  if (w.rows) opts.push(`<label>${esc(__("Rows"))} <input type="number" data-dash-rows="${esc(id)}" min="1" max="50" value="${o.rows || w.rows}"></label>`);
-  if (items.length) opts.push(`<fieldset><legend>${esc(__("Show"))}</legend>${items.map((it) => `<label><input type="checkbox" data-dash-inc="${esc(id)}" value="${esc(it.id)}" ${shown(it.id) ? "checked" : ""}> ${esc(it.label)}</label>`).join("")}</fieldset>`);
-  return `<li draggable="true" data-dash-item="${esc(id)}">
-    <div class="dashrow"><span class="grip" aria-hidden="true">⠿</span>
-      <label class="grow"><input type="checkbox" data-dash-vis="${esc(id)}" ${draft.hidden.includes(id) ? "" : "checked"}> <span class="wname">${esc(o.title || label)}</span></label>
-      <select data-dash-size="${esc(id)}" aria-label="${esc(__("Width of {widget}", { widget: label }))}"><option value="full">${esc(__("Full width"))}</option><option value="half" ${o.size === "half" ? "selected" : ""}>${esc(__("Half width"))}</option></select>
-      <button class="smallbtn" data-dash-up="${esc(id)}" aria-label="${esc(__("Move up"))}" ${i === 0 ? "disabled" : ""}>↑</button><button class="smallbtn" data-dash-down="${esc(id)}" aria-label="${esc(__("Move down"))}" ${i === n - 1 ? "disabled" : ""}>↓</button></div>
-    <details data-dash-open="${esc(id)}" ${state.dashOpen.includes(id) ? "open" : ""}><summary>${esc(__("Options"))}</summary><div class="dashopts">${opts.join("")}</div></details></li>`;
+  return `<button type="button" class="linkbtn" data-pane-back>${esc(__("‹ All widgets"))}</button>
+    <h3>${esc(label)}</h3>
+    <div class="paneform">
+      <label>${esc(__("Title"))} <input type="text" data-dash-title value="${esc(o.title || "")}" placeholder="${esc(label)}" maxlength="60"></label>
+      <label>${esc(__("Width"))} <select data-dash-size><option value="full">${esc(__("Full width"))}</option><option value="half" ${o.size === "half" ? "selected" : ""}>${esc(__("Half width"))}</option></select></label>
+      ${w.rows ? `<label>${esc(__("Rows"))} <input type="number" data-dash-rows min="1" max="50" value="${o.rows || w.rows}"></label>` : ""}
+      ${items.length ? `<fieldset><legend>${esc(__("Show"))}</legend>${items.map((it) => `<label><input type="checkbox" data-dash-inc value="${esc(it.id)}" ${shown(it.id) ? "checked" : ""}> ${esc(it.label)}</label>`).join("")}</fieldset>` : ""}
+    </div>
+    <button type="button" class="smallbtn danger" data-pane-remove>${esc(__("Remove from dashboard"))}</button>`;
 }
 function screenDashboardEditor(v) {
   const draft = state.dashDraft;
-  v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Customize dashboard"))}</h3><span><button class="smallbtn" id="dashReset">${esc(__("Reset to default"))}</button> <button class="smallbtn" id="dashCancel">${esc(__("Cancel"))}</button> <button class="smallbtn" id="dashSave">${esc(__("Save"))}</button></span></div>
-      <ol class="dashedit">${draft.order.map((id, i) => dashEditorRow(id, i, draft)).join("")}</ol></section>
-    <h3 class="previewhead">${esc(__("Preview"))}</h3><div id="dashPreview"></div>`;
-  const preview = () => { $("#dashPreview").innerHTML = dashGrid(draft); bindActions($("#dashPreview")); };
-  const each = (sel, ev, fn) => v.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, () => fn(el)));
-  each("[data-dash-vis]", "change", (c) => {
-    const id = c.dataset.dashVis;
-    draft.hidden = c.checked ? draft.hidden.filter((x) => x !== id) : [...draft.hidden, id];
-    preview();
-  });
-  each("[data-dash-size]", "change", (s) => { setWidgetOpt(s.dataset.dashSize, "size", s.value === "half" ? "half" : undefined); preview(); });
-  each("[data-dash-title]", "input", (t) => {
-    const id = t.dataset.dashTitle;
-    setWidgetOpt(id, "title", t.value.trim());
-    t.closest("li").querySelector(".wname").textContent = t.value.trim() || widgetLabel(id);
-    preview();
-  });
-  each("[data-dash-rows]", "change", (r) => {
-    const id = r.dataset.dashRows, n = Math.min(50, Math.max(1, parseInt(r.value, 10) || widgetDef(id).rows));
-    r.value = n;
-    setWidgetOpt(id, "rows", n === widgetDef(id).rows ? undefined : n);
-    preview();
-  });
-  each("[data-dash-inc]", "change", (c) => {
-    const id = c.dataset.dashInc, boxes = [...v.querySelectorAll(`[data-dash-inc="${CSS.escape(id)}"]`)];
-    const on = boxes.filter((b) => b.checked).map((b) => b.value);
-    if (!on.length) { c.checked = true; msg(__("Keep at least one item, or untick the widget to hide it.")); return; }
-    setWidgetOpt(id, "include", on.length === boxes.length ? undefined : on);
-    preview();
-  });
-  each("[data-dash-open]", "toggle", (dt) => {
-    const id = dt.dataset.dashOpen;
-    state.dashOpen = dt.open ? [...new Set([...state.dashOpen, id])] : state.dashOpen.filter((x) => x !== id);
-  });
-  const moveTo = (id, j) => {
-    const o = draft.order, i = o.indexOf(id);
-    if (i < 0 || j < 0 || j >= o.length || i === j) return;
-    o.splice(i, 1); o.splice(j, 0, id);
-    render();
+  v.innerHTML = `<div class="dashbar"><h3>${esc(__("Customize dashboard"))}</h3><span><button class="smallbtn" id="dashReset">${esc(__("Reset to default"))}</button> <button class="smallbtn" id="dashCancel">${esc(__("Cancel"))}</button> <button class="primarybtn" id="dashSave">${esc(__("Save"))}</button></span></div>
+    <div class="dasheditor"><div class="dashgrid dashcanvas" id="dashCanvas"></div><aside class="panel dashpane" id="dashPane" aria-label="${esc(__("Widgets"))}"></aside></div>`;
+  const canvas = $("#dashCanvas"), pane = $("#dashPane");
+  const show = (id) => { draft.hidden = draft.hidden.filter((x) => x !== id); };
+  const remove = (id) => { if (!draft.hidden.includes(id)) draft.hidden.push(id); if (state.dashSel === id) state.dashSel = null; draw(); };
+  // place id before/after another widget (or at the end of the visible ones) in the full order
+  const place = (id, target, after) => {
+    const o = draft.order.filter((x) => x !== id), vis = o.filter((x) => !draft.hidden.includes(x) || x === target);
+    let j = target ? o.indexOf(target) + (after ? 1 : 0) : (vis.length ? o.indexOf(vis[vis.length - 1]) + 1 : 0);
+    o.splice(j, 0, id);
+    draft.order = o;
   };
-  each("[data-dash-up]", "click", (b) => moveTo(b.dataset.dashUp, draft.order.indexOf(b.dataset.dashUp) - 1));
-  each("[data-dash-down]", "click", (b) => moveTo(b.dataset.dashDown, draft.order.indexOf(b.dataset.dashDown) + 1));
-  // drag and drop with a pointer; ↑ ↓ stay for keyboard and touch
-  const clearDrop = () => v.querySelectorAll(".dropbefore,.dropafter").forEach((x) => x.classList.remove("dropbefore", "dropafter"));
-  const after = (li, e) => { const r = li.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
-  v.querySelectorAll("[data-dash-item]").forEach((li) => {
-    li.addEventListener("dragstart", (e) => {
-      if (e.target !== li) return;
-      state.dragId = li.dataset.dashItem; li.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", state.dragId);
+  const drawCanvas = () => {
+    const vis = visibleIds(draft);
+    canvas.innerHTML = vis.map((id) => dashTile(id, draft)).join("") || `<div class="empty dropend">${esc(__("Drag widgets here, or use Add."))}</div>`;
+    canvas.querySelectorAll("[data-tile]").forEach((tile) => {
+      const id = tile.dataset.tile;
+      tile.addEventListener("click", (e) => {
+        if (e.target.closest("[data-tile-move],[data-tile-remove]")) return;
+        state.dashSel = id; draw();
+        // on narrow screens the pane sits above the dashboard: bring the settings into view
+        if (pane.getBoundingClientRect().top < 0) pane.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      tile.querySelector("[data-tile-remove]").addEventListener("click", () => remove(id));
+      tile.querySelectorAll("[data-tile-move]").forEach((b) => b.addEventListener("click", () => {
+        const vis2 = visibleIds(draft), j = vis2.indexOf(id) + parseInt(b.dataset.tileMove, 10);
+        if (j < 0 || j >= vis2.length) return;
+        place(id, vis2[j], j > vis2.indexOf(id));
+        draw();
+        const again = canvas.querySelector(`[data-tile="${CSS.escape(id)}"] [data-tile-move="${b.dataset.tileMove}"]`);
+        if (again && !again.disabled) again.focus();
+      }));
+      tile.addEventListener("dragstart", (e) => { state.drag = { id, from: "canvas" }; tile.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); v.classList.add("dragging-tile"); });
+      tile.addEventListener("dragend", () => { tile.classList.remove("dragging"); clearDrop(); state.drag = null; v.classList.remove("dragging-tile"); });
     });
-    li.addEventListener("dragend", () => { li.classList.remove("dragging"); clearDrop(); state.dragId = null; });
-    li.addEventListener("dragover", (e) => {
-      if (!state.dragId) return;
-      e.preventDefault(); clearDrop();
-      li.classList.add(after(li, e) ? "dropafter" : "dropbefore");
+  };
+  const drawPane = () => {
+    pane.innerHTML = dashPaneHTML(draft);
+    const id = state.dashSel;
+    const on = (sel, ev, fn) => pane.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, () => fn(el)));
+    on("[data-pane-back]", "click", () => { state.dashSel = null; draw(); });
+    on("[data-pane-remove]", "click", () => remove(id));
+    on("[data-pal-add]", "click", (b) => { show(b.dataset.palAdd); place(b.dataset.palAdd, null); draw(); });
+    on("[data-pal]", "dragstart", (li) => { state.drag = { id: li.dataset.pal, from: "palette" }; li.classList.add("dragging"); });
+    on("[data-pal]", "dragend", (li) => { li.classList.remove("dragging"); clearDrop(); state.drag = null; });
+    pane.querySelectorAll("[data-pal]").forEach((li) => li.addEventListener("dragstart", (e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", li.dataset.pal); }));
+    // option changes redraw only the dashboard, so the field being edited keeps focus
+    on("[data-dash-title]", "input", (t) => { setWidgetOpt(id, "title", t.value.trim()); drawCanvas(); });
+    on("[data-dash-size]", "change", (s) => { setWidgetOpt(id, "size", s.value === "half" ? "half" : undefined); drawCanvas(); });
+    on("[data-dash-rows]", "change", (r) => {
+      const n = Math.min(50, Math.max(1, parseInt(r.value, 10) || widgetDef(id).rows));
+      r.value = n;
+      setWidgetOpt(id, "rows", n === widgetDef(id).rows ? undefined : n);
+      drawCanvas();
     });
-    li.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const from = state.dragId, target = li.dataset.dashItem;
-      clearDrop();
-      if (!from || from === target) return;
-      const rest = draft.order.filter((x) => x !== from);
-      moveTo(from, rest.indexOf(target) + (after(li, e) ? 1 : 0));
+    on("[data-dash-inc]", "change", (c) => {
+      const boxes = [...pane.querySelectorAll("[data-dash-inc]")], picked = boxes.filter((b) => b.checked).map((b) => b.value);
+      if (!picked.length) { c.checked = true; msg(__("Keep at least one item, or remove the widget.")); return; }
+      setWidgetOpt(id, "include", picked.length === boxes.length ? undefined : picked);
+      drawCanvas();
     });
+  };
+  const draw = () => { drawCanvas(); drawPane(); };
+  // drag and drop: tiles reorder, palette items add, a tile dropped on the pane is removed
+  const clearDrop = () => v.querySelectorAll(".dropbefore,.dropafter,.droptarget").forEach((x) => x.classList.remove("dropbefore", "dropafter", "droptarget"));
+  const dropSpot = (e) => {
+    const tile = e.target.closest("[data-tile]");
+    if (!tile || tile.dataset.tile === state.drag.id) return { tile: null };
+    const r = tile.getBoundingClientRect(), half = tile.classList.contains("half");
+    return { tile, after: half ? e.clientX > r.left + r.width / 2 : e.clientY > r.top + r.height / 2, half };
+  };
+  canvas.addEventListener("dragover", (e) => {
+    if (!state.drag) return;
+    e.preventDefault(); clearDrop();
+    const s = dropSpot(e);
+    if (s.tile) s.tile.classList.add(s.after ? "dropafter" : "dropbefore");
+    else canvas.classList.add("droptarget");
   });
-  // selecting text in an input must not start dragging its row
-  each(".dashopts input, .dashrow select", "mousedown", (el) => { el.closest("li").draggable = false; });
-  each(".dashopts input, .dashrow select", "mouseup", (el) => { el.closest("li").draggable = true; });
+  canvas.addEventListener("dragleave", (e) => { if (!canvas.contains(e.relatedTarget)) clearDrop(); });
+  canvas.addEventListener("drop", (e) => {
+    if (!state.drag) return;
+    e.preventDefault();
+    const { id } = state.drag, s = dropSpot(e);
+    clearDrop();
+    if (!s.tile && e.target.closest("[data-tile]")) return; // dropped on itself
+    show(id);
+    place(id, s.tile ? s.tile.dataset.tile : null, s.after);
+    state.drag = null;
+    draw();
+  });
+  pane.addEventListener("dragover", (e) => { if (state.drag && state.drag.from === "canvas") { e.preventDefault(); pane.classList.add("droptarget"); } });
+  pane.addEventListener("dragleave", (e) => { if (!pane.contains(e.relatedTarget)) pane.classList.remove("droptarget"); });
+  pane.addEventListener("drop", (e) => {
+    if (!state.drag || state.drag.from !== "canvas") return;
+    e.preventDefault(); pane.classList.remove("droptarget");
+    const { id } = state.drag; state.drag = null;
+    v.classList.remove("dragging-tile");
+    remove(id);
+  });
   $("#dashCancel").addEventListener("click", () => { state.customizing = false; render(); });
-  $("#dashReset").addEventListener("click", () => { state.dashDraft = JSON.parse(JSON.stringify(DASH_DEFAULT)); render(); });
+  $("#dashReset").addEventListener("click", () => { state.dashDraft = JSON.parse(JSON.stringify(DASH_DEFAULT)); state.dashSel = null; render(); });
   $("#dashSave").addEventListener("click", async () => {
     try {
       const saved = await put("/api/settings", { dashboard: draft });
@@ -281,14 +335,14 @@ function screenDashboardEditor(v) {
       render();
     } catch (e) { errMsg(e); }
   });
-  preview();
+  draw();
 }
 function screenDashboard(v) {
   if (state.customizing) { screenDashboardEditor(v); return; }
   v.innerHTML = `<div class="dashhead"><button class="smallbtn" id="dashCustomize">${esc(__("Customize dashboard"))}</button></div>` + dashGrid(dashLayout());
   $("#dashCustomize").addEventListener("click", () => {
     state.dashDraft = dashLayout();
-    state.dashOpen = [];
+    state.dashSel = null;
     state.customizing = true;
     render();
   });
@@ -634,7 +688,7 @@ function screenSettings(v) {
   }));
   $("#setCustomize").addEventListener("click", () => {
     state.dashDraft = dashLayout();
-    state.dashOpen = [];
+    state.dashSel = null;
     state.customizing = true;
     location.hash = "#dashboard";
   });
