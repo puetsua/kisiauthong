@@ -32,7 +32,7 @@ func (d *Data) tagByID(id string) *Tag {
 	return nil
 }
 
-// normalizeTransaction stores only three types: transfer, allocate, release.
+// normalizeTransaction stores only two types: transfer and allocate.
 // "expense" and "income" are accepted as shorthands and become transfers to
 // or from an external account (the anonymous one unless the client names
 // another external account). It clears unused fields, takes the currency
@@ -41,7 +41,10 @@ func (d *Data) tagByID(id string) *Tag {
 //     between two own accounts the currency must match (converting currency
 //     is spending in one and income in the other); tag optional, never a
 //     money box
-//   - allocate / release: one own account and a money box (goal tag); posted
+//   - allocate: one own account and a money box (goal tag); posted; the
+//     amount is signed (negative takes money back out, ADR 0003) and may
+//     not take out more than the account has allocated to that money box.
+//     "release" is accepted as a shorthand for a negative allocation.
 func (d *Data) normalizeTransaction(t *Transaction) error {
 	if t.State == "" {
 		t.State = "posted"
@@ -55,19 +58,34 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 			return err
 		}
 		return d.normalizeTransaction(t)
-	case "allocate", "release":
+	case "release":
+		if t.AmountMinor > 0 {
+			t.AmountMinor = -t.AmountMinor
+		}
+		t.Type = "allocate"
+		return d.normalizeTransaction(t)
+	case "allocate":
 		a := d.accountByID(t.AccountID)
 		if a == nil || a.IsExternal() {
 			return fmt.Errorf("accountId must be one of your own accounts")
 		}
 		tag := d.tagByID(t.TagID)
 		if tag == nil || tag.Kind != "goal" {
-			return fmt.Errorf("%s needs tagId of a money box (goal tag)", t.Type)
+			return fmt.Errorf("allocate needs tagId of a money box (goal tag)")
+		}
+		if t.AmountMinor == 0 {
+			return fmt.Errorf("amountMinor must not be zero")
+		}
+		if left := d.allocatedExcept(a.ID, tag.ID, t.ID) + t.AmountMinor; left < 0 {
+			return fmt.Errorf("cannot take out more than is allocated: %s holds less than that in this account", tag.Name)
 		}
 		t.FromAccountID, t.ToAccountID = "", ""
 		t.Currency = a.Currency
 		t.State = "posted" // a decision moves no cash, there is nothing to confirm
 	case "transfer":
+		if t.AmountMinor <= 0 {
+			return fmt.Errorf("amountMinor must be positive")
+		}
 		cur, err := d.transferCurrency(t.FromAccountID, t.ToAccountID)
 		if err != nil {
 			return err
@@ -78,13 +96,13 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 				return fmt.Errorf("tagId must be an existing tag")
 			}
 			if tag.Kind == "goal" {
-				return fmt.Errorf("a money box tag is only for allocate/release")
+				return fmt.Errorf("a money box tag is only for allocations")
 			}
 		}
 		t.AccountID = ""
 		t.Currency = cur
 	default:
-		return fmt.Errorf("type must be transfer, allocate or release (expense and income are accepted as shorthands)")
+		return fmt.Errorf("type must be transfer or allocate (expense, income and release are accepted as shorthands)")
 	}
 	return nil
 }
@@ -177,6 +195,18 @@ func (d *Data) normalizeTemplate(b *TemplateBody) error {
 		return fmt.Errorf("a template generates a transfer or an allocate (expense and income are accepted as shorthands)")
 	}
 	return nil
+}
+
+// allocatedExcept is the posted allocation for (account, money box) without
+// transaction skipID, so an edit is checked against everything else.
+func (d *Data) allocatedExcept(accountID, tagID, skipID string) int64 {
+	var total int64
+	for _, t := range d.Transactions {
+		if t.ID != skipID && t.State == "posted" && t.Type == "allocate" && t.AccountID == accountID && t.TagID == tagID {
+			total += t.AmountMinor
+		}
+	}
+	return total
 }
 
 func (d *Data) accountHasTransactions(id string) bool {

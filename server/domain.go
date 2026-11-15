@@ -21,7 +21,7 @@ func (d *Data) accountByID(id string) *Account {
 	return nil
 }
 
-// Balance ignores planned and allocate/release transactions. Every money
+// Balance ignores planned transactions and allocations. Every money
 // movement is a transfer; spending and income are transfers to / from an
 // external account.
 func (d *Data) Balance(accountID string) int64 {
@@ -49,11 +49,8 @@ func (d *Data) Allocated(accountID, tagID string) int64 {
 		if t.State != "posted" || t.AccountID != accountID || t.TagID != tagID {
 			continue
 		}
-		if t.Type == "allocate" {
+		if t.Type == "allocate" { // signed: negative takes money back out of the money box
 			total += t.AmountMinor
-		}
-		if t.Type == "release" {
-			total -= t.AmountMinor
 		}
 	}
 	return total
@@ -65,11 +62,8 @@ func (d *Data) AllocatedForAccount(accountID string) int64 {
 		if t.State != "posted" || t.AccountID != accountID {
 			continue
 		}
-		if t.Type == "allocate" {
+		if t.Type == "allocate" { // signed: negative takes money back out of the money box
 			total += t.AmountMinor
-		}
-		if t.Type == "release" {
-			total -= t.AmountMinor
 		}
 	}
 	return total
@@ -81,11 +75,8 @@ func (d *Data) TagSaved(tagID string) int64 {
 		if t.State != "posted" || t.TagID != tagID {
 			continue
 		}
-		if t.Type == "allocate" {
+		if t.Type == "allocate" { // signed: negative takes money back out of the money box
 			total += t.AmountMinor
-		}
-		if t.Type == "release" {
-			total -= t.AmountMinor
 		}
 	}
 	return total

@@ -35,14 +35,17 @@ func TestNormalizeTransactionRejects(t *testing.T) {
 		"allocate to a category":  {Type: "allocate", AccountID: "acc-a", TagID: "tag-food"},
 		"allocate on external":    {Type: "allocate", AccountID: ExternalAccountID, TagID: "tag-house"},
 		"release unknown account": {Type: "release", AccountID: "acc-nope", TagID: "tag-house"},
-		"bad state":               {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID, State: "maybe"},
+		"bad state":               {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID, AmountMinor: 1, State: "maybe"},
+		"transfer of zero":        {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID},
+		"negative transfer":       {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID, AmountMinor: -5},
+		"allocation of zero":      {Type: "allocate", AccountID: "acc-a", TagID: "tag-house"},
 	}
 	for name, tx := range cases {
 		if err := d.normalizeTransaction(&tx); err == nil {
 			t.Errorf("%s: accepted %+v", name, tx)
 		}
 	}
-	tx := Transaction{Type: "transfer", FromAccountID: "acc-a", ToAccountID: "acc-jpy"}
+	tx := Transaction{Type: "transfer", FromAccountID: "acc-a", ToAccountID: "acc-jpy", AmountMinor: 100}
 	if err := d.normalizeTransaction(&tx); err == nil || !strings.Contains(err.Error(), "spending in TWD and income in JPY") {
 		t.Errorf("cross-currency transfer should explain spending + income, got %v", err)
 	}
@@ -51,29 +54,64 @@ func TestNormalizeTransactionRejects(t *testing.T) {
 func TestExpenseAndIncomeBecomeTransfers(t *testing.T) {
 	d := seededData(t)
 	d.Accounts = append(d.Accounts, Account{ID: "acc-shop", Name: "Shop", Kind: "external"})
-	exp := Transaction{Type: "expense", AccountID: "acc-jpy", Currency: "TWD", TagID: "tag-travel"}
+	exp := Transaction{Type: "expense", AccountID: "acc-jpy", Currency: "TWD", TagID: "tag-travel", AmountMinor: 500}
 	if err := d.normalizeTransaction(&exp); err != nil {
 		t.Fatal(err)
 	}
 	if exp.Type != "transfer" || exp.FromAccountID != "acc-jpy" || exp.ToAccountID != ExternalAccountID || exp.AccountID != "" || exp.Currency != "JPY" || exp.TagID != "tag-travel" {
 		t.Errorf("expense shorthand: %+v", exp)
 	}
-	named := Transaction{Type: "expense", AccountID: "acc-b", ToAccountID: "acc-shop"}
+	named := Transaction{Type: "expense", AccountID: "acc-b", ToAccountID: "acc-shop", AmountMinor: 500}
 	if err := d.normalizeTransaction(&named); err != nil || named.ToAccountID != "acc-shop" || named.Currency != "TWD" {
 		t.Errorf("expense to a named external account: %v %+v", err, named)
 	}
-	inc := Transaction{Type: "income", AccountID: "acc-a", FromAccountID: "acc-b"} // from must be external; an own account is ignored
+	inc := Transaction{Type: "income", AccountID: "acc-a", FromAccountID: "acc-b", AmountMinor: 500} // from must be external; an own account is ignored
 	if err := d.normalizeTransaction(&inc); err != nil || inc.FromAccountID != ExternalAccountID || inc.ToAccountID != "acc-a" {
 		t.Errorf("income shorthand: %v %+v", err, inc)
 	}
 	// an external account has no currency: the own side decides, so JPY spending can go to the same external account
-	tr := Transaction{Type: "transfer", FromAccountID: "acc-jpy", ToAccountID: "acc-shop", Currency: "TWD"}
+	tr := Transaction{Type: "transfer", FromAccountID: "acc-jpy", ToAccountID: "acc-shop", Currency: "TWD", AmountMinor: 500}
 	if err := d.normalizeTransaction(&tr); err != nil || tr.Currency != "JPY" {
 		t.Errorf("own JPY -> external: %v %+v", err, tr)
 	}
-	al := Transaction{Type: "allocate", AccountID: "acc-a", TagID: "tag-house", State: "planned"}
+	al := Transaction{Type: "allocate", AccountID: "acc-a", TagID: "tag-house", State: "planned", AmountMinor: 500}
 	if err := d.normalizeTransaction(&al); err != nil || al.State != "posted" || al.Currency != "TWD" {
 		t.Errorf("allocate: %v %+v", err, al)
+	}
+}
+
+func TestSignedAllocations(t *testing.T) {
+	d := seededData(t)
+	held := d.Allocated("acc-a", "tag-furniture") // the seed keeps part of Furniture in Savings A
+	if held <= 0 {
+		t.Fatalf("seed should hold Furniture in acc-a, got %d", held)
+	}
+	rel := Transaction{Type: "release", AccountID: "acc-a", TagID: "tag-furniture", AmountMinor: 1000}
+	if err := d.normalizeTransaction(&rel); err != nil || rel.Type != "allocate" || rel.AmountMinor != -1000 {
+		t.Errorf("release shorthand: %v %+v", err, rel)
+	}
+	out := Transaction{Type: "allocate", AccountID: "acc-a", TagID: "tag-furniture", AmountMinor: -held}
+	if err := d.normalizeTransaction(&out); err != nil {
+		t.Errorf("taking out exactly what is held: %v", err)
+	}
+	over := Transaction{Type: "allocate", AccountID: "acc-a", TagID: "tag-furniture", AmountMinor: -held - 1}
+	if err := d.normalizeTransaction(&over); err == nil || !strings.Contains(err.Error(), "more than is allocated") {
+		t.Errorf("over-release accepted: %v", err)
+	}
+	if err := (&Transaction{Type: "allocate", AccountID: "acc-c", TagID: "tag-furniture", AmountMinor: -1}).normalizeOn(d); err == nil {
+		t.Errorf("releasing from an account that holds none of the money box was accepted")
+	}
+	// editing an allocation is checked against the others, not itself
+	var existing Transaction
+	for _, x := range d.Transactions {
+		if x.Type == "allocate" && x.AccountID == "acc-a" && x.TagID == "tag-furniture" && x.AmountMinor > 0 {
+			existing = x
+		}
+	}
+	edit := existing
+	edit.AmountMinor = -(held - existing.AmountMinor) // flip it so the pair ends at exactly zero
+	if err := d.normalizeTransaction(&edit); err != nil {
+		t.Errorf("edit excluding itself: %v", err)
 	}
 }
 
@@ -110,8 +148,10 @@ func TestSeedTransactionsFollowRules(t *testing.T) {
 		if err := d.normalizeTransaction(&c); err != nil {
 			t.Errorf("%s: %v", tx.ID, err)
 		}
-		if tx.Type != "transfer" && tx.Type != "allocate" && tx.Type != "release" {
+		if tx.Type != "transfer" && tx.Type != "allocate" {
 			t.Errorf("%s: stored type %q", tx.ID, tx.Type)
 		}
 	}
 }
+
+func (t *Transaction) normalizeOn(d *Data) error { return d.normalizeTransaction(t) }

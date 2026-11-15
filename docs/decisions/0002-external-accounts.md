@@ -2,7 +2,7 @@
 # 0002 — Expense and income are transfers to and from external accounts
 
 Date: 2026-11-15
-Status: accepted
+Status: accepted (amended by 0003: `release` became a negative `allocate`)
 
 ## Context
 

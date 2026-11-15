@@ -159,6 +159,7 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 	mustExec(`DELETE FROM accounts WHERE id=?`, ExternalAccountID)
 	mustExec(`INSERT INTO transactions(id,account_id,type,state,amount_minor,currency,date,note) VALUES('old-exp','acc-b','expense','posted',500,'TWD','2026-11-01','Lunch'),('old-inc','acc-a','income','posted',900,'TWD','2026-11-02','Pay')`)
 	mustExec(`UPDATE transaction_templates SET template_json='{"accountId":"acc-a","type":"income","amountMinor":8000000,"currency":"TWD","note":"Salary"}' WHERE id='tpl-salary'`)
+	mustExec(`INSERT INTO transactions(id,account_id,tag_id,type,state,amount_minor,currency,date,note) VALUES('old-rel','acc-a','tag-furniture','release','posted',700,'TWD','2026-11-03','Back out')`)
 	mustExec(`PRAGMA user_version = 0`)
 	s.db.Close()
 
@@ -179,6 +180,9 @@ func TestMigrationConvertsExpenseAndIncome(t *testing.T) {
 	}
 	if i := byID["old-inc"]; i.Type != "transfer" || i.FromAccountID != ExternalAccountID || i.ToAccountID != "acc-a" {
 		t.Errorf("income not converted: %+v", i)
+	}
+	if r := byID["old-rel"]; r.Type != "allocate" || r.AmountMinor != -700 || r.AccountID != "acc-a" || r.TagID != "tag-furniture" {
+		t.Errorf("release not converted (migration 2): %+v", r)
 	}
 	for _, tp := range s.data.TransactionTemplates {
 		if tp.ID == "tpl-salary" && (tp.Template.Type != "transfer" || tp.Template.FromAccountID != ExternalAccountID || tp.Template.ToAccountID != "acc-a") {

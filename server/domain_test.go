@@ -14,7 +14,7 @@ func sample() Data {
 			{ID: "2", FromAccountID: "a", ToAccountID: ExternalAccountID, Type: "transfer", State: "posted", AmountMinor: 3000000, Date: "2026-10-10"},
 			{ID: "3", FromAccountID: "a", ToAccountID: ExternalAccountID, Type: "transfer", State: "planned", AmountMinor: 999999, Date: "2026-10-12"},
 			{ID: "4", AccountID: "a", TagID: "goal", Type: "allocate", State: "posted", AmountMinor: 40000000, Date: "2026-03-01"},
-			{ID: "5", AccountID: "a", TagID: "goal", Type: "release", State: "posted", AmountMinor: 5000000, Date: "2026-10-01"},
+			{ID: "5", AccountID: "a", TagID: "goal", Type: "allocate", State: "posted", AmountMinor: -5000000, Date: "2026-10-01"}, // taken back out
 		},
 	}
 }

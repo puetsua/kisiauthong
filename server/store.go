@@ -103,7 +103,8 @@ func openStore(path string) (*Store, error) {
 // migrations are numbered by position and append-only: never edit or
 // reorder a released one. PRAGMA user_version records how many have run.
 var migrations = []func(tx *sql.Tx) error{
-	migrateExpenseIncomeToTransfers, // 1
+	migrateExpenseIncomeToTransfers,  // 1
+	migrateReleaseToNegativeAllocate, // 2
 }
 
 func (s *Store) migrate() error {
@@ -131,6 +132,13 @@ func (s *Store) migrate() error {
 		return err
 	}
 	return s.reload()
+}
+
+// Migration 2 (ADR 0003): release stops being a stored type; a release of N
+// becomes an allocation of -N on the same account and money box.
+func migrateReleaseToNegativeAllocate(tx *sql.Tx) error {
+	_, err := tx.Exec(`UPDATE transactions SET type='allocate', amount_minor=-amount_minor WHERE type='release'`)
+	return err
 }
 
 // Migration 1 (ADR 0002): expense and income stop being stored types. An
@@ -367,7 +375,7 @@ func (s *Store) updateTransaction(t Transaction) error {
 	if err != nil {
 		return err
 	}
-	// refresh category links: replace with the single tagId link for transfers, keep others for allocate/release
+	// refresh category links: replace with the single tagId link for transfers, keep the money box on allocations
 	if t.Type == "transfer" {
 		if _, err := s.db.Exec(`DELETE FROM transaction_tags WHERE transaction_id=?`, t.ID); err != nil {
 			return err

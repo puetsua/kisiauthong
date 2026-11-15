@@ -251,10 +251,6 @@ func main() {
 			return
 		}
 		t := body.Transaction
-		if t.AmountMinor <= 0 {
-			writeErr(w, 400, "amountMinor must be positive")
-			return
-		}
 		if t.Date == "" {
 			t.Date = time.Now().Format("2006-01-02")
 		}
@@ -263,10 +259,6 @@ func main() {
 		}
 		if t.Type == "" {
 			writeErr(w, 400, "type required")
-			return
-		}
-		if (t.Type == "allocate" || t.Type == "release") && t.TagID == "" {
-			writeErr(w, 400, "tagId required for allocate/release")
 			return
 		}
 		t.ID = newID("txn")
@@ -309,12 +301,8 @@ func main() {
 			}
 			t := body.Transaction
 			t.ID = parts[2]
-			if t.AmountMinor <= 0 || t.Type == "" || t.Date == "" {
-				writeErr(w, 400, "type, positive amount and date required")
-				return
-			}
-			if (t.Type == "allocate" || t.Type == "release") && t.TagID == "" {
-				writeErr(w, 400, "tagId required for allocate/release")
+			if t.Type == "" || t.Date == "" {
+				writeErr(w, 400, "type and date required")
 				return
 			}
 			store.mu.Lock()

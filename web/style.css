@@ -3,6 +3,7 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 .formnote{margin:8px 0 0;font-size:.86rem;color:var(--amber)}
+.formnote.hint{color:var(--muted)}
 html[data-width="wide"]{--page-max:1440px}
 html[data-width="full"]{--page-max:none}
 body{margin:0;font-family:"Segoe UI",system-ui,"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;color:var(--ink);background:var(--bg);line-height:1.5}

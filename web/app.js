@@ -48,7 +48,7 @@ const accById = (id) => (state.data.allAccounts || state.data.accounts).find((a)
 const accName = (id) => { const a = accById(id); if (!a) return "—"; return a.id === EXT_ID && a.name === "External" ? __("External") : a.name; };
 const accCur = (id) => (accById(id) || {}).currency || defCur();
 const isExt = (id) => { const a = accById(id); return !!a && a.kind === "external"; };
-// flow: what a record means to the user. Only transfer/allocate/release are stored;
+// flow: what a record means to the user. Only transfer and allocate are stored;
 // a transfer to an external account is spending, one from an external account is income.
 function flow(t) {
   if (t.type !== "transfer") return t.type;
@@ -69,7 +69,7 @@ function row(cells) {
 }
 
 /* ---------- display labels for stored enum values ---------- */
-const TYPE_L = { expense: N_("Expense"), income: N_("Income"), transfer: N_("Transfer"), allocate: N_("Allocate"), release: N_("Release") };
+const TYPE_L = { expense: N_("Expense"), income: N_("Income"), transfer: N_("Transfer"), allocate: N_("Allocate") };
 const KIND_L = { bank: N_("Bank"), savings: N_("Savings"), cash: N_("Cash"), credit_card: N_("Credit card"), ewallet: N_("E-wallet"), investment: N_("Investment"), loan: N_("Loan"), external: N_("External") };
 const OWN_KINDS = ["bank", "savings", "cash", "credit_card", "ewallet", "investment", "loan"];
 const TAGKIND_L = { category: N_("Category"), goal: N_("Goal"), label: N_("Label"), payee: N_("Payee") };
@@ -292,8 +292,7 @@ function goalAllocations(tagId) {
   const byAcc = {};
   state.data.transactions.forEach((t) => {
     if (t.tagId !== tagId || t.state !== "posted") return;
-    if (t.type === "allocate") byAcc[t.accountId] = (byAcc[t.accountId] || 0) + t.amountMinor;
-    if (t.type === "release") byAcc[t.accountId] = (byAcc[t.accountId] || 0) - t.amountMinor;
+    if (t.type === "allocate") byAcc[t.accountId] = (byAcc[t.accountId] || 0) + t.amountMinor; // signed
   });
   return Object.entries(byAcc).filter(([, v]) => v > 0);
 }
@@ -311,7 +310,6 @@ function goalCard(t) {
 function bindConfirm(root) {
   root.querySelectorAll("[data-confirm]").forEach((b) => b.addEventListener("click", () => openConfirm(b.dataset.confirm)));
   root.querySelectorAll("[data-alloc]").forEach((b) => b.addEventListener("click", () => openDrawer("allocate", b.dataset.alloc)));
-  root.querySelectorAll("[data-release]").forEach((b) => b.addEventListener("click", () => openDrawer("release", b.dataset.release)));
   root.querySelectorAll("[data-history]").forEach((b) => b.addEventListener("click", () => showHistory(b.dataset.history)));
   bindDetails(root);
 }
@@ -340,11 +338,12 @@ function txnTagNames(t) {
 function txnSubtitle(t) {
   const k = flow(t);
   if (k === "transfer") return accName(t.fromAccountId) + " → " + accName(t.toAccountId);
-  if (k === "allocate") return accName(t.accountId) + " → " + tagName(t.tagId);
-  if (k === "release") return tagName(t.tagId) + " → " + accName(t.accountId);
+  if (k === "allocate") return t.amountMinor < 0 ? tagName(t.tagId) + " → " + accName(t.accountId) : accName(t.accountId) + " → " + tagName(t.tagId);
   return [txnTagNames(t).join(", "), transferAcct(t)].filter(Boolean).join(" · ");
 }
-const amountText = (t) => signed(t) + fmt(t.amountMinor, t.currency);
+// allocations are signed (ADR 0003): + into the money box, − back out
+const amountText = (t) => t.type === "allocate" ? (t.amountMinor < 0 ? "−" : "+") + fmt(Math.abs(t.amountMinor), t.currency) : signed(t) + fmt(t.amountMinor, t.currency);
+const iconKind = (t) => (t.type === "allocate" && t.amountMinor < 0 ? "release" : flow(t));
 const amountCls = (t) => { const k = flow(t); return k === "income" ? "in" : k === "expense" ? "out" : "move"; };
 const isoDay = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 function dayLabel(iso) {
@@ -362,7 +361,7 @@ function dayNet(list) {
 function feedRow(t, opts = {}) {
   const sub = txnSubtitle(t) + (opts.withDate ? " · " + dayLabel(t.date) : "");
   return `<li><button type="button" class="feedrow" data-detail-txn="${esc(t.id)}">
-      <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(flow(t))}</span>
+      <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span>
       <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}</span><span class="fsub"><span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
       <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button>${opts.confirm ? `<button type="button" class="smallbtn" data-confirm="${esc(t.id)}">${esc(__("Confirm…"))}</button>` : ""}</li>`;
 }
@@ -552,7 +551,7 @@ function screenMoneyboxes(v) {
   const goals = state.data.tags.filter((t) => t.targetMinor !== undefined);
   v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Money boxes"))}</h3><button class="smallbtn" id="newBox">${esc(__("+ New money box"))}</button></div>
     ${goals.length ? goals.map(goalCard).join("") : `<div class="empty">${esc(__("No money boxes yet. Create a goal tag, then allocate money to it from any account."))}</div>`}</section>
-    <p class="muted">${esc(__("Allocating records a decision and never moves cash; the account balance stays the same and its free amount drops. Release does the opposite. Both are listed in History."))}</p>`;
+    <p class="muted">${esc(__("Allocating records a decision and never moves cash: the account balance stays the same and its free amount drops. A negative allocation takes money back out. Every allocation is listed in History."))}</p>`;
   $("#newBox").addEventListener("click", () => openTagDialog("goal"));
   bindConfirm(v);
 }
@@ -646,8 +645,8 @@ function screenSettings(v) {
 
 /* ---------- drawer, dialogs, actions ---------- */
 const isGoal = (t) => t.kind === "goal";
-const isDecision = (type) => type === "allocate" || type === "release";
-// tagOptions lists the tags pick() accepts; money boxes (goal tags) are only for allocate/release.
+const isDecision = (type) => type === "allocate";
+// tagOptions lists the tags pick() accepts; money boxes (goal tags) are only for allocations.
 function tagOptions(sel, pick, allowNone = true) {
   const tags = state.data.tags.filter(pick || (() => true));
   const opts = tags.map((t) => `<option value="${esc(t.id)}" ${t.id === sel ? "selected" : ""}>${esc(t.name)}${pick ? "" : ` (${esc(lbl(TAGKIND_L, t.kind))})`}</option>`).join("");
@@ -688,6 +687,9 @@ function setTxnType(type, tagId) {
   $("#fTag").innerHTML = decision ? tagOptions(keep, isGoal, false) : tagOptions(keep, (t) => !isGoal(t));
   $("#fTag").required = decision;
   $("#fStateWrap").hidden = decision;
+  const amount = $("#txnForm").elements.amount;
+  if (decision) amount.removeAttribute("min"); else amount.min = "0.01";
+  $("#fAmtNote").hidden = !decision;
   refreshToAccounts($("#fToAccount").value);
 }
 function openDrawer(type, tagId) {
@@ -696,7 +698,7 @@ function openDrawer(type, tagId) {
   $("#txnForm").reset();
   $("#txnForm").elements.date.value = new Date().toISOString().slice(0, 10);
   setTxnType(type || "expense", tagId);
-  $("#drawerTitle").textContent = type === "allocate" ? __("Allocate to money box") : type === "release" ? __("Release from money box") : __("Add transaction");
+  $("#drawerTitle").textContent = type === "allocate" ? __("Allocate to money box") : __("Add transaction");
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
 }
 function openEditTxn(id) {
@@ -731,6 +733,11 @@ $("#txnForm").addEventListener("submit", async (e) => {
   const f = Object.fromEntries(new FormData(e.target).entries());
   const cur = accCur(f.accountId), type = state.txnType;
   if (type === "transfer" && !f.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to.")); return; }
+  if (toMinor(f.amount, cur) === 0) { msg(__("Enter an amount other than zero.")); return; }
+  if (type === "allocate" && toMinor(f.amount, cur) < 0) { // the server refuses this too; say it with the amount first
+    const held = state.data.transactions.filter((t) => t.id !== state.editingTxn && t.type === "allocate" && t.state === "posted" && t.accountId === f.accountId && t.tagId === f.tagId).reduce((n, t) => n + t.amountMinor, 0);
+    if (held + toMinor(f.amount, cur) < 0) { msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: tagName(f.tagId), amount: fmt(Math.max(0, held), cur), account: accName(f.accountId) })); return; }
+  }
   const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", state: isDecision(type) ? "posted" : f.state };
   if (type === "expense" || type === "income") { // stored as a transfer with an external side
     const ext = f.extAccountId || EXT_ID;
@@ -883,11 +890,11 @@ function openConfirm(id) {
   });
 }
 function showHistory(tagId) {
-  const list = state.data.transactions.filter((t) => t.tagId === tagId && (t.type === "allocate" || t.type === "release"))
+  const list = state.data.transactions.filter((t) => t.tagId === tagId && t.type === "allocate")
     .sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
   openDialog(__("History — {name}", { name: tagName(tagId) }), list.length
-    ? table([{ t: "Date" }, { t: N_("Decision") }, { t: "Account" }, { t: "Amount", num: 1 }], list.map((t) => row([{ l: "Date", v: esc(t.date) }, { l: "Decision", v: `${esc(lbl(TYPE_L, t.type))}${t.note ? " — " + esc(t.note) : ""}` }, { l: "Account", v: esc(accName(t.accountId)) }, { l: "Amount", v: fmt(t.amountMinor, t.currency), num: 1 }])).join(""))
-    : `<p class="muted">${esc(__("No allocate or release decisions yet."))}</p>`);
+    ? table([{ t: "Date" }, { t: N_("Decision") }, { t: "Account" }, { t: "Amount", num: 1 }], list.map((t) => row([{ l: "Date", v: esc(t.date) }, { l: "Decision", v: `${esc(lbl(TYPE_L, t.type))}${t.note ? " — " + esc(t.note) : ""}` }, { l: "Account", v: esc(accName(t.accountId)) }, { l: "Amount", v: esc(amountText(t)), num: 1 }])).join(""))
+    : `<p class="muted">${esc(__("No allocations yet"))}</p>`);
 }
 const fullDate = (iso) => { const [y, m, d] = iso.split("-").map(Number); try { return new Intl.DateTimeFormat(LANG, { dateStyle: "full" }).format(new Date(y, m - 1, d)); } catch (e) { return iso; } };
 // flowEnds: where the money came from and went to, as cards { name, role, open: [kind, id] }.
@@ -901,8 +908,7 @@ function flowEnds(t) {
     case "expense": return [acc(t.fromAccountId), named ? acc(named) : catEnd || { name: __("Uncategorised"), role: __("Spending") }];
     case "income": return [named ? acc(named) : catEnd || { name: __("Income"), role: __("From outside") }, acc(t.toAccountId)];
     case "transfer": return [acc(t.fromAccountId), acc(t.toAccountId)];
-    case "allocate": return [acc(t.accountId), box(t.tagId)];
-    case "release": return [box(t.tagId), acc(t.accountId)];
+    case "allocate": return t.amountMinor < 0 ? [box(t.tagId), acc(t.accountId)] : [acc(t.accountId), box(t.tagId)];
   }
   return [acc(t.accountId), { name: "—", role: "" }];
 }
@@ -926,7 +932,7 @@ function openTxnDetail(id) {
   openDialog(txnTitle(t), `
     ${t.state === "planned" ? `<div class="txbanner"><span>${esc(__("Expected, not confirmed yet. Confirm it when the real charge or income arrives."))}</span><button type="button" class="primarybtn" id="paneConfirm">${esc(__("Confirm…"))}</button></div>` : ""}
     <div class="txhero">
-      <div class="sub"><span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(flow(t))}</span><span>${esc(lbl(TYPE_L, flow(t)))} · ${esc(fullDate(t.date))}</span></div>
+      <div class="sub"><span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span><span>${esc(lbl(TYPE_L, flow(t)))} · ${esc(fullDate(t.date))}</span></div>
       <div class="big ${amountCls(t)}">${esc(amountText(t))}</div>
     </div>
     <div class="flow">${node(from)}<span class="arrow" aria-label="${esc(__("to"))}"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 12h15m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>${node(to)}</div>
@@ -965,11 +971,10 @@ function openTagDetail(id) {
   const pairs = [["Kind", esc(lbl(TAGKIND_L, t.kind))], ["Currency", esc(t.currency || "—")]];
   if (t.limitMinor !== undefined) pairs.push([N_("Monthly budget"), fmt(t.limitMinor, t.currency)], [N_("Spent this month"), fmt(t.spentMinor, t.currency)], ["Remaining", fmt(t.remainingMinor, t.currency)]);
   if (t.targetMinor !== undefined) pairs.push([N_("Money-box target"), fmt(t.targetMinor, t.currency)], [N_("Saved"), fmt(t.savedMinor, t.currency)], [N_("Target date"), esc(t.targetDate || "—")]);
-  openDialog(t.name, detailTable(pairs) + `<div class="pane-actions"><button class="smallbtn" id="paneEdit">${esc(__("Edit tag"))}</button>${t.targetMinor !== undefined ? `<button class="smallbtn" id="paneAlloc">${esc(__("Allocate"))}</button><button class="smallbtn" id="paneRelease">${esc(__("Release"))}</button><button class="smallbtn" id="paneHistory">${esc(__("History"))}</button>` : ""}</div>`);
+  openDialog(t.name, detailTable(pairs) + `<div class="pane-actions"><button class="smallbtn" id="paneEdit">${esc(__("Edit tag"))}</button>${t.targetMinor !== undefined ? `<button class="smallbtn" id="paneAlloc">${esc(__("Allocate"))}</button><button class="smallbtn" id="paneHistory">${esc(__("History"))}</button>` : ""}</div>`);
   $("#paneEdit").addEventListener("click", () => { $("#dialog").close(); openTagDialog(null, id); });
-  const alloc = $("#paneAlloc"), rel = $("#paneRelease"), hist = $("#paneHistory");
+  const alloc = $("#paneAlloc"), hist = $("#paneHistory");
   if (alloc) alloc.addEventListener("click", () => { $("#dialog").close(); openDrawer("allocate", id); });
-  if (rel) rel.addEventListener("click", () => { $("#dialog").close(); openDrawer("release", id); });
   if (hist) hist.addEventListener("click", () => { $("#dialog").close(); showHistory(id); });
 }
 function openTemplateDetail(id) {

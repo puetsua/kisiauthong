@@ -18,7 +18,7 @@
     { "id": "txn-103", "accountId": "acc-b", "tagId": "tag-house", "type": "allocate", "state": "posted", "amountMinor": 15000000, "currency": "TWD", "date": "2026-05-01", "note": "Decided: keep part of House fund in Bank B" },
     { "id": "txn-104", "accountId": "acc-c", "tagId": "tag-house", "type": "allocate", "state": "posted", "amountMinor": 10000000, "currency": "TWD", "date": "2026-08-01", "note": "Decided: keep part of House fund in Account C" },
     { "id": "txn-105", "accountId": "acc-a", "tagId": "tag-furniture", "type": "allocate", "state": "posted", "amountMinor": 8000000, "currency": "TWD", "date": "2026-09-01", "note": "Decided: start Furniture money box" },
-    { "id": "txn-106", "accountId": "acc-a", "tagId": "tag-furniture", "type": "release", "state": "posted", "amountMinor": 3000000, "currency": "TWD", "date": "2026-10-01", "note": "Decided: release NT$30,000 back for a repair bill" }
+    { "id": "txn-106", "accountId": "acc-a", "tagId": "tag-furniture", "type": "allocate", "state": "posted", "amountMinor": -3000000, "currency": "TWD", "date": "2026-10-01", "note": "Decided: release NT$30,000 back for a repair bill" }
   ],
   "tags": [
     { "id": "tag-food", "name": "Food", "kind": "category", "limitMinor": 1200000, "cycle": "monthly" },

@@ -10,7 +10,7 @@ const I18N = {
     "Dashboard": "總覽", "Transactions": "交易", "Accounts": "帳戶", "Budgets": "預算", "Money boxes": "存錢筒",
     "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單",
     // enum labels
-    "Expense": "支出", "Income": "收入", "Transfer": "轉帳", "Allocate": "撥入", "Release": "撥出",
+    "Expense": "支出", "Income": "收入", "Transfer": "轉帳", "Allocate": "分配",
     "Bank": "銀行", "Savings": "儲蓄", "Cash": "現金", "Credit card": "信用卡", "E-wallet": "電子錢包", "Investment": "投資", "Loan": "貸款",
     "Category": "分類", "Goal": "目標", "Label": "一般標籤", "Payee": "收付對象",
     "Daily": "每日", "Weekly": "每週", "Monthly": "每月", "Quarterly": "每季", "Yearly": "每年",
@@ -33,10 +33,12 @@ const I18N = {
     "Keep at least one item, or untick the widget to hide it.": "請至少保留一個項目，或取消勾選來隱藏整個區塊。",
     "Dashboard saved.": "總覽已儲存。", "Dashboard reset.": "總覽已還原預設。",
     "{spent} of {limit}": "{spent}／{limit}", "{saved} of {target} · {pct}%": "{saved}／{target} · {pct}%", "by {date}": "{date} 前",
-    "No allocations yet": "還沒有撥入",
+    "No allocations yet": "還沒有分配",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型",
-    "Clear": "清除", "Today": "今天", "External": "外部", "External accounts": "外部帳戶", "+ New external account": "＋ 新增外部帳戶", "New external account": "新增外部帳戶",
+    "Clear": "清除", "Today": "今天", "A negative amount takes money back out of the money box.": "輸入負數可以把錢從存錢筒撥回帳戶。", "Enter an amount other than zero.": "金額不能是 0。",
+    "{box} holds {amount} in {account}; you can take out at most that.": "{box}在{account}只有 {amount}，最多只能撥回這個金額。",
+    "Allocating records a decision and never moves cash: the account balance stays the same and its free amount drops. A negative allocation takes money back out. Every allocation is listed in History.": "分配只是記錄一個決定，不會真的移動現金：帳戶餘額不變，可用金額減少。負數的分配會把錢撥回帳戶。所有分配都會列在紀錄中。", "External": "外部", "External accounts": "外部帳戶", "+ New external account": "＋ 新增外部帳戶", "New external account": "新增外部帳戶",
     "Paid to": "付給", "Received from": "收自", "Employer": "雇主",
     "Places outside your books, such as an employer or a shop. They have no balance: money moved to one is spending, money from one is income. Expenses and income use “External” unless you pick another.": "帳本以外的對象，例如雇主或商店。外部帳戶沒有餘額：轉給外部帳戶就是支出，從外部帳戶轉入就是收入。支出和收入預設使用「外部」，也可以改選其他外部帳戶。", "Notifications": "通知", "Notifications ({n})": "通知（{n}）", "Dismiss": "清除", "Dismiss all": "全部清除",
     "You're all caught up.": "沒有新通知。", "Open in Transactions": "到交易頁查看", "Waiting for confirmation · {date} · {amount}": "等待確認 · {date} · {amount}",
@@ -52,7 +54,7 @@ const I18N = {
     "From account": "轉出帳戶", "Money box": "存錢筒", "Choose an account to transfer to.": "請選擇轉入帳戶。",
     "No other {currency} account. To move money into another currency, record spending in one account and income in the other.": "沒有其他 {currency} 帳戶。要換成其他幣別，請在一個帳戶記一筆支出，再在另一個帳戶記一筆收入。",
     "Monthly limit (optional)": "每月上限（選填）", "Target amount": "目標金額",
-    "Allocate to money box": "撥入存錢筒", "Release from money box": "從存錢筒撥出",
+    "Allocate to money box": "分配到存錢筒",
     // accounts
     "+ New account": "＋ 新增帳戶", "New account": "新增帳戶", "Edit account": "編輯帳戶",
     "Add account": "新增帳戶", "Save changes": "儲存變更", "Account added.": "帳戶已新增。", "Account updated.": "帳戶已更新。",
@@ -67,14 +69,12 @@ const I18N = {
     "Tag added.": "標籤已新增。", "Tag updated.": "標籤已更新。", "{amount} / month": "{amount}／月",
     "New money box (goal tag)": "新增存錢筒（目標標籤）", "New budget (category tag)": "新增預算（分類標籤）", "Target date": "目標日期", "House fund": "購屋基金", "Food": "餐飲",
     "Monthly budget": "每月預算", "Spent this month": "本月已花費", "Money-box target": "存錢筒目標", "Saved": "已存",
-    "History": "紀錄", "History — {name}": "紀錄：{name}", "No allocate or release decisions yet.": "還沒有撥入或撥出的紀錄。",
+    "History": "紀錄", "History — {name}": "紀錄：{name}",
     "Click a tag name for its pane, where Edit lives. Categories, budgets and money boxes are all tags: a category tag with a limit is a budget, a goal tag is a money box.":
       "點標籤名稱可開啟詳細資料並編輯。分類、預算和存錢筒都是標籤：設了上限的分類標籤就是預算，目標標籤就是存錢筒。",
     // money boxes
     "+ New money box": "＋ 新增存錢筒",
-    "No money boxes yet. Create a goal tag, then allocate money to it from any account.": "還沒有存錢筒。先建立目標標籤，再從任一帳戶撥入金額。",
-    "Allocating records a decision and never moves cash; the account balance stays the same and its free amount drops. Release does the opposite. Both are listed in History.":
-      "撥入只是記錄一個決定，不會真的移動現金：帳戶餘額不變，可用金額減少。撥出則相反。兩者都會列在紀錄中。",
+    "No money boxes yet. Create a goal tag, then allocate money to it from any account.": "還沒有存錢筒。先建立目標標籤，再從任一帳戶分配金額。",
     // templates
     "Transaction templates": "交易範本", "Generate due": "產生到期項目", "+ New template": "＋ 新增範本", "No templates yet.": "還沒有範本。",
     "Click a template name for its pane (Edit, Pause, Generate). On its date a template generates one unconfirmed transaction — never twice. Confirm it (editing the amount for variable bills) to post it.":
