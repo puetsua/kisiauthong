@@ -160,6 +160,10 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
 - **Long lists** that are not tied to a period (search results) page with
   ‹ Previous / Next ›, a "1–20 of 57" count and a 10 / 20 / 50 / 100
   page-size select remembered per browser; a new search starts at page 1.
+- **State in the address**: a screen whose view is worth sharing keeps it in
+  the hash query (`#transactions?q=rent&page=2&per=50`), written with
+  `history.replaceState` so typing does not fill the history; a bare
+  `#screen` keeps what is on screen.
 - **Cards** (`.tcard`, `.acard` …) are for things scanned at a glance (budgets,
   money boxes, accounts); each card is a button that opens its details.
 - **Empty states**: `.empty`, one short sentence; add how to create the first

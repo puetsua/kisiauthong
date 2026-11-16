@@ -735,7 +735,29 @@ function filteredTxns() {
   else if (f.tag) list = list.filter((t) => t.tagId === f.tag || txnCats(t).includes(f.tag));
   return list;
 }
+// The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
+// search can be bookmarked, shared and reloaded. A bare #transactions keeps what is on screen.
+function readTxnURL() {
+  const qs = hashParts().params;
+  if (![...qs.keys()].length) return;
+  state.filter = { q: qs.get("q") || "", account: qs.get("account") || "", type: qs.get("type") || "", tag: qs.get("tag") || "" };
+  state.searchPage = Math.max(0, (parseInt(qs.get("page"), 10) || 1) - 1);
+  const per = parseInt(qs.get("per"), 10);
+  if (PAGE_SIZES.includes(per)) state.pageSize = per;
+}
+function writeTxnURL() {
+  if (hashParts().path !== "transactions") return;
+  const f = state.filter, qs = new URLSearchParams();
+  ["q", "account", "type", "tag"].forEach((k) => { if (f[k]) qs.set(k, f[k]); });
+  if (f.q.trim()) {
+    if (state.searchPage) qs.set("page", state.searchPage + 1);
+    if (pageSize() !== 20) qs.set("per", pageSize());
+  }
+  const h = "#transactions" + (qs.toString() ? "?" + qs : "");
+  if (location.hash !== h) history.replaceState(null, "", h); // no hashchange, so no re-render
+}
 function screenTransactions(v) {
+  readTxnURL();
   const f = state.filter;
   const accOpt = (a) => `<option value="${esc(a.id)}" ${f.account === a.id ? "selected" : ""}>${esc(accName(a.id))}</option>`;
   const accOpts = `<option value="">${esc(__("All accounts"))}</option>` + state.data.accounts.map(accOpt).join("")
@@ -838,12 +860,13 @@ function screenTransactions(v) {
     };
     if ($("#pStart")) { $("#pStart").addEventListener("change", onRange); $("#pEnd").addEventListener("change", onRange); }
     bindActions(box);
+    writeTxnURL();
     bindDays(box);
   };
   const upd = () => { state.searchPage = 0; state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, tag: $("#ftag").value }; countF(); drawResults(); };
   ["faccount", "ftype", "ftag"].forEach((id) => $("#" + id).addEventListener("change", upd));
   $("#fq").addEventListener("input", upd);
-  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", tag: "" }; render(); });
+  $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", tag: "" }; history.replaceState(null, "", "#transactions"); render(); });
   countF();
   drawResults();
   if (state.scrollToExpected && $("#expectedSec")) $("#expectedSec").scrollIntoView({ block: "start" });
@@ -1546,7 +1569,7 @@ function renderBell() {
   const all = $("#nDismissAll");
   if (all) all.addEventListener("click", () => saveDismissed(list.filter((x) => !x.fixed).map((x) => x.key)));
   const toTxns = $("#nToTxns");
-  if (toTxns) toTxns.addEventListener("click", () => { close(); state.scrollToExpected = true; if (location.hash === "#transactions") render(); else location.hash = "#transactions"; });
+  if (toTxns) toTxns.addEventListener("click", () => { close(); state.scrollToExpected = true; if (currentScreen() === "transactions") render(); else location.hash = "#transactions"; });
 }
 $("#bellBtn").addEventListener("click", (e) => { e.stopPropagation(); state.notifOpen = !state.notifOpen; renderBell(); });
 // composedPath, not contains(): a click inside the panel may re-render it and detach e.target
@@ -2037,8 +2060,13 @@ async function drawServer() {
 
 /* ---------- routing ---------- */
 const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
+// the hash is "#screen", optionally with a query ("#transactions?q=rent")
+function hashParts() {
+  const h = location.hash.replace(/^#/, ""), i = h.indexOf("?");
+  return { path: i < 0 ? h : h.slice(0, i), params: new URLSearchParams(i < 0 ? "" : h.slice(i + 1)) };
+}
 function currentScreen() {
-  const h = location.hash.replace("#", "");
+  const h = hashParts().path;
   if (h === "budgets" || h === "moneyboxes") return "tags"; // budgets and money boxes live on the Tags page now
   if (isAdminScreen(h) && !(state.me && state.me.isAdmin)) return "dashboard";
   return SCREENS[h] ? h : "dashboard";
