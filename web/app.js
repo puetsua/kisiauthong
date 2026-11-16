@@ -732,13 +732,26 @@ function screenTransactions(v) {
   const tagGroup = (label, tags) => (tags.length ? `<optgroup label="${esc(label)}">${tags.map(tagOpt).join("")}</optgroup>` : "");
   const tagOpts = `<option value="">${esc(__("All categories"))}</option><option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
     + tagGroup(__("Categories"), state.data.tags.filter((t) => !isGoal(t))) + tagGroup(__("Money boxes"), state.data.tags.filter(isGoal));
-  v.innerHTML = `<div class="filters">
+  // on phones the dropdowns fold away behind a Filters button that counts the ones in use
+  v.innerHTML = `<div class="filters${state.filtersOpen ? " open" : ""}">
       <input id="fq" type="search" placeholder="${esc(__("Search note, tag, account…"))}" value="${esc(f.q)}">
-      <select id="faccount">${accOpts}</select>
-      <select id="ftype"><option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}</select>
-      <select id="ftag">${tagOpts}</select>
-      <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div>
+      <button type="button" class="smallbtn ftoggle" id="fToggle" aria-expanded="${!!state.filtersOpen}" aria-controls="fMore"></button>
+      <div class="fmore" id="fMore">
+      <select id="faccount" aria-label="${esc(__("Account"))}">${accOpts}</select>
+      <select id="ftype" aria-label="${esc(__("Type"))}"><option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}</select>
+      <select id="ftag" aria-label="${esc(__("Tags"))}">${tagOpts}</select>
+      <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div></div>
     <div id="txnResults"></div>`;
+  const countF = () => {
+    const n = ["account", "type", "tag"].filter((k) => state.filter[k]).length;
+    $("#fToggle").textContent = n ? __("Filters · {n}", { n }) : __("Filters");
+    $("#fToggle").classList.toggle("on", n > 0);
+  };
+  $("#fToggle").addEventListener("click", () => {
+    state.filtersOpen = !state.filtersOpen;
+    $(".filters").classList.toggle("open", state.filtersOpen);
+    $("#fToggle").setAttribute("aria-expanded", state.filtersOpen);
+  });
   const today = state.data.today;
   const nav = (p) => {
     const atLatest = p.end >= today;
@@ -790,10 +803,11 @@ function screenTransactions(v) {
     bindActions(box);
     bindDays(box);
   };
-  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, tag: $("#ftag").value }; drawResults(); };
+  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, tag: $("#ftag").value }; countF(); drawResults(); };
   ["faccount", "ftype", "ftag"].forEach((id) => $("#" + id).addEventListener("change", upd));
   $("#fq").addEventListener("input", upd);
   $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", tag: "" }; render(); });
+  countF();
   drawResults();
   if (state.scrollToExpected && $("#expectedSec")) $("#expectedSec").scrollIntoView({ block: "start" });
   state.scrollToExpected = false;
@@ -1120,6 +1134,17 @@ $("#drawerBackdrop").addEventListener("click", closeDrawer);
 document.querySelectorAll("#typeSeg button").forEach((b) => b.addEventListener("click", () => setTxnType(b.dataset.type)));
 $("#fAccount").addEventListener("change", () => refreshToAccounts($("#fToAccount").value));
 $("#addBtn").addEventListener("click", () => openDrawer("expense"));
+$("#tabAdd").addEventListener("click", () => openDrawer("expense"));
+// More (phones): a sheet with the pages the tab bar has no room for
+function showMore(open) {
+  $("#moreSheet").hidden = $("#moreBack").hidden = !open;
+  $("#tabMore").setAttribute("aria-expanded", open);
+  if (open) $("#moreSheet a").focus();
+}
+$("#tabMore").addEventListener("click", () => showMore($("#moreSheet").hidden));
+$("#moreBack").addEventListener("click", () => showMore(false));
+$("#moreSheet").addEventListener("click", (e) => { if (e.target.closest("a")) showMore(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#moreSheet").hidden) { showMore(false); $("#tabMore").focus(); } });
 
 $("#txnForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1413,7 +1438,7 @@ async function boot() {
 function showAuth(mode) {
   state.me = null; state.data = null;
   msg("");
-  $(".shell").hidden = true; $("#addBtn").hidden = true; $("#notifPanel").hidden = true; $("#userMenu").hidden = true;
+  $(".shell").hidden = true; $("#addBtn").hidden = true; showMore(false); $("#notifPanel").hidden = true; $("#userMenu").hidden = true;
   const box = $("#authScreen");
   box.hidden = false;
   const setup = mode === "setup";
@@ -1887,9 +1912,13 @@ function render() {
   if (!admin) state.lastBookScreen = key;
   $("#nav").hidden = admin; $("#adminNav").hidden = !admin;
   document.querySelectorAll("#nav a, #adminNav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === key));
+  document.querySelectorAll("#tabbar a, #moreSheet a").forEach((a) => a.classList.toggle("on", a.dataset.tab === key));
+  $("#tabMore").classList.toggle("on", !["dashboard", "transactions", "accounts"].includes(key));
+  $("#moreAdmin").hidden = !(state.me && state.me.isAdmin);
   drawSideAdmin();
   renderBell();
   $("#addBtn").hidden = admin || (key === "dashboard" && state.customizing); // nothing to add there; it would cover widgets being edited
+  $("#tabAdd").disabled = admin;
   SCREENS[key][1]($("#view"));
 }
 window.addEventListener("hashchange", render);

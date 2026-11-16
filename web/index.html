@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#2a1740">
 <title>記數通 KiSiauThong</title>
-<link rel="stylesheet" href="style.css?v=75">
+<link rel="stylesheet" href="style.css?v=77">
 </head>
 <body>
 <div id="authScreen" class="authscreen" hidden></div>
@@ -40,6 +40,25 @@
       </div>
     </header>
     <main id="view" class="view"></main>
+  </div>
+  <!-- phones: the main pages at the thumb; the rest under More -->
+  <nav id="tabbar" class="tabbar" data-i18n-aria="Main">
+    <a href="#dashboard" data-tab="dashboard"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="Dashboard">Dashboard</span></a>
+    <a href="#transactions" data-tab="transactions"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="Transactions">Transactions</span></a>
+    <button type="button" id="tabAdd" class="tabadd" data-i18n-aria="Add transaction"><span><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span></button>
+    <a href="#accounts" data-tab="accounts"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18v3M3 7.5V17a2 2 0 0 0 2 2h15V8H5.5A2.5 2.5 0 0 1 3 7.5M16 13.5h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="Accounts">Accounts</span></a>
+    <button type="button" id="tabMore" aria-haspopup="dialog" aria-expanded="false" aria-controls="moreSheet"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="More">More</span></button>
+  </nav>
+</div>
+<div id="moreBack" class="sheetback" hidden></div>
+<div id="moreSheet" class="moresheet" role="dialog" data-i18n-aria="More" hidden>
+  <a href="#templates" data-tab="templates"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="Templates">Templates</span></a>
+  <a href="#tags" data-tab="tags"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9zM7.5 7.5h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="Tags">Tags</span></a>
+  <a href="#settings" data-tab="settings"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="Settings">Settings</span></a>
+  <div id="moreAdmin" hidden>
+    <div class="navhead" data-i18n="Administration">Administration</div>
+    <a href="#admin" data-tab="admin"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="Server">Server</span></a>
+    <a href="#admin/users" data-tab="admin/users"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M16 20v-1a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v1M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M20 20v-1a4 4 0 0 0-3-3.9M15 3.1a4 4 0 0 1 0 7.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="Users">Users</span></a>
   </div>
 </div>
 
@@ -82,7 +101,7 @@
   <div id="dialogBody"></div>
 </dialog>
 
-<script src="i18n.js?v=75"></script>
-<script src="app.js?v=75"></script>
+<script src="i18n.js?v=77"></script>
+<script src="app.js?v=77"></script>
 </body>
 </html>

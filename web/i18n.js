@@ -8,7 +8,7 @@ const I18N = {
   "zh-TW": {
     // navigation and screens
     "Dashboard": "總覽", "Transactions": "交易", "Accounts": "帳戶", "Budgets": "預算", "Money boxes": "存錢筒",
-    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單",
+    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單", "More": "更多", "Type": "類型", "Filters": "篩選", "Filters · {n}": "篩選 · {n}",
     // enum labels
     "Expense": "支出", "Income": "收入", "Transfer": "轉帳", "Allocate": "分配",
     "Bank": "銀行", "Savings": "儲蓄", "Cash": "現金", "Investment": "投資", "Loan": "貸款",

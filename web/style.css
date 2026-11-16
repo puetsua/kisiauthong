@@ -140,7 +140,7 @@ tr.unconfirmed td{background:#fdf0cd}
 .smallbtn{background:#fff;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:5px 11px;font-weight:600;cursor:pointer;font-size:.85rem}
 .smallbtn.danger{color:var(--red);border-color:var(--red)}
 .smallbtn:disabled{opacity:.35;cursor:default}
-.filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.filters input,.filters select{padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.fmore{display:contents}.ftoggle{display:none}.filters input,.filters select{padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff}
 .datehead{font-family:Georgia,serif;font-weight:700;margin:18px 0 4px}
 .empty{border:1px dashed var(--line);border-radius:10px;padding:26px;text-align:center;color:var(--muted);background:#fff}
 .backdrop{position:fixed;inset:0;background:rgba(30,20,40,.45);z-index:8}
@@ -269,6 +269,35 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .primarybtn{padding:9px 13px}
 }
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+/* phones: a bottom tab bar in place of the sidebar, and the More sheet */
+.tabbar,.moresheet{display:none}
+.sheetback{position:fixed;inset:0;background:rgba(30,20,40,.45);z-index:10}
+@media (max-width:800px){
+  .shell>.sidebar,.fab{display:none}
+  .view{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom))}
+  .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:6;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:end;background:#fff;border-top:1px solid var(--line);padding:4px 4px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(40,20,60,.06)}
+  .tabbar a,.tabbar button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:52px;padding:4px 2px;border:0;background:none;color:var(--muted);font:inherit;font-size:.7rem;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .tabbar span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tabbar .on{color:var(--accent);font-weight:700}
+  .tabbar .tabadd>span{width:52px;height:52px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;margin-top:-22px;box-shadow:0 6px 16px rgba(91,42,134,.4)}
+  .tabbar .tabadd:active>span{background:var(--accent2)}
+  .tabbar .tabadd:disabled{opacity:.35;cursor:default}
+  .tabbar :focus-visible{outline:2px solid var(--accent2);outline-offset:-2px;border-radius:10px}
+  .moresheet{position:fixed;left:0;right:0;bottom:0;z-index:11;display:flex;flex-direction:column;background:#fff;border-radius:18px 18px 0 0;box-shadow:0 -10px 30px rgba(30,10,50,.25);padding:14px 12px calc(14px + env(safe-area-inset-bottom))}
+  .moresheet[hidden]{display:none}
+  .moresheet::before{content:"";width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 8px}
+  .moresheet a{display:flex;align-items:center;gap:14px;padding:13px 10px;border-radius:10px;color:var(--ink);text-decoration:none;font-weight:600}
+  .moresheet a svg{color:var(--accent)}
+  .moresheet a.on{background:var(--accentsoft);color:var(--accent)}
+  .moresheet .navhead{display:block;color:var(--muted);padding:12px 10px 4px;border-top:1px solid var(--rule);margin-top:6px}
+  .filters #fq{flex:1;min-width:0}
+  .ftoggle{display:inline-block;flex:none}
+  .ftoggle.on{background:var(--accentsoft)}
+  .filters:not(.open) .fmore{display:none}
+  .filters.open .fmore{display:flex;flex-wrap:wrap;gap:10px;width:100%}
+  .fmore select{flex:1 1 40%;min-width:0}
+}
 
 /* tag dialog: amount with its currency; a checkbox line */
 .moneyrow{display:flex;gap:8px;margin-top:4px}
