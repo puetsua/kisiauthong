@@ -98,7 +98,7 @@ const I18N = {
     "No allocations yet": "還沒有分配",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型", "All categories": "所有分類", "No categories yet.": "還沒有分類。",
-    "Clear": "清除", "Today": "今天", "Expected range {min} – {max}.": "預計範圍 {min} – {max}。",
+    "Clear": "清除", "Today": "今天", "Spending faster than the period": "花得比時間進度快", "Expected range {min} – {max}.": "預計範圍 {min} – {max}。",
     "Expected on {date}, not confirmed yet. Check the amount and save to confirm it.": "預計在 {date}，尚未確認。核對金額後儲存即可確認。",
     "Has a note": "有備註",
     "Details worth remembering: who, why, receipt number…": "值得記下的細節：和誰、為什麼、收據號碼…", "A negative amount takes money back out of the money box.": "輸入負數可以把錢從存錢筒撥回帳戶。", "Enter an amount other than zero.": "金額不能是 0。",

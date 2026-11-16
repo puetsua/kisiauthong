@@ -294,9 +294,6 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 .bcard.over .bamount b{color:var(--red)}
 .tfoot{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;font-weight:600;font-size:.92rem}
 .tfoot .neg{color:var(--red)}
-.pacebar{position:relative;overflow:visible}
-.pacebar i{border-radius:5px}
-.pacebar em{position:absolute;top:-4px;bottom:-4px;width:2px;margin-left:-1px;background:var(--ink);border-radius:1px;opacity:.55}
 .ccard{gap:14px}
 
 /* Accounts page: totals, then accounts as cards grouped by kind */
