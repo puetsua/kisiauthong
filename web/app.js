@@ -1088,14 +1088,14 @@ function quickPicks() {
     if (t.date + (t.time || "") > g.t.date + (g.t.time || "")) g.t = t; // the latest one gives amount, payee and tags
   });
   const often = Object.entries(groups).filter(([k, g]) => g.n >= 2 && !covered.has(k)).map(([, g]) => g)
-    .sort((a, b) => b.n - a.n || b.t.date.localeCompare(a.t.date)).slice(0, 6);
+    .sort((a, b) => b.n - a.n || b.t.date.localeCompare(a.t.date)).slice(0, 4);
   return [...picks, ...often.map((g) => ({ label: g.t.note, title: g.t.note, t: g.t }))];
 }
 function drawQuick(picks) {
   state.quick = picks;
   const box = $("#fQuick"), acc = (t) => (flow(t) === "transfer" ? t.fromAccountId : ownAcc(t));
   box.hidden = !picks.length;
-  box.innerHTML = picks.map((p, i) => `<button type="button" class="qpick" data-pick="${i}" aria-pressed="false"><b>${esc(p.label)}</b><small>${esc(fmt(Math.abs(p.t.amountMinor), p.t.currency))} · ${esc(accName(acc(p.t)))}</small></button>`).join("");
+  box.innerHTML = picks.map((p, i) => `<button type="button" class="qpick" data-pick="${i}" aria-pressed="false" title="${esc(p.label)}"><b>${esc(p.label)}</b><small>${esc(fmt(Math.abs(p.t.amountMinor), p.t.currency))} · ${esc(accName(acc(p.t)))}</small></button>`).join("");
   box.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => applyPick(state.quick[+b.dataset.pick], b)));
 }
 const setSel = (sel, v) => { if (v && [...sel.options].some((o) => o.value === v)) sel.value = v; };
@@ -1212,6 +1212,7 @@ function syncTz() { const el = $("#txnForm").elements; $("#fTzWrap").hidden = !e
 $("#txnForm").elements.time.addEventListener("input", syncTz);
 $("#fDelete").addEventListener("click", async () => { showActions(false); if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
 $("#drawerBackdrop").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden && !$("#dialog").open) closeDrawer(); });
 document.querySelectorAll("#typeSeg button").forEach((b) => b.addEventListener("click", () => setTxnType(b.dataset.type)));
 $("#fAccount").addEventListener("change", () => refreshToAccounts($("#fToAccount").value));
 $("#addBtn").addEventListener("click", () => openDrawer("expense"));
