@@ -424,6 +424,7 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 /* transaction date + time side by side; time shown before a feed row's subtitle */
 .daterow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px}
 .ftime{font-variant-numeric:tabular-nums;margin-right:6px;color:var(--ink);opacity:.8}
+.fwhen{margin-right:6px;color:var(--ink);font-weight:600}
 .ftime[title]{cursor:help}
 
 /* Settings: a sticky section list beside cards of label | control rows */

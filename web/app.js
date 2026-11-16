@@ -639,10 +639,11 @@ function dayNet(list) {
   return Object.entries(net).filter(([, v]) => v).map(([c, v]) => (v > 0 ? "+" : "−") + fmt(Math.abs(v), c)).join(" · ");
 }
 function feedRow(t, opts = {}) {
-  const sub = txnSubtitle(t) + (opts.withDate ? " · " + dayLabel(txnDay(t)) : "");
+  // withDate: rows outside day sections (search results, expected) lead with their date
+  const sub = txnSubtitle(t), when = opts.withDate ? `<span class="fwhen">${esc(dayLabel(txnDay(t)))}</span>` : "";
   return `<li><button type="button" class="feedrow" ${opts.edit ? "data-edit-txn" : "data-detail-txn"}="${esc(t.id)}">
       <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span>
-      <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub">${txnClock(t)}<span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
+      <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub">${when}${txnClock(t)}<span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
       <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button></li>`;
 }
 /* ---------- transaction periods (the list pages by calendar period, not by entry count) ---------- */
@@ -778,7 +779,8 @@ function screenTransactions(v) {
     const head = searching ? `<div class="periodbar"><span class="plabel">${esc(__("{n} result(s) in all history", { n: list.length }))}</span></div>`
       : `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
     const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, edit: true })).join("")}</ul></section>` : "";
-    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(list, searching ? Infinity : openDays())}</section>`
+    // search results: one flat list, each row carrying its date
+    const postedHTML = list.length ? `<section class="panel feedpanel">${searching ? `<ul class="feed">${list.map((t) => feedRow(t, { withDate: true })).join("")}</ul>` : feedHTML(list, openDays())}</section>`
       : `<div class="empty">${esc(searching ? __("No transactions match your search.") : __("No transactions in this period."))}</div>`;
     $("#txnResults").innerHTML = expectedHTML + head + postedHTML;
     const box = $("#txnResults");
