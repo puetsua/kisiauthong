@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 # 記數通 KiSiauThong
 
-Self-hosted personal bookkeeping: budgets (monthly by default, or daily, weekly, every N weeks or months, yearly, or a fixed date range), billing cycles for memberships and bills, bank and wallet balances, multi-currency wallets (e.g. JPY beside TWD), credit card usage, and money boxes for future plans such as travel.
+Self-hosted personal bookkeeping: budgets (monthly by default, or daily, weekly, every N weeks or months, yearly, or a fixed date range), billing cycles for memberships and bills, bank and wallet balances, multi-currency wallets (e.g. JPY beside TWD), credit card usage, money boxes for future plans such as travel, and shortcuts that fill in everyday entries such as breakfast in one tap.
 
 Platforms: web server (self-hosted), desktop (Windows, Linux, macOS), and Android.
 

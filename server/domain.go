@@ -172,6 +172,9 @@ func daysInMonth(y int, m time.Month) int {
 // Occurrences returns scheduled dates in [from, to] inclusive, clamping day-of-month.
 func Occurrences(tpl TransactionTemplate, from, to string) []string {
 	s := tpl.Schedule
+	if s.Frequency == "never" || s.StartDate == "" { // a shortcut (ADR 0012), or no schedule to follow
+		return nil
+	}
 	interval := s.Interval
 	if interval < 1 {
 		interval = 1

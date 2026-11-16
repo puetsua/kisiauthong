@@ -133,7 +133,7 @@ function cycleName(cycle, every) {
 }
 // "Monthly · Nov 1 – 30, 2026": how a budget repeats and the period it is in now
 const budgetPeriodText = (t) => (t.cycle === "range" ? "" : cycleName(t.cycle, t.cycleEvery) + " · ") + periodLabel({ start: t.periodStart, end: t.periodEnd });
-const FREQ_L = { daily: N_("Daily"), weekly: N_("Weekly"), monthly: N_("Monthly"), quarterly: N_("Quarterly"), yearly: N_("Yearly") };
+const FREQ_L = { never: N_("Never"), daily: N_("Daily"), weekly: N_("Weekly"), monthly: N_("Monthly"), quarterly: N_("Quarterly"), yearly: N_("Yearly") };
 const lbl = (map, x) => __(map[x] || x);
 const enumOptions = (map, keys, sel) => keys.map((k) => `<option value="${esc(k)}" ${k === sel ? "selected" : ""}>${esc(lbl(map, k))}</option>`).join("");
 const txnTitle = (t) => t.note || lbl(TYPE_L, flow(t));
@@ -885,17 +885,22 @@ function screenAccounts(v) {
 }
 
 const scheduleText = (s) => lbl(FREQ_L, s.frequency) + (s.dayOfMonth ? " · " + __("day {n}", { n: s.dayOfMonth }) : "");
+const isShortcut = (tp) => tp.schedule.frequency === "never";
 function screenTemplates(v) {
-  const rows = state.data.transactionTemplates.map((t) => row([
-    { l: N_("Template"), v: `<button class="titlelink" data-detail-template="${esc(t.id)}">${esc(t.name)}</button>${t.template.expectedRangeMinor ? `<br><span class="chip due">${esc(__("variable {min}–{max}", { min: fmt(t.template.expectedRangeMinor.min, t.template.currency), max: fmt(t.template.expectedRangeMinor.max, t.template.currency) }))}</span>` : ""}` },
-    { l: N_("Generates"), v: `${esc(lbl(TYPE_L, flow(t.template)))} ${fmt(t.template.amountMinor, t.template.currency)}<br><span class="muted">${esc(transferAcct(t.template))}${[t.template.tagId, ...(t.template.tagIds || [])].filter(Boolean).map((id) => " → " + esc(tagName(id))).join("")}</span>` },
+  const name = (t) => ({ l: N_("Template"), v: `<button class="titlelink" data-detail-template="${esc(t.id)}">${esc(t.name)}</button>${t.template.expectedRangeMinor ? `<br><span class="chip due">${esc(__("variable {min}–{max}", { min: fmt(t.template.expectedRangeMinor.min, t.template.currency), max: fmt(t.template.expectedRangeMinor.max, t.template.currency) }))}</span>` : ""}` });
+  const what = (t, l) => ({ l, v: `${esc(lbl(TYPE_L, flow(t.template)))} ${fmt(t.template.amountMinor, t.template.currency)}<br><span class="muted">${esc(transferAcct(t.template))}${[t.template.tagId, ...(t.template.tagIds || [])].filter(Boolean).map((id) => " → " + esc(tagName(id))).join("")}</span>` });
+  const status = (t) => ({ l: N_("Status"), v: esc(t.enabled ? __("Enabled") : __("Paused")) });
+  const all = state.data.transactionTemplates;
+  const rows = all.filter((t) => !isShortcut(t)).map((t) => row([name(t), what(t, N_("Generates")),
     { l: N_("Schedule"), v: `${esc(scheduleText(t.schedule))}<br><span class="muted">${esc(__("from {date}", { date: t.schedule.startDate }))}</span>` },
-    { l: N_("Next due"), v: esc(t.nextDue || "—") },
-    { l: N_("Status"), v: esc(t.enabled ? __("Enabled") : __("Paused")) },
-  ])).join("");
+    { l: N_("Next due"), v: esc(t.nextDue || "—") }, status(t)])).join("");
+  const cuts = all.filter(isShortcut).map((t) => row([name(t), what(t, N_("Fills in")), status(t)])).join("");
   v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Transaction templates"))}</h3><span><button class="smallbtn" id="genBtn">${esc(__("Generate due"))}</button> <button class="smallbtn" id="newTpl">${esc(__("+ New template"))}</button></span></div>
-    ${rows ? table([{ t: "Template" }, { t: "Generates" }, { t: "Schedule" }, { t: "Next due" }, { t: "Status" }], rows) : `<div class="empty">${esc(__("No templates yet."))}</div>`}</section>`;
+    ${rows ? table([{ t: "Template" }, { t: "Generates" }, { t: "Schedule" }, { t: "Next due" }, { t: "Status" }], rows) : `<div class="empty">${esc(__("No templates yet."))}</div>`}</section>
+    <section class="panel"><div class="panelhead"><h3>${esc(__("Shortcuts"))}</h3><button class="smallbtn" id="newCut">${esc(__("+ New shortcut"))}</button></div>
+    ${cuts ? table([{ t: "Template" }, { t: N_("Fills in") }, { t: "Status" }], cuts) : `<div class="empty">${esc(__("No shortcuts yet. In the add form, choose ⋯ and Save as template."))}</div>`}</section>`;
   $("#newTpl").addEventListener("click", () => openTemplateDialog());
+  $("#newCut").addEventListener("click", () => openTemplateDialog(null, { name: "", template: null, schedule: { frequency: "never" } }));
   $("#genBtn").addEventListener("click", generateDue);
   bindDetails(v);
 }
@@ -1034,9 +1039,15 @@ function tagOptions(sel, pick, allowNone = true) {
   if (allowNone) return `<option value="">${esc(__("— none —"))}</option>` + opts;
   return opts || `<option value="">${esc(__("No money boxes yet."))}</option>`;
 }
+// own accounts, the most used in the last 90 days first; ties keep your order
+function accountsByUse() {
+  const since = addDays(state.data.today, -90), n = {};
+  state.data.transactions.forEach((t) => { if (t.date >= since) [t.accountId, t.fromAccountId, t.toAccountId].forEach((id) => { if (id) n[id] = (n[id] || 0) + 1; }); });
+  return state.data.accounts.map((a, i) => ({ a, n: n[a.id] || 0, i })).sort((x, y) => y.n - x.n || x.i - y.i).map((x) => x.a);
+}
 const accOption = (a, sel) => `<option value="${esc(a.id)}" ${a.id === sel ? "selected" : ""}>${esc(a.name)} (${esc(a.currency)})</option>`;
 function fillSelects() {
-  $("#fAccount").innerHTML = state.data.accounts.map((a) => accOption(a)).join("");
+  $("#fAccount").innerHTML = accountsByUse().map((a) => accOption(a)).join("");
   // the anonymous external account first, then named ones
   const ext = [...state.data.externals].sort((a, b) => (a.id === EXT_ID ? -1 : b.id === EXT_ID ? 1 : a.name.localeCompare(b.name)));
   $("#fExt").innerHTML = ext.map((a) => `<option value="${esc(a.id)}">${esc(accName(a.id))}</option>`).join("");
@@ -1044,7 +1055,7 @@ function fillSelects() {
 // A transfer stays in one currency: the target list holds the other accounts in the source's currency.
 function refreshToAccounts(sel) {
   const from = state.data.accounts.find((a) => a.id === $("#fAccount").value);
-  const list = from ? state.data.accounts.filter((a) => a.id !== from.id && a.currency === from.currency) : [];
+  const list = from ? accountsByUse().filter((a) => a.id !== from.id && a.currency === from.currency) : [];
   $("#fToAccount").innerHTML = list.map((a) => accOption(a, sel)).join("");
   $("#fToAccount").disabled = !list.length;
   const none = state.txnType === "transfer" && from && !list.length;
@@ -1052,13 +1063,55 @@ function refreshToAccounts(sel) {
   $("#fToNone").textContent = none ? __("No other {currency} account. To move money into another currency, record spending in one account and income in the other.", { currency: from.currency }) : "";
 }
 // Categories are toggles: a transaction can have several (ADR 0010).
-function drawCats(sel) {
+function drawCats(sel, box = $("#fCats")) {
   const cats = state.data.tags.filter((t) => !isGoal(t));
-  $("#fCats").innerHTML = cats.length ? cats.map((t) => `<button type="button" data-cat="${esc(t.id)}" aria-pressed="${sel.includes(t.id)}">${esc(t.name)}</button>`).join("")
+  box.innerHTML = cats.length ? cats.map((t) => `<button type="button" data-cat="${esc(t.id)}" aria-pressed="${sel.includes(t.id)}">${esc(t.name)}</button>`).join("")
     : `<small class="muted">${esc(__("No categories yet."))}</small>`;
-  $("#fCats").querySelectorAll("[data-cat]").forEach((b) => b.addEventListener("click", () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
+  box.querySelectorAll("[data-cat]").forEach((b) => b.addEventListener("click", () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
 }
-const pickedCats = () => [...$("#fCats").querySelectorAll("[data-cat][aria-pressed=true]")].map((b) => b.dataset.cat);
+const pickedCats = (box = $("#fCats")) => [...box.querySelectorAll("[data-cat][aria-pressed=true]")].map((b) => b.dataset.cat);
+// One-tap fills for the add form: shortcuts (templates that never repeat, ADR 0012), the most used first,
+// then what you entered at least twice in the last 60 days that no shortcut covers.
+function quickPicks() {
+  const today = state.data.today, key = (t, title) => [flow(t), ownAcc(t), title].join("|");
+  const recent = state.data.transactions.filter((t) => t.state === "posted" && t.note && t.date >= addDays(today, -90) && t.date <= today);
+  const uses = {};
+  recent.forEach((t) => { const k = key(t, t.note); uses[k] = (uses[k] || 0) + 1; });
+  const picks = state.data.transactionTemplates.filter((tp) => tp.enabled && isShortcut(tp)).map((tp) => {
+    const title = tp.template.note || tp.name;
+    return { label: tp.name, title, t: tp.template, n: uses[key(tp.template, title)] || 0 };
+  }).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
+  const covered = new Set(picks.map((p) => key(p.t, p.title))), groups = {};
+  recent.filter((t) => t.date >= addDays(today, -60) && (flow(t) === "expense" || flow(t) === "income")).forEach((t) => {
+    const k = key(t, t.note), g = groups[k] || (groups[k] = { n: 0, t });
+    g.n++;
+    if (t.date + (t.time || "") > g.t.date + (g.t.time || "")) g.t = t; // the latest one gives amount, payee and tags
+  });
+  const often = Object.entries(groups).filter(([k, g]) => g.n >= 2 && !covered.has(k)).map(([, g]) => g)
+    .sort((a, b) => b.n - a.n || b.t.date.localeCompare(a.t.date)).slice(0, 6);
+  return [...picks, ...often.map((g) => ({ label: g.t.note, title: g.t.note, t: g.t }))];
+}
+function drawQuick(picks) {
+  state.quick = picks;
+  const box = $("#fQuick"), acc = (t) => (flow(t) === "transfer" ? t.fromAccountId : ownAcc(t));
+  box.hidden = !picks.length;
+  box.innerHTML = picks.map((p, i) => `<button type="button" class="qpick" data-pick="${i}" aria-pressed="false"><b>${esc(p.label)}</b><small>${esc(fmt(Math.abs(p.t.amountMinor), p.t.currency))} · ${esc(accName(acc(p.t)))}</small></button>`).join("");
+  box.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => applyPick(state.quick[+b.dataset.pick], b)));
+}
+const setSel = (sel, v) => { if (v && [...sel.options].some((o) => o.value === v)) sel.value = v; };
+// fill the form from a pick; the date and time stay now, and the amount is ready to change
+function applyPick(p, btn) {
+  const t = p.t, mode = flow(t), el = $("#txnForm").elements;
+  setSel(el.accountId, mode === "transfer" ? t.fromAccountId : ownAcc(t));
+  setTxnType(mode, mode === "allocate" ? t.tagId : txnCats(t));
+  if (mode === "transfer") refreshToAccounts(t.toAccountId);
+  if (mode === "expense" || mode === "income") setSel($("#fExt"), extAcc(t) || EXT_ID);
+  el.amount.value = decimal(t.amountMinor, t.currency);
+  el.note.value = p.title;
+  $("#fQuick").querySelectorAll("[data-pick]").forEach((b) => b.setAttribute("aria-pressed", b === btn));
+  el.amount.focus();
+  el.amount.select();
+}
 // setTxnType shows only the fields the type uses. tags: the money box id, or the category ids; kept when left out
 function setTxnType(type, tags) {
   state.txnType = type;
@@ -1079,7 +1132,32 @@ function setTxnType(type, tags) {
   if (decision) amount.removeAttribute("min"); else amount.min = "0.01";
   $("#fAmtNote").hidden = !decision;
   refreshToAccounts($("#fToAccount").value);
+  syncActions();
 }
+// ⋯ beside Save: actions on the form (a transfer cannot become a template)
+function syncActions() {
+  $("#fSaveTpl").hidden = state.txnType === "transfer";
+  $("#fMoreBtn").hidden = $("#fSaveTpl").hidden && $("#fDelete").hidden;
+  showActions(false);
+}
+function showActions(open) {
+  $("#fMoreMenu").hidden = !open;
+  $("#fMoreBtn").setAttribute("aria-expanded", open);
+  if (open) { const first = $("#fMoreMenu").querySelector("button:not([hidden])"); if (first) first.focus(); }
+}
+$("#fMoreBtn").addEventListener("click", () => showActions($("#fMoreMenu").hidden));
+document.addEventListener("click", (e) => { if (!$("#fMoreMenu").hidden && !e.target.closest("#fMoreMenu, #fMoreBtn")) showActions(false); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || $("#fMoreMenu").hidden) return;
+  e.stopImmediatePropagation();
+  showActions(false);
+  $("#fMoreBtn").focus();
+}, true);
+$("#fSaveTpl").addEventListener("click", () => {
+  showActions(false);
+  const { body } = formBody();
+  openTemplateDialog(null, { name: body.note, template: body, schedule: { frequency: "never" } });
+});
 function openDrawer(type, tag) {
   state.editingTxn = null;
   $("#fDelete").hidden = true;
@@ -1091,6 +1169,7 @@ function openDrawer(type, tag) {
   el.date.value = now.date; el.time.value = now.time; $("#fTz").innerHTML = zoneOptions(deviceTZ());
   syncTz();
   setTxnType(type || "expense", type === "allocate" ? tag : tag ? [tag] : []);
+  drawQuick(tag ? [] : quickPicks());
   $("#fPlannedNote").hidden = true;
   $("#drawerTitle").textContent = type === "allocate" ? __("Allocate to money box") : __("Add transaction");
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
@@ -1122,6 +1201,8 @@ function openEditTxn(id) {
     + (range ? " " + __("Expected range {min} – {max}.", { min: fmt(range.min, t.currency), max: fmt(range.max, t.currency) }) : "");
   $("#drawerTitle").textContent = t.state === "planned" ? __("Confirm expected transaction") : __("Edit transaction");
   $("#fDelete").hidden = false;
+  drawQuick([]);
+  syncActions();
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
 }
 function closeDrawer() { $("#drawer").hidden = true; $("#drawerBackdrop").hidden = true; }
@@ -1129,7 +1210,7 @@ $("#drawerClose").addEventListener("click", closeDrawer);
 // the zone only matters with a time, so it is shown only while a time is entered
 function syncTz() { const el = $("#txnForm").elements; $("#fTzWrap").hidden = !el.time.value; }
 $("#txnForm").elements.time.addEventListener("input", syncTz);
-$("#fDelete").addEventListener("click", async () => { if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
+$("#fDelete").addEventListener("click", async () => { showActions(false); if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
 $("#drawerBackdrop").addEventListener("click", closeDrawer);
 document.querySelectorAll("#typeSeg button").forEach((b) => b.addEventListener("click", () => setTxnType(b.dataset.type)));
 $("#fAccount").addEventListener("change", () => refreshToAccounts($("#fToAccount").value));
@@ -1146,16 +1227,10 @@ $("#moreBack").addEventListener("click", () => showMore(false));
 $("#moreSheet").addEventListener("click", (e) => { if (e.target.closest("a")) showMore(false); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#moreSheet").hidden) { showMore(false); $("#tabMore").focus(); } });
 
-$("#txnForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = Object.fromEntries(new FormData(e.target).entries());
+// the transaction the form describes, in the API's shape; f: the raw fields
+function formBody() {
+  const f = Object.fromEntries(new FormData($("#txnForm")).entries());
   const cur = accCur(f.accountId), type = state.txnType;
-  if (type === "transfer" && !f.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to."), "error"); return; }
-  if (toMinor(f.amount, cur) === 0) { msg(__("Enter an amount other than zero."), "error"); return; }
-  if (type === "allocate" && toMinor(f.amount, cur) < 0) { // the server refuses this too; say it with the amount first
-    const held = state.data.transactions.filter((t) => t.id !== state.editingTxn && t.type === "allocate" && t.state === "posted" && t.accountId === f.accountId && t.tagId === f.tagId).reduce((n, t) => n + t.amountMinor, 0);
-    if (held + toMinor(f.amount, cur) < 0) { msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: tagName(f.tagId), amount: fmt(Math.max(0, held), cur), account: accName(f.accountId) }), "error"); return; }
-  }
   const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", memo: f.memo || "", time: f.time || "", tz: f.time ? f.tz : "", state: "posted" }; // saving confirms an expected transaction
   if (type === "expense" || type === "income") { // stored as a transfer with an external side
     const ext = f.extAccountId || EXT_ID;
@@ -1163,6 +1238,17 @@ $("#txnForm").addEventListener("submit", async (e) => {
     body.tagIds = pickedCats();
   } else if (type === "transfer") { body.fromAccountId = f.accountId; body.toAccountId = f.toAccountId; body.accountId = ""; }
   else if (f.tagId) body.tagId = f.tagId;
+  return { f, cur, type, body };
+}
+$("#txnForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const { f, cur, type, body } = formBody();
+  if (type === "transfer" && !f.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to."), "error"); return; }
+  if (toMinor(f.amount, cur) === 0) { msg(__("Enter an amount other than zero."), "error"); return; }
+  if (type === "allocate" && toMinor(f.amount, cur) < 0) { // the server refuses this too; say it with the amount first
+    const held = state.data.transactions.filter((t) => t.id !== state.editingTxn && t.type === "allocate" && t.state === "posted" && t.accountId === f.accountId && t.tagId === f.tagId).reduce((n, t) => n + t.amountMinor, 0);
+    if (held + toMinor(f.amount, cur) < 0) { msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: tagName(f.tagId), amount: fmt(Math.max(0, held), cur), account: accName(f.accountId) }), "error"); return; }
+  }
   try {
     if (state.editingTxn) { await put("/api/transactions/" + state.editingTxn, body); msg(__("Transaction updated.")); }
     else { await post("/api/transactions", body); msg(__("Saved.")); }
@@ -1277,36 +1363,47 @@ function openTagDialog(kind, editId) {
     } catch (err) { errMsg(err); }
   });
 }
-function openTemplateDialog(editId) {
+// editId: the template to edit; draft: the values of a new one (Save as template in the add form).
+// A template that never repeats is a shortcut: it only fills in the add form (ADR 0012).
+function openTemplateDialog(editId, draft) {
   const tp = editId ? state.data.transactionTemplates.find((x) => x.id === editId) : null;
-  const mode = tp ? flow(tp.template) : "expense", own = tp ? ownAcc(tp.template) : "";
-  const acc = state.data.accounts.map((a) => accOption(a, own)).join("");
-  const rng = tp && tp.template.expectedRangeMinor ? tp.template.expectedRangeMinor : null;
+  const src = tp || draft || null, body = src && src.template;
+  const freq = src ? src.schedule.frequency || "monthly" : "monthly";
+  const mode = body ? flow(body) : "expense", own = body ? ownAcc(body) : "";
+  const acc = accountsByUse().map((a) => accOption(a, own)).join("");
+  const rng = body && body.expectedRangeMinor ? body.expectedRangeMinor : null;
+  const amt = body && body.amountMinor > 0 ? decimal(body.amountMinor, body.currency) : "";
   openDialog(tp ? __("Edit transaction template") : __("New transaction template"), dialogForm(
-    field("Name", `<input name="name" required placeholder="${esc(__("Streaming"))}" value="${tp ? esc(tp.name) : ""}">`) +
+    field("Name", `<input name="name" required placeholder="${esc(__("Streaming"))}" value="${src ? esc(src.name || "") : ""}">`) +
     field("Generates", `<select name="type">${enumOptions(TYPE_L, ["expense", "income", "allocate"], mode)}</select>`) +
     field("Account", `<select name="accountId">${acc}</select>`) +
-    field("Money box", `<select name="tagId">${tagOptions(tp && tp.template.tagId, isGoal, false)}</select>`, "f-goal") +
-    field("Amount", `<input name="amount" type="number" step="any" min="0.01" required value="${tp ? decimal(tp.template.amountMinor, tp.template.currency) : ""}">`) +
-    field(N_("Frequency"), `<select name="frequency">${enumOptions(FREQ_L, ["monthly", "quarterly", "yearly", "weekly", "daily"], tp ? tp.schedule.frequency : "monthly")}</select>`) +
-    field(N_("Expected min (variable bill, optional)"), `<input name="rangeMin" type="number" step="any" value="${rng ? decimal(rng.min, tp.template.currency) : ""}">`, "f-range") +
-    field(N_("Expected max (variable bill, optional)"), `<input name="rangeMax" type="number" step="any" value="${rng ? decimal(rng.max, tp.template.currency) : ""}">`, "f-range") +
-    field(N_("Day of month"), `<input name="dayOfMonth" type="number" min="1" max="31" value="${tp ? tp.schedule.dayOfMonth || 1 : 1}">`, "f-dom") +
-    field(N_("Start date"), `<input name="startDate" type="date" required value="${tp ? esc(tp.schedule.startDate) : ""}">`) +
-    field("Title", `<input name="note" maxlength="200" value="${tp ? esc(tp.template.note || "") : ""}">`, "wide"),
+    field("Money box", `<select name="tagId">${tagOptions(body && body.tagId, isGoal, false)}</select>`, "f-goal") +
+    field("Amount", `<input name="amount" type="number" step="any" min="0.01" required value="${amt}">`) +
+    field(N_("Frequency"), `<select name="frequency">${enumOptions(FREQ_L, ["never", "monthly", "quarterly", "yearly", "weekly", "daily"], freq)}</select>`) +
+    field(N_("Expected min (variable bill, optional)"), `<input name="rangeMin" type="number" step="any" value="${rng ? decimal(rng.min, body.currency) : ""}">`, "f-range") +
+    field(N_("Expected max (variable bill, optional)"), `<input name="rangeMax" type="number" step="any" value="${rng ? decimal(rng.max, body.currency) : ""}">`, "f-range") +
+    field(N_("Day of month"), `<input name="dayOfMonth" type="number" min="1" max="31" value="${src && src.schedule.dayOfMonth || 1}">`, "f-dom") +
+    field(N_("Start date"), `<input name="startDate" type="date" value="${src ? esc(src.schedule.startDate || "") : ""}">`, "f-sched") +
+    `<div class="drawerfield f-cats wide" role="group" aria-labelledby="tplCatsLab"><span id="tplCatsLab">${esc(__("Tags"))}</span><div class="tagpick" id="tplCats"></div></div>` +
+    field("Title", `<input name="note" maxlength="200" value="${body ? esc(body.note || "") : ""}">`, "wide"),
     tp ? __("Save changes") : __("Add template"),
-    tp ? `<button type="button" class="smallbtn" id="dlgToggle">${esc(tp.enabled ? __("Pause") : __("Resume"))}</button><button type="button" class="smallbtn" id="dlgGenerate">${esc(__("Generate due"))}</button>` : ""));
+    tp ? `<button type="button" class="smallbtn" id="dlgToggle">${esc(tp.enabled ? __("Pause") : __("Resume"))}</button>${freq !== "never" ? `<button type="button" class="smallbtn" id="dlgGenerate">${esc(__("Generate due"))}</button>` : ""}` : ""));
   onDlg("dlgToggle", async () => {
     try { await post("/api/templates/" + tp.id + "/toggle"); msg(__("Template updated.")); await load(); } catch (e) { errMsg(e); }
   });
   onDlg("dlgGenerate", generateDue);
   const form = $("#dialogForm");
+  drawCats(body && flow(body) !== "allocate" ? txnCats(body) : [], $("#tplCats"));
   const sync = () => {
-    const alloc = form.elements.type.value === "allocate";
-    form.querySelectorAll(".f-goal").forEach((el) => { el.hidden = !alloc; });
-    form.querySelectorAll(".f-range").forEach((el) => { el.hidden = alloc; });
-    form.querySelectorAll(".f-dom").forEach((el) => { el.hidden = !["monthly", "quarterly", "yearly"].includes(form.elements.frequency.value); });
+    const alloc = form.elements.type.value === "allocate", never = form.elements.frequency.value === "never";
+    const show = (sel, on) => form.querySelectorAll(sel).forEach((el) => { el.hidden = !on; });
+    show(".f-goal", alloc);
+    show(".f-cats", !alloc);
+    show(".f-range", !alloc && !never);
+    show(".f-sched", !never);
+    show(".f-dom", ["monthly", "quarterly", "yearly"].includes(form.elements.frequency.value));
     form.elements.tagId.required = alloc;
+    form.elements.startDate.required = !never;
   };
   form.elements.type.addEventListener("change", sync);
   form.elements.frequency.addEventListener("change", sync);
@@ -1316,15 +1413,17 @@ function openTemplateDialog(editId) {
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = accCur(f.accountId);
     const tpl = { accountId: f.accountId, type: f.type, amountMinor: toMinor(f.amount, cur), currency: cur, note: f.note || "" };
     if (f.type === "allocate" && f.tagId) tpl.tagId = f.tagId;
-    if (f.type !== "allocate") { // generates a transfer with an external side; keep a named one when editing
-      const ext = (tp && flow(tp.template) === f.type && namedExt(tp.template)) || EXT_ID;
+    if (f.type !== "allocate") { // generates a transfer with an external side; keep a named one
+      const ext = (body && flow(body) === f.type && namedExt(body)) || EXT_ID;
       Object.assign(tpl, { type: "transfer", accountId: "", fromAccountId: f.type === "expense" ? f.accountId : ext, toAccountId: f.type === "expense" ? ext : f.accountId });
-      if (tp && flow(tp.template) !== "allocate" && tp.template.tagIds) tpl.tagIds = tp.template.tagIds;
+      tpl.tagIds = pickedCats($("#tplCats"));
     }
-    if (f.type !== "allocate" && f.rangeMin && f.rangeMax) tpl.expectedRangeMinor = { min: toMinor(f.rangeMin, cur), max: toMinor(f.rangeMax, cur) };
-    const body = { name: f.name, enabled: tp ? tp.enabled : true, template: tpl, schedule: { frequency: f.frequency, interval: tp ? tp.schedule.interval || 1 : 1, dayOfMonth: parseInt(f.dayOfMonth, 10) || 1, startDate: f.startDate, endDate: tp ? tp.schedule.endDate || "" : "" } };
+    if (f.type !== "allocate" && f.frequency !== "never" && f.rangeMin && f.rangeMax) tpl.expectedRangeMinor = { min: toMinor(f.rangeMin, cur), max: toMinor(f.rangeMax, cur) };
+    const schedule = f.frequency === "never" ? { frequency: "never" }
+      : { frequency: f.frequency, interval: tp ? tp.schedule.interval || 1 : 1, dayOfMonth: parseInt(f.dayOfMonth, 10) || 1, startDate: f.startDate, endDate: tp ? tp.schedule.endDate || "" : "" };
+    const out = { name: f.name, enabled: tp ? tp.enabled : true, template: tpl, schedule };
     try {
-      if (tp) { await put("/api/templates/" + tp.id, body); msg(__("Template updated.")); } else { await post("/api/templates", body); msg(__("Template added.")); }
+      if (tp) { await put("/api/templates/" + tp.id, out); msg(__("Template updated.")); } else { await post("/api/templates", out); msg(__("Template added.")); }
       $("#dialog").close(); await load();
     } catch (err) { errMsg(err); }
   });

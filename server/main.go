@@ -551,11 +551,9 @@ func handleCreateTemplate(w http.ResponseWriter, r *http.Request, b *Book) {
 	}
 	tp.ID = newID("tpl")
 	tp.Enabled = true
-	if tp.Schedule.Interval < 1 {
-		tp.Schedule.Interval = 1
-	}
-	if tp.Schedule.Frequency == "" {
-		tp.Schedule.Frequency = "monthly"
+	if err := normalizeSchedule(&tp.Schedule); err != nil {
+		writeErr(w, 400, err.Error())
+		return
 	}
 	if err := b.data.normalizeTemplate(&tp.Template); err != nil {
 		writeErr(w, 400, err.Error())
@@ -594,8 +592,9 @@ func handleTemplate(w http.ResponseWriter, r *http.Request, b *Book) {
 			writeErr(w, 400, "name and template amount required")
 			return
 		}
-		if tp.Schedule.Interval < 1 {
-			tp.Schedule.Interval = 1
+		if err := normalizeSchedule(&tp.Schedule); err != nil {
+			writeErr(w, 400, err.Error())
+			return
 		}
 		if err := b.data.normalizeTemplate(&tp.Template); err != nil {
 			writeErr(w, 400, err.Error())

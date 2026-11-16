@@ -149,6 +149,22 @@ tr.unconfirmed td{background:#fdf0cd}
 .drawer label{display:block;font-size:.86rem;color:var(--muted);margin-top:13px}
 .drawerfield{font-size:.86rem;color:var(--muted);margin-top:13px}.drawerfield[hidden]{display:none}
 .tagpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+/* add form: one-tap fills, and the ⋯ actions beside Save */
+.quickpicks{display:flex;gap:8px;overflow-x:auto;margin:0 -20px 12px;padding:2px 20px 6px;scrollbar-width:none}
+.quickpicks::-webkit-scrollbar{display:none}
+.qpick{flex:none;max-width:190px;text-align:left;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:12px;padding:7px 12px;font:inherit;line-height:1.25;cursor:pointer}
+.qpick b{display:block;font-size:.9rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qpick small{display:block;color:var(--muted);font-size:.76rem;white-space:nowrap}
+.qpick:hover{border-color:var(--accent2)}
+.qpick[aria-pressed=true]{border-color:var(--accent);background:var(--accentsoft)}.qpick[aria-pressed=true] b{color:var(--accent)}
+.saverow{position:relative;display:flex;gap:8px;margin-top:14px}
+.saverow .primarybtn.big{margin-top:0;flex:1}
+.morebtn{flex:none;width:48px;display:grid;place-items:center;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);cursor:pointer}
+.morebtn:hover,.morebtn[aria-expanded=true]{background:var(--hover)}
+.actmenu{position:absolute;right:0;bottom:calc(100% + 6px);z-index:2;min-width:200px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 32px rgba(40,20,60,.18);padding:6px}
+.actmenu button{display:block;width:100%;text-align:left;border:0;background:none;padding:10px 12px;border-radius:7px;font:inherit;color:var(--ink);cursor:pointer}
+.actmenu button:hover,.actmenu button:focus-visible{background:var(--hover)}
+.actmenu .danger{color:var(--red)}
 .tagpick button{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:5px 12px;font-size:.9rem;cursor:pointer}
 .tagpick button[aria-pressed=true]{background:var(--accentsoft);border-color:var(--accent);color:var(--accent);font-weight:600}
 .drawer textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;margin-top:4px;font:inherit;font-size:1rem;color:var(--ink);background:#fff;resize:vertical;min-height:4.5em}
@@ -358,7 +374,6 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
 
 /* secondary actions inside an edit form; Delete under the transaction form */
 .formactions{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
-.formdelete{display:block;margin:12px auto 0}
 /* "add" tile at the end of a card grid */
 .addtile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:90px;font:inherit;font-weight:600;color:var(--accent);background:transparent;border:2px dashed var(--line);border-radius:12px;cursor:pointer;transition:border-color .12s,background .12s}
 .addtile span{font-size:1.8rem;line-height:1;font-weight:400}

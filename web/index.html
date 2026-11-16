@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-title" content="記數通">
-<link rel="stylesheet" href="style.css?v=77">
+<link rel="stylesheet" href="style.css?v=78">
 </head>
 <body>
 <div id="authScreen" class="authscreen" hidden></div>
@@ -80,6 +80,7 @@
   <div class="drawerhead"><h2 id="drawerTitle"></h2><button id="drawerClose" class="iconbtn" data-i18n-aria="Close">✕</button></div>
   <form id="txnForm">
     <p id="fPlannedNote" class="formnote planned" hidden></p>
+    <div id="fQuick" class="quickpicks" role="group" data-i18n-aria="Templates" hidden></div>
     <div class="seg" id="typeSeg" role="tablist">
       <button type="button" data-type="expense" class="on" data-i18n="Expense">Expense</button><button type="button" data-type="income" data-i18n="Income">Income</button><button type="button" data-type="transfer" data-i18n="Transfer">Transfer</button><button type="button" data-type="allocate" data-i18n="Allocate">Allocate</button>
     </div>
@@ -95,8 +96,14 @@
     <div id="fCatsWrap" class="drawerfield" role="group" aria-labelledby="fCatsLab"><span id="fCatsLab" data-i18n="Tags">Tags</span><div id="fCats" class="tagpick"></div></div>
     <label><span data-i18n="Title">Title</span> <input name="note" maxlength="200" data-i18n-placeholder="Groceries"></label>
     <label><span data-i18n="Note">Note</span> <textarea name="memo" rows="3" maxlength="4000" data-i18n-placeholder="Details worth remembering: who, why, receipt number…"></textarea></label>
-    <button class="primarybtn big" type="submit" data-i18n="Save transaction">Save transaction</button>
-    <button type="button" class="smallbtn danger formdelete" id="fDelete" data-i18n="Delete" hidden>Delete</button>
+    <div class="saverow">
+      <button class="primarybtn big" type="submit" data-i18n="Save transaction">Save transaction</button>
+      <button type="button" class="morebtn" id="fMoreBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="fMoreMenu" data-i18n-aria="More actions" data-i18n-title="More actions"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
+      <div id="fMoreMenu" class="actmenu" role="menu" hidden>
+        <button type="button" role="menuitem" id="fSaveTpl" data-i18n="Save as template">Save as template</button>
+        <button type="button" role="menuitem" id="fDelete" class="danger" data-i18n="Delete" hidden>Delete</button>
+      </div>
+    </div>
   </form>
 </aside>
 
@@ -106,7 +113,7 @@
   <div id="dialogBody"></div>
 </dialog>
 
-<script src="i18n.js?v=77"></script>
-<script src="app.js?v=77"></script>
+<script src="i18n.js?v=78"></script>
+<script src="app.js?v=78"></script>
 </body>
 </html>

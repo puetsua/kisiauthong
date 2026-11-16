@@ -218,6 +218,34 @@ func (d *Data) transferCurrency(fromID, toID string) (string, error) {
 	return from.Currency, nil
 }
 
+var frequencies = map[string]bool{"daily": true, "weekly": true, "monthly": true, "quarterly": true, "yearly": true}
+
+// normalizeSchedule checks a template's schedule. "never" makes the template a
+// shortcut that fills in the add form and generates nothing (ADR 0012); an
+// empty frequency stays monthly, as before.
+func normalizeSchedule(s *Schedule) error {
+	if s.Frequency == "never" {
+		*s = Schedule{Frequency: "never", Interval: 1}
+		return nil
+	}
+	if s.Frequency == "" {
+		s.Frequency = "monthly"
+	}
+	if !frequencies[s.Frequency] {
+		return fmt.Errorf("frequency must be daily, weekly, monthly, quarterly, yearly or never")
+	}
+	if s.Interval < 1 {
+		s.Interval = 1
+	}
+	if !validDate(s.StartDate) {
+		return fmt.Errorf("schedule startDate must be a date (YYYY-MM-DD)")
+	}
+	if s.EndDate != "" && !validDate(s.EndDate) {
+		return fmt.Errorf("schedule endDate must be a date (YYYY-MM-DD)")
+	}
+	return nil
+}
+
 // normalizeTemplate applies the same rules to what a template generates.
 func (d *Data) normalizeTemplate(b *TemplateBody) error {
 	switch b.Type {
