@@ -89,6 +89,62 @@ desktop                                  phone (≤ 800px)
   Hidden where nothing can be added (admin pages, dashboard editing) and on
   phones, where the tab bar's + replaces it.
 
+## Phone (≤ 800px)
+
+Everything that changes at the breakpoint, and the rules for anything new.
+Check every UI change at 390×844 and 360 wide as well as on desktop.
+
+### Layout
+
+- Only two fixed bars: the top bar and the tab bar. No sidebar, no floating
+  +, and nothing else pinned to the screen.
+- `.view` has 16px 14px padding; its bottom padding clears the tab bar and
+  the safe area.
+- No sideways page scrolling: wide content wraps or stacks. Two-column
+  layouts (`.grid2`, half-width dashboard widgets, the dialog form) become
+  one column; Settings drops its section list.
+- Tables become one card per row (labels from `data-label`); expected
+  (planned) rows keep their amber card.
+- Panel headings wrap their buttons onto a second line (`.panelhead`); the
+  period navigation spans the full width.
+
+### Filters and toolbars
+
+- Transactions shows the search box and a **Filters** button that counts
+  the filters in use ("Filters · 2"); the dropdowns and Clear unfold below
+  it. A new filter goes inside `.fmore`, never beside the search box.
+- Keep a page's own toolbar to one row of small buttons; more belongs in a
+  menu.
+
+### Popups
+
+- Transaction panel: full width minus 12px each side, at most the screen
+  height, scrolling inside; quick picks two per row.
+- Dialog: 16px from each side, one column.
+- Notifications: full width minus 12px, under the bell. Menus stay inside
+  the screen.
+- Bottom sheets are for navigation (More) only; actions use menus or the
+  panel.
+
+### Touch and input
+
+- Touch targets are at least 40px (tab bar items 52px).
+- Nothing important is hover-only: a `title` tooltip is an extra, and
+  whatever it says must also be visible or reachable by tapping.
+- No gestures the UI depends on (long-press, swipe); dashboard editing uses
+  grips and arrow buttons.
+- Use the right keyboard: amounts `type="number" inputmode="decimal"`,
+  codes `inputmode="numeric" autocomplete="one-time-code"`.
+
+### Safe areas and the installed app
+
+- Fixed bottom elements pad with `env(safe-area-inset-bottom)` (tab bar,
+  More sheet) and the toast sits above the tab bar.
+- `manifest.json` opens an installed app without the browser bar, so every
+  page must be reachable from the tab bar or More. Pages are hash routes,
+  so the system Back button returns to the previous page; popups are not
+  history entries.
+
 ## Pages
 
 - A page renders into `#view` (`.view`, centred, max `--page-max`, bottom
@@ -196,7 +252,7 @@ topmost popup only.
   toggle sets `aria-pressed`.
 - Esc closes the topmost popup; focus moves into a popup when it opens and
   back to the trigger when a menu closes.
-- Touch targets are at least 40px on phones; respect
+- Phone touch and input rules are under [Phone](#phone--800px); respect
   `prefers-reduced-motion`.
 
 ## Layers
