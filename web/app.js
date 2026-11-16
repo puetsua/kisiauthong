@@ -1984,26 +1984,29 @@ async function drawUsers() {
 const SCOPE_L = { read: N_("Read your books"), "transactions:write": N_("Add and edit transactions"), "accounts:write": N_("Add and edit accounts"),
   "tags:write": N_("Add and edit categories and money boxes"), "templates:write": N_("Add and edit templates, generate due ones"), "settings:write": N_("Change settings") };
 const SCOPE_SHORT = { read: N_("Read"), "transactions:write": N_("Transactions"), "accounts:write": N_("Accounts"), "tags:write": N_("Tags"), "templates:write": N_("Templates"), "settings:write": N_("Settings") };
-const EXPIRY_L = { 0: N_("Never"), 30: N_("30 days"), 90: N_("90 days"), 365: N_("1 year") };
+const EXPIRY_L = { 0: N_("Never"), 30: N_("30 days"), 90: N_("90 days"), 365: N_("1 year"), date: N_("On a date…") };
 async function drawKeys(created) {
   const card = $("#keysCard");
   if (!card) return;
   let list = [];
   try { list = await api("/api/me/keys"); } catch (e) { errMsg(e); return; }
   const when = (iso) => (iso ? dayLabel(zoneParts(new Date(iso), displayTZ()).date) : "");
+  // a key expires at the start of the next day, so show its last working day
+  const lastDay = (iso) => when(new Date(Date.parse(iso) - 1000).toISOString());
   const fresh = created ? `<div class="newkey" role="status"><b>${esc(__("Copy this key now. It will not be shown again."))}</b>
       <div class="keyrow"><code id="newKeyText">${esc(created.key)}</code><button class="smallbtn" type="button" id="newKeyCopy">${esc(__("Copy"))}</button></div></div>` : "";
   card.innerHTML = fresh + (list.length ? `<ul class="keylist">${list.map((k) => {
       const expired = k.expiresAt && k.expiresAt < new Date().toISOString();
       return `<li><span class="kmain"><b>${esc(k.name)}</b><code>${esc(k.hint)}</code>
         <span class="kscopes">${k.scopes.map((sc) => `<span class="pill">${esc(lbl(SCOPE_SHORT, sc))}</span>`).join("")}</span>
-        <small class="muted">${esc(__("Created {date}", { date: when(k.createdAt) }))}${k.lastUsedAt ? " · " + esc(__("Last used {date}", { date: when(k.lastUsedAt) })) : " · " + esc(__("Never used"))}${k.expiresAt ? " · " + esc(expired ? __("Expired {date}", { date: when(k.expiresAt) }) : __("Expires {date}", { date: when(k.expiresAt) })) : ""}</small></span>
+        <small class="muted">${esc(__("Created {date}", { date: when(k.createdAt) }))}${k.lastUsedAt ? " · " + esc(__("Last used {date}", { date: when(k.lastUsedAt) })) : " · " + esc(__("Never used"))}${k.expiresAt ? " · " + esc(expired ? __("Expired {date}", { date: lastDay(k.expiresAt) }) : __("Expires {date}", { date: lastDay(k.expiresAt) })) : ""}</small></span>
         <button class="smallbtn danger" type="button" data-key-del="${esc(k.id)}">${esc(__("Revoke"))}</button></li>`;
     }).join("")}</ul>` : "")
     + `<form id="keyAdd" class="keyadd"><b>${esc(__("Create a key"))}</b>
       <input name="name" required maxlength="60" placeholder="${esc(__("Name, e.g. Budget agent"))}" aria-label="${esc(__("Key name"))}">
       <fieldset><legend>${esc(__("Permissions"))}</legend>${Object.keys(SCOPE_L).map((sc) => `<label class="checkline"><input type="checkbox" name="scope" value="${esc(sc)}" ${sc === "read" ? "checked" : ""}> ${esc(__(SCOPE_L[sc]))}</label>`).join("")}</fieldset>
       <label class="kexp">${esc(__("Expires"))} <select name="expires">${Object.entries(EXPIRY_L).map(([d, l]) => `<option value="${d}" ${d === "90" ? "selected" : ""}>${esc(__(l))}</option>`).join("")}</select></label>
+      <label class="kexp" id="keyDateWrap" hidden>${esc(__("Last day"))} <input type="date" name="expiresOn" min="${esc(addDays(state.data.today, 1))}" max="${esc(addDays(state.data.today, 3650))}"></label>
       <button class="primarybtn" type="submit">${esc(__("Create key"))}</button></form>`;
   const copy = $("#newKeyCopy");
   if (copy) copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(created.key); msg(__("Copied.")); } catch (e) { getSelection().selectAllChildren($("#newKeyText")); } });
@@ -2011,11 +2014,16 @@ async function drawKeys(created) {
     if (!confirm(__("Revoke this key? Anything using it stops working at once."))) return;
     try { await api("/api/me/keys/" + encodeURIComponent(b.dataset.keyDel), { method: "DELETE" }); msg(__("Key revoked.")); drawKeys(); } catch (e) { errMsg(e); }
   }));
+  // "On a date…": the key works through the end of the chosen day, in the display time zone
+  const kf = $("#keyAdd"), syncExp = () => { const on = kf.elements.expires.value === "date"; $("#keyDateWrap").hidden = !on; kf.elements.expiresOn.required = on; };
+  kf.elements.expires.addEventListener("change", () => { syncExp(); if (!$("#keyDateWrap").hidden) kf.elements.expiresOn.focus(); });
+  syncExp();
   $("#keyAdd").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target, scopes = [...f.querySelectorAll("[name=scope]:checked")].map((x) => x.value);
     if (!scopes.length) { msg(__("Choose at least one permission."), "error"); return; }
-    try { drawKeys(await post("/api/me/keys", { name: f.elements.name.value.trim(), scopes, expiresInDays: parseInt(f.elements.expires.value, 10) })); }
+    const exp = f.elements.expires.value === "date" ? { expiresOn: f.elements.expiresOn.value, tz: displayTZ() } : { expiresInDays: parseInt(f.elements.expires.value, 10) };
+    try { drawKeys(await post("/api/me/keys", { name: f.elements.name.value.trim(), scopes, ...exp })); }
     catch (err) { errMsg(err); }
   });
 }

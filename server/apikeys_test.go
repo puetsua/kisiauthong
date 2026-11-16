@@ -4,6 +4,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 type newKey struct {
@@ -100,5 +101,26 @@ func TestAPIKeys(t *testing.T) {
 	var withExpiry newKey
 	if code := alice.do("POST", "/api/me/keys", map[string]interface{}{"name": "Month", "scopes": []string{ScopeRead}, "expiresInDays": 30}, &withExpiry); code != 201 || withExpiry.APIKey.ExpiresAt == "" {
 		t.Fatalf("expiring key: %d %+v", code, withExpiry)
+	}
+	// a chosen date: the key works through the end of that day in the given zone
+	day := time.Now().AddDate(0, 0, 10).Format("2006-01-02")
+	var onDate newKey
+	if code := alice.do("POST", "/api/me/keys", map[string]interface{}{"name": "Trip", "scopes": []string{ScopeRead}, "expiresOn": day, "tz": "Asia/Taipei"}, &onDate); code != 201 {
+		t.Fatalf("key with a date: %d", code)
+	}
+	want, _ := endOfDay(day, "Asia/Taipei")
+	if onDate.APIKey.ExpiresAt != want.UTC().Format(time.RFC3339) || !strings.HasSuffix(onDate.APIKey.ExpiresAt, "T16:00:00Z") {
+		t.Fatalf("expires at %q, want the end of %s in Taipei", onDate.APIKey.ExpiresAt, day)
+	}
+	for _, bad := range []map[string]interface{}{
+		{"expiresOn": time.Now().AddDate(0, 0, -1).Format("2006-01-02"), "tz": "UTC"}, // past
+		{"expiresOn": time.Now().AddDate(11, 0, 0).Format("2006-01-02"), "tz": "UTC"}, // too far
+		{"expiresOn": "soon", "tz": "UTC"},
+		{"expiresOn": day, "tz": "Mars/Base"},
+	} {
+		bad["name"], bad["scopes"] = "bad", []string{ScopeRead}
+		if code := alice.do("POST", "/api/me/keys", bad, nil); code != 400 {
+			t.Fatalf("%v: %d", bad, code)
+		}
 	}
 }

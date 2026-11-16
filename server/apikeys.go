@@ -99,7 +99,24 @@ func (s *Store) keyPrincipal(h string) (*Principal, error) {
 	return p, nil
 }
 
-// GET /api/me/keys lists keys; POST {name, scopes, expiresInDays} creates one and returns it once.
+// endOfDay is the instant a local date ends in the IANA zone tz (UTC when empty).
+func endOfDay(date, tz string) (time.Time, error) {
+	if tz == "" {
+		tz = "UTC"
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil || tz == "Local" {
+		return time.Time{}, fmt.Errorf("unknown time zone %q", tz)
+	}
+	d, err := time.ParseInLocation("2006-01-02", date, loc)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("expiresOn must be a date (YYYY-MM-DD)")
+	}
+	return d.AddDate(0, 0, 1), nil
+}
+
+// GET /api/me/keys lists keys; POST {name, scopes, expiresInDays | expiresOn+tz} creates one and
+// returns it once. expiresOn is a local date: the key works through the end of that day in tz.
 func handleKeys(w http.ResponseWriter, r *http.Request, u *User) {
 	switch r.Method {
 	case http.MethodGet:
@@ -126,6 +143,8 @@ func handleKeys(w http.ResponseWriter, r *http.Request, u *User) {
 			Name          string   `json:"name"`
 			Scopes        []string `json:"scopes"`
 			ExpiresInDays int      `json:"expiresInDays"`
+			ExpiresOn     string   `json:"expiresOn"`
+			TZ            string   `json:"tz"`
 		}
 		if !decode(w, r, &body) {
 			return
@@ -152,7 +171,18 @@ func handleKeys(w http.ResponseWriter, r *http.Request, u *User) {
 		}
 		now := time.Now().UTC()
 		k := APIKey{ID: newID("key"), Name: name, Scopes: scopes, CreatedAt: now.Format(time.RFC3339)}
-		if body.ExpiresInDays > 0 {
+		if body.ExpiresOn != "" {
+			at, err := endOfDay(body.ExpiresOn, body.TZ)
+			if err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			if !at.After(now) || at.After(now.AddDate(0, 0, 3650)) {
+				writeErr(w, 400, "the expiry date must be after today and within 10 years")
+				return
+			}
+			k.ExpiresAt = at.UTC().Format(time.RFC3339)
+		} else if body.ExpiresInDays > 0 {
 			k.ExpiresAt = now.AddDate(0, 0, body.ExpiresInDays).Format(time.RFC3339)
 		}
 		secret := keyPrefix + randomToken(32)
