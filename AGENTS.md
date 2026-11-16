@@ -139,7 +139,7 @@ All ids are UUIDs generated on the client so offline creation never needs the se
 - Local SQLite is the client's source of truth for rendering; the network layer only syncs.
 - Desktop (Tauri): target Windows 10+, macOS 12+ (Apple Silicon + Intel), and mainstream Linux (`.AppImage`/`.deb`). No platform-specific forks of business logic — platform differences live in the Tauri shell layer only.
 - Mobile: Android 10+ (API 29+). Respect Android back behaviour, scoped storage for exports/attachments, and no hardcoded sizes — support small phones and tablets.
-- Web: evergreen browsers, responsive down to phone widths (the web UI may be the only UI a self-hoster's family uses on mobile browsers).
+- Web: evergreen browsers, responsive down to phone widths (the web UI may be the only UI a self-hoster's family uses on mobile browsers). Follow `docs/ui-guide.md` for layout, navigation, popups, toasts and controls, and update it when adding a pattern.
 - Accessibility and i18n from the start: all user-visible strings go through the i18n layer (English source strings; Traditional Chinese as used in Taiwan, `zh-TW`, is a first-class target — the project name 記數通 is Taiwanese Hokkien; web: `__()`/`N_()` from `web/i18n.js`, coverage checked by `node scripts/check-i18n.js`), no hardcoded currency/date formats.
 
 ## 7. Sync protocol
