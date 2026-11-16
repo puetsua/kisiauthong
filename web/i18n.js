@@ -57,7 +57,7 @@ const I18N = {
     "My account": "我的帳號", "Sign out": "登出", "Profile": "個人資料", "Administrator": "管理員", "Current password": "目前密碼",
     "New password": "新密碼", "Confirm new password": "確認新密碼", "Change password": "變更密碼", "Profile saved.": "已儲存個人資料。",
     "The new passwords do not match.": "兩次輸入的新密碼不一致。", "Password changed. Other devices were signed out.": "密碼已變更，其他裝置已登出。",
-    "Language & region": "語言與地區", "Money": "金額", "Display": "顯示", "Layout": "版面", "Export all data": "匯出所有資料",
+    "Language & region": "語言與地區", "Money": "金額", "Display": "顯示", "Export all data": "匯出所有資料",
     "Number format": "數字格式", "Groups of three (1,074,958)": "三位一組（1,074,958）", "Groups of four (107,4958)": "四位一組（107,4958）",
     "Plain (1074958)": "不分位（1074958）", "Number format saved.": "已儲存數字格式。",
     "Time": "時間", "Time zone": "時區", "Auto (this device · {zone})": "自動（這台裝置 · {zone}）", "Time zone saved.": "已儲存時區。",
@@ -93,7 +93,7 @@ const I18N = {
     "{n} account(s)": "{n} 個帳戶",
     "No budgets yet.": "還沒有預算。",
     "Uncategorised": "未分類", "No posted expenses this month.": "本月還沒有已入帳的支出。", "No money boxes yet.": "還沒有存錢筒。",
-    "Dashboard saved.": "總覽已儲存。", "Dashboard reset.": "總覽已還原預設。",
+    "Dashboard saved.": "總覽已儲存。",
     "{spent} of {limit}": "{spent}／{limit}", "{saved} of {target} · {pct}%": "{saved}／{target} · {pct}%", "by {date}": "{date} 前",
     "No allocations yet": "還沒有分配",
     // transactions
@@ -142,7 +142,6 @@ const I18N = {
     "Default currency": "預設幣別", "Default currency saved.": "預設幣別已儲存。", "Frequently used currencies": "常用幣別",
     "Add currency": "新增幣別", "+ Add currency…": "＋ 新增幣別…", "Remove {currency}": "移除 {currency}", "All currencies": "所有幣別",
     "{currency} added.": "已新增 {currency}。", "{currency} removed.": "已移除 {currency}。",
-    "Reset the dashboard to its default layout?": "要把總覽還原成預設版面嗎？",
     "Data": "資料", "Export JSON": "匯出 JSON", "About": "關於", "License": "授權條款", "Source": "原始碼",
     "Set KISIAUTHONG_SOURCE_URL": "請設定 KISIAUTHONG_SOURCE_URL", "— none —": "— 無 —",
     // errors

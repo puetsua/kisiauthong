@@ -973,9 +973,6 @@ function screenSettings(v) {
       row(__("Page width"), select("setWidth", enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())), "setWidth"),
       row(__("Days open by default"), select("setOpenDays", [...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")), "setOpenDays"),
     ]],
-    ["dashboard", __("Dashboard"), [
-      row(__("Layout"), `<div class="sbtns"><button class="smallbtn" id="setCustomize">${esc(__("Customize dashboard"))}</button><button class="smallbtn" id="setDashReset">${esc(__("Reset to default"))}</button></div>`),
-    ]],
     ["data", __("Data"), [
       row(__("Export all data"), `<div class="sbtns"><a class="smallbtn" href="api/export" download>${esc(__("Export JSON"))}</a></div>`),
     ]],
@@ -1011,20 +1008,6 @@ function screenSettings(v) {
     const c = b.dataset.curDel;
     saveGeneral({ currencies: favCurs().filter((x) => x !== c) }, () => __("{currency} removed.", { currency: c }));
   }));
-  $("#setCustomize").addEventListener("click", () => {
-    state.dashDraft = dashLayout();
-    state.dashSel = null;
-    state.customizing = true;
-    location.hash = "#dashboard";
-  });
-  $("#setDashReset").addEventListener("click", async () => {
-    if (!confirm(__("Reset the dashboard to its default layout?"))) return;
-    try {
-      const s = await put("/api/settings", { dashboard: DASH_DEFAULT });
-      state.dashboard = s.dashboard;
-      msg(__("Dashboard reset."));
-    } catch (err) { errMsg(err); }
-  });
 }
 
 /* ---------- drawer, dialogs, actions ---------- */
