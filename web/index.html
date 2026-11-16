@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-title" content="記數通">
-<link rel="stylesheet" href="style.css?v=84">
+<link rel="stylesheet" href="style.css?v=86">
 </head>
 <body>
 <div id="authScreen" class="authscreen" hidden></div>
@@ -84,18 +84,18 @@
     <div class="seg" id="typeSeg" role="tablist">
       <button type="button" data-type="expense" class="on" data-i18n="Expense">Expense</button><button type="button" data-type="income" data-i18n="Income">Income</button><button type="button" data-type="transfer" data-i18n="Transfer">Transfer</button><button type="button" data-type="allocate" data-i18n="Allocate">Allocate</button>
     </div>
-    <label><span id="fAccountLab">Account</span> <select name="accountId" id="fAccount"></select></label>
+    <label id="fAccWrap"><span id="fAccountLab">Account</span> <select name="accountId" id="fAccount"></select></label>
     <label id="fExtWrap" hidden><span id="fExtLab">Paid to</span> <select name="extAccountId" id="fExt"></select></label>
     <label id="fToWrap" hidden><span data-i18n="To account">To account</span> <select name="toAccountId" id="fToAccount"></select></label>
     <p id="fToNone" class="formnote" hidden></p>
-    <label><span data-i18n="Amount">Amount</span> <input name="amount" type="number" step="any" min="0.01" required inputmode="decimal"></label>
+    <label id="fAmtWrap"><span data-i18n="Amount">Amount</span> <input name="amount" type="number" step="any" min="0.01" required inputmode="decimal"></label>
     <p id="fAmtNote" class="formnote hint" hidden data-i18n="A negative amount takes money back out of the money box.">A negative amount takes money back out of the money box.</p>
     <div class="daterow"><label><span data-i18n="Date">Date</span> <input name="date" type="date" required></label><label><span data-i18n="Time">Time</span> <input name="time" type="time"></label></div>
     <label id="fTzWrap"><span data-i18n="Time zone">Time zone</span> <select name="tz" id="fTz"></select></label>
     <label id="fTagWrap" hidden><span data-i18n="Money box">Money box</span> <select name="tagId" id="fTag"></select></label>
     <div id="fCatsWrap" class="drawerfield" role="group" aria-labelledby="fCatsLab"><span id="fCatsLab" data-i18n="Tags">Tags</span><div id="fCats" class="tagpick"></div></div>
-    <label><span data-i18n="Title">Title</span> <input name="note" maxlength="200" data-i18n-placeholder="Groceries"></label>
-    <label><span data-i18n="Note">Note</span> <textarea name="memo" rows="3" maxlength="4000" data-i18n-placeholder="Details worth remembering: who, why, receipt number…"></textarea></label>
+    <label id="fTitleWrap"><span data-i18n="Title">Title</span> <input name="note" maxlength="200" data-i18n-placeholder="Groceries"></label>
+    <label id="fMemoWrap"><span data-i18n="Note">Note</span> <textarea name="memo" rows="3" maxlength="4000" data-i18n-placeholder="Details worth remembering: who, why, receipt number…"></textarea></label>
     <div class="saverow">
       <button class="primarybtn big" type="submit" data-i18n="Save transaction">Save transaction</button>
       <button type="button" class="morebtn" id="fMoreBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="fMoreMenu" data-i18n-aria="More actions" data-i18n-title="More actions"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
@@ -113,7 +113,7 @@
   <div id="dialogBody"></div>
 </dialog>
 
-<script src="i18n.js?v=84"></script>
-<script src="app.js?v=84"></script>
+<script src="i18n.js?v=86"></script>
+<script src="app.js?v=86"></script>
 </body>
 </html>

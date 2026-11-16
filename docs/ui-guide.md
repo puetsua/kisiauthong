@@ -187,11 +187,18 @@ topmost popup only.
 
 ### Transaction panel
 
-- Centred (`.drawer` keeps its old name): up to 680px wide, 12px clear of the
-  screen edges, scrolls inside itself, 14px radius.
+- Centred (`.drawer` keeps its old name): as wide as the page content
+  (`--page-max`, so Settings → Page width applies), 12px clear of the screen
+  edges, scrolls inside itself, 14px radius.
+- On desktop the form is two columns: short fields pair up (account with
+  payee, target account or money box; amount; date and time with time
+  zone; title), while notes, quick picks, the type selector, categories and
+  the note field span both. The order is set in CSS (`order`), so fields
+  that a type hides leave no gaps. On phones it is one column.
 - Order: title row, quick picks (add only), type selector (`.seg`), fields,
   then the save row.
-- **Save row** (`.saverow`): the full-width primary button and an icon-only ⋯
+- **Save row** (`.saverow`): the primary button (full width on phones,
+  320px at the right on desktop) and an icon-only ⋯
   button (`#fMoreBtn`, `aria-label` "More actions") that opens `.actmenu`
   upwards. Secondary or destructive actions (Save as template, Delete) go in
   that menu, never as extra buttons under Save.
