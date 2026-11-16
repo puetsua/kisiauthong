@@ -770,13 +770,16 @@ function screenTransactions(v) {
     const p = currentPeriod(), all = filteredTxns();
     // unconfirmed items wait in their own section (oldest first, any date) instead of carrying a state on every row
     const expected = all.filter((t) => t.state === "planned").reverse();
-    const list = all.filter((t) => { const d = txnDay(t); return t.state !== "planned" && d >= p.start && d <= p.end; });
+    // a search looks through all of history; otherwise the period on screen
+    const searching = !!state.filter.q.trim();
+    const list = all.filter((t) => { const d = txnDay(t); return t.state !== "planned" && (searching || (d >= p.start && d <= p.end)); });
     const modes = Object.keys(PERIOD_L).map((m) => `<button type="button" data-mode="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(PERIOD_L[m]))}</button>`).join("");
     const custom = p.mode === "custom" ? `<span class="prange"><input type="date" id="pStart" value="${esc(p.start)}" aria-label="${esc(__("Start date"))}"> – <input type="date" id="pEnd" value="${esc(p.end)}" aria-label="${esc(__("End date"))}"></span>` : "";
-    const head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
+    const head = searching ? `<div class="periodbar"><span class="plabel">${esc(__("{n} result(s) in all history", { n: list.length }))}</span></div>`
+      : `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
     const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, edit: true })).join("")}</ul></section>` : "";
-    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(list, openDays())}</section>`
-      : `<div class="empty">${esc(__("No transactions in this period."))}</div>`;
+    const postedHTML = list.length ? `<section class="panel feedpanel">${feedHTML(list, searching ? Infinity : openDays())}</section>`
+      : `<div class="empty">${esc(searching ? __("No transactions match your search.") : __("No transactions in this period."))}</div>`;
     $("#txnResults").innerHTML = expectedHTML + head + postedHTML;
     const box = $("#txnResults");
     box.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
