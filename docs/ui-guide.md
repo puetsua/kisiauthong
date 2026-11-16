@@ -120,7 +120,7 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
 
 - Transaction panel: full width minus 12px each side, at most the screen
   height, scrolling inside; quick picks two per row.
-- Dialog: 16px from each side, one column.
+- Dialog: 19px from each side (the browser's own dialog margin), one column.
 - Notifications: full width minus 12px, under the bell. Menus stay inside
   the screen.
 - Bottom sheets are for navigation (More) only; actions use menus or the
@@ -128,7 +128,9 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
 
 ### Touch and input
 
-- Touch targets are at least 40px (tab bar items 52px).
+- Touch targets are at least 40px (tab bar items 52px); text links inside
+  a sentence are the exception. A name link in a table keeps its look and
+  gets a taller hit area through padding with a matching negative margin.
 - Nothing important is hover-only: a `title` tooltip is an extra, and
   whatever it says must also be visible or reachable by tapping.
 - No gestures the UI depends on (long-press, swipe); dashboard editing uses
@@ -163,7 +165,10 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   sticky section list (`.snav`, desktop only) and `.scard` cards of
   `.srow` rows, label (`.sl`) left, control right; one column on phones.
 - **Dashboard**: widgets in `.dashgrid`, full or half width, user-arranged
-  through Customize dashboard. A new widget must work at both widths.
+  through Customize dashboard. A new widget must work at both widths. A
+  widget with columns shows its table on desktop and, through
+  `phoneSwap(table, cards)`, the same cards as its full page on phones
+  (budget cards, account cards, a spending list).
 
 ## Popups
 

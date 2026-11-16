@@ -153,7 +153,7 @@ tr.unconfirmed td{background:#fdf0cd}
 /* add form: one-tap fills, and the ⋯ actions beside Save */
 .quickpicks{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin:10px 0 12px}
 .qpick{min-width:0;text-align:left;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:12px;padding:7px 12px;font:inherit;line-height:1.25;cursor:pointer}
-.qpick b{display:block;font-size:.9rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qpick b{display:block;font-size:.9rem;font-weight:600;overflow-wrap:anywhere}
 .qpick small{display:block;color:var(--muted);font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qpick:hover{border-color:var(--accent2)}
 .qpick[aria-pressed=true]{border-color:var(--accent);background:var(--accentsoft)}.qpick[aria-pressed=true] b{color:var(--accent)}
@@ -278,13 +278,30 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   table, tbody, tr, td{display:block;width:100%}
   tr{border:1px solid var(--line);border-radius:10px;background:#fff;margin-bottom:10px;padding:8px 6px}
   td{border:0;padding:4px 9px;display:flex;justify-content:space-between;gap:14px}
-  td::before{content:attr(data-label);color:var(--muted);font-size:.78rem;text-transform:uppercase}
+  td::before{content:attr(data-label);flex:none;color:var(--muted);font-size:.78rem;text-transform:uppercase}
+  td>.tdv{flex:1;min-width:0;text-align:right}
   td.num{text-align:right}
   tr.planned{border-color:var(--amber);background:#fdf0cd}
   tr.planned td{background:transparent}
   .primarybtn{padding:9px 13px}
 }
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+/* dashboard widgets: tables on desktop, cards on phones */
+.wphone{display:none}
+.splist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.sptop{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:5px}
+@media (max-width:800px){
+  .wdesk{display:none}.wphone{display:block}
+  .dw .tgrid{grid-template-columns:minmax(0,1fr)}
+  .dw .thead{flex-wrap:wrap}
+  /* touch targets of at least 40px (docs/ui-guide.md, Phone) */
+  .smallbtn,.seg button,.ftoggle{min-height:40px}
+  .smallbtn{padding:8px 13px}
+  .view input:not([type=checkbox]):not([type=radio]),.view select,.drawer select{min-height:40px}
+  .titlelink{padding:9px 0;margin:-9px 0;min-width:40px}
+  .primarybtn{min-height:40px}
+  .fday>summary{min-height:40px}
+}
 /* phones: a bottom tab bar in place of the sidebar, and the More sheet */
 .tabbar,.moresheet{display:none}
 .sheetback{position:fixed;inset:0;background:rgba(30,20,40,.45);z-index:10}
@@ -490,6 +507,7 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .swatches{display:flex;gap:8px;flex-wrap:wrap}
 .swatch{width:28px;height:28px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px var(--line);cursor:pointer;padding:0}
 .swatch.on{box-shadow:0 0 0 2px var(--accent)}
+@media (max-width:800px){.swatch{width:40px;height:40px}}
 .userlist{list-style:none;margin:0;padding:0}
 .userlist li{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
 .uname{display:flex;flex-direction:column;min-width:120px;flex:1}

@@ -117,7 +117,7 @@ function table(headers, rows) {
   return `<div style="overflow-x:auto"><table><thead><tr>${headers.map((h) => `<th class="${h.num ? "num" : ""}">${esc(__(h.t))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function row(cells) {
-  return "<tr>" + cells.map((c) => `<td data-label="${esc(__(c.l))}" class="${c.num ? "num" : ""}">${c.v}</td>`).join("") + "</tr>";
+  return "<tr>" + cells.map((c) => `<td data-label="${esc(__(c.l))}" class="${c.num ? "num" : ""}"><div class="tdv">${c.v}</div></td>`).join("") + "</tr>";
 }
 
 /* ---------- display labels for stored enum values ---------- */
@@ -211,6 +211,8 @@ function widgetCols(type, o) {
   const all = WIDGET_COLS[type], keys = o.columns && o.columns.length ? o.columns : defaultCols(type);
   return keys.map((k) => all.find((c) => c.key === k)).filter(Boolean);
 }
+// a widget's table on desktop and its cards on phones (CSS shows one), as the full pages do
+const phoneSwap = (tableHTML, phoneHTML) => `<div class="wdesk">${tableHTML}</div><div class="wphone">${phoneHTML}</div>`;
 const colTable = (cols, xs) => table(cols.map((c) => ({ t: c.label, num: c.num })), xs.map((x) => row(cols.map((c) => ({ l: c.label, v: c.v(x), num: c.num })))).join(""));
 function widgetBody(type, o) {
   const d = state.data, def = widgetDef(type), rows = o.rows || def.rows;
@@ -223,7 +225,7 @@ function widgetBody(type, o) {
     }
     case "budgets": {
       const list = d.tags.filter((t) => t.limitMinor !== undefined && inc(t.id)).map((t) => ({ ...t, pct: t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0 }));
-      return list.length ? colTable(widgetCols(type, o), list) : `<p class="muted">${esc(__("No budgets yet."))}</p>`;
+      return list.length ? phoneSwap(colTable(widgetCols(type, o), list), `<div class="tgrid">${list.map(budgetCard).join("")}</div>`) : `<p class="muted">${esc(__("No budgets yet."))}</p>`;
     }
     case "spending": {
       // server returns rows grouped by currency, largest first; bars compare within one currency only
@@ -234,14 +236,17 @@ function widgetBody(type, o) {
         // share: against the largest category; pct: of all spending, both within one currency
         return xs.slice(0, rows).map((x) => ({ ...x, share: xs[0].amountMinor ? x.amountMinor / xs[0].amountMinor * 100 : 0, pct: total ? x.amountMinor / total * 100 : 0 }));
       });
-      return list.length ? colTable(widgetCols(type, o), list) : `<p class="muted">${esc(__("No posted expenses this month."))}</p>`;
+      const name = WIDGET_COLS.spending[0].v;
+      const rowsHTML = list.map((x) => `<li><span class="sptop">${name(x)}<b>${fmt(x.amountMinor, x.currency)}</b></span>${bar(x.share)}</li>`).join("");
+      return list.length ? phoneSwap(colTable(widgetCols(type, o), list), `<ul class="splist">${rowsHTML}</ul>`) : `<p class="muted">${esc(__("No posted expenses this month."))}</p>`;
     }
     case "moneyboxes": {
       const goals = d.tags.filter((t) => t.targetMinor !== undefined && inc(t.id));
       return goals.length ? goals.map(goalCard).join("") : `<p class="muted">${esc(__("No money boxes yet."))}</p>`;
     }
     case "accounts": {
-      return colTable(widgetCols(type, o), d.accounts.filter((a) => inc(a.id)));
+      const list = d.accounts.filter((a) => inc(a.id));
+      return phoneSwap(colTable(widgetCols(type, o), list), `<div class="tgrid">${list.map(accountCard).join("")}</div>`);
     }
     case "recent": {
       const list = d.transactions.filter((t) => t.state === "posted").sort(byNewest).slice(0, rows);
@@ -539,7 +544,7 @@ function goalCard(t) {
   const scale = Math.max(t.targetMinor, t.savedMinor) || 1;
   const stack = allocs.map(([, val], i) => `<i style="width:${val / scale * 100}%;background:${BOX_COLORS[i % BOX_COLORS.length]}"></i>`).join("");
   const where = allocs.map(([id, val]) => `${esc(accName(id))} ${fmt(val, t.currency)}`).join(" · ");
-  const head = __("{saved} of {target} · {pct}%", { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency), pct: p.toFixed(0) }) + (t.targetDate ? " · " + __("by {date}", { date: t.targetDate }) : "");
+  const head = __("{saved} of {target} · {pct}%", { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency), pct: p.toFixed(0) }) + (t.targetDate ? " · " + __("by {date}", { date: dayLabel(t.targetDate) }) : "");
   return `<div style="margin-bottom:18px"><div class="panelhead"><button class="titlelink" data-detail-goal="${esc(t.id)}">${esc(t.name)}</button><span>${esc(head)}</span></div>
     <div class="stack" style="margin:8px 0">${stack}</div><span class="muted">${where || esc(__("No allocations yet"))}</span></div>`;
 }
@@ -892,8 +897,8 @@ function screenTemplates(v) {
   const status = (t) => ({ l: N_("Status"), v: esc(t.enabled ? __("Enabled") : __("Paused")) });
   const all = state.data.transactionTemplates;
   const rows = all.filter((t) => !isShortcut(t)).map((t) => row([name(t), what(t, N_("Generates")),
-    { l: N_("Schedule"), v: `${esc(scheduleText(t.schedule))}<br><span class="muted">${esc(__("from {date}", { date: t.schedule.startDate }))}</span>` },
-    { l: N_("Next due"), v: esc(t.nextDue || "—") }, status(t)])).join("");
+    { l: N_("Schedule"), v: `${esc(scheduleText(t.schedule))}<br><span class="muted">${esc(__("from {date}", { date: dayLabel(t.schedule.startDate) }))}</span>` },
+    { l: N_("Next due"), v: esc(t.nextDue ? dayLabel(t.nextDue) : "—") }, status(t)])).join("");
   const cuts = all.filter(isShortcut).map((t) => row([name(t), what(t, N_("Fills in")), status(t)])).join("");
   v.innerHTML = `<section class="panel"><div class="panelhead"><h3>${esc(__("Transaction templates"))}</h3><span><button class="smallbtn" id="genBtn">${esc(__("Generate due"))}</button> <button class="smallbtn" id="newTpl">${esc(__("+ New template"))}</button></span></div>
     ${rows ? table([{ t: "Template" }, { t: "Generates" }, { t: "Schedule" }, { t: "Next due" }, { t: "Status" }], rows) : `<div class="empty">${esc(__("No templates yet."))}</div>`}</section>
@@ -1433,7 +1438,7 @@ function showHistory(tagId) {
   const list = state.data.transactions.filter((t) => t.tagId === tagId && t.type === "allocate")
     .sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
   openDialog(__("History — {name}", { name: tagName(tagId) }), list.length
-    ? table([{ t: "Date" }, { t: N_("Decision") }, { t: "Account" }, { t: "Amount", num: 1 }], list.map((t) => row([{ l: "Date", v: esc(t.date) }, { l: "Decision", v: `${esc(lbl(TYPE_L, t.type))}${t.note ? " — " + esc(t.note) : ""}` }, { l: "Account", v: esc(accName(t.accountId)) }, { l: "Amount", v: esc(amountText(t)), num: 1 }])).join(""))
+    ? table([{ t: "Date" }, { t: N_("Decision") }, { t: "Account" }, { t: "Amount", num: 1 }], list.map((t) => row([{ l: "Date", v: esc(dayLabel(t.date)) }, { l: "Decision", v: `${esc(lbl(TYPE_L, t.type))}${t.note ? " — " + esc(t.note) : ""}` }, { l: "Account", v: esc(accName(t.accountId)) }, { l: "Amount", v: esc(amountText(t)), num: 1 }])).join(""))
     : `<p class="muted">${esc(__("No allocations yet"))}</p>`);
 }
 async function generateDue() {
@@ -1467,7 +1472,7 @@ function allNotifications() {
   d.tags.filter((t) => t.targetMinor > 0).forEach((t) => {
     const amounts = { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency) };
     if (t.savedMinor >= t.targetMinor) out.push({ key: `goal-reached:${t.id}:${t.targetMinor}`, rank: 5, level: "good", icon: noteIcon("check"), title: __("{name} reached its target", { name: t.name }), body: __("{saved} of {target} saved", amounts), open: () => openTagDialog(null, t.id) });
-    else if (t.targetDate && t.targetDate < d.today) out.push({ key: `goal-late:${t.id}:${t.targetDate}`, rank: 4, level: "warn", icon: noteIcon("clock"), title: __("{name} passed its target date", { name: t.name }), body: __("{saved} of {target} saved; target date was {date}", { ...amounts, date: t.targetDate }), open: () => openTagDialog(null, t.id) });
+    else if (t.targetDate && t.targetDate < d.today) out.push({ key: `goal-late:${t.id}:${t.targetDate}`, rank: 4, level: "warn", icon: noteIcon("clock"), title: __("{name} passed its target date", { name: t.name }), body: __("{saved} of {target} saved; target date was {date}", { ...amounts, date: dayLabel(t.targetDate) }), open: () => openTagDialog(null, t.id) });
   });
   return out.sort((a, b) => a.rank - b.rank);
 }
@@ -1492,7 +1497,8 @@ function renderBell() {
   if (!state.notifOpen) return;
   const rb = $("#bellBtn").getBoundingClientRect();
   panel.style.top = Math.round(rb.bottom + 8) + "px";
-  panel.style.right = Math.max(12, Math.round(window.innerWidth - rb.right)) + "px";
+  // under the bell; on phones across the screen (12px each side)
+  panel.style.right = (matchMedia("(max-width:800px)").matches ? 12 : Math.max(12, Math.round(window.innerWidth - rb.right))) + "px";
   const canDismiss = list.some((x) => !x.fixed), hasExpected = list.some((x) => x.fixed);
   panel.innerHTML = `<div class="nphead"><h2>${esc(__("Notifications"))}</h2>${canDismiss ? `<button type="button" class="linkbtn" id="nDismissAll">${esc(__("Dismiss all"))}</button>` : ""}</div>
     ${n ? `<ul class="nlist">${list.map((x, i) => `<li class="nitem lvl-${x.level}">
