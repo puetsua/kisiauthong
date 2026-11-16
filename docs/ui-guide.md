@@ -157,6 +157,9 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
 - **Lists of records** use `table(headers, rows)` / `row(cells)`. On phones
   tables become one card per row with each cell labelled from `data-label`,
   so give every cell a short label.
+- **Long lists** that are not tied to a period (search results) page with
+  ‹ Previous / Next ›, a "1–20 of 57" count and a 10 / 20 / 50 / 100
+  page-size select remembered per browser; a new search starts at page 1.
 - **Cards** (`.tcard`, `.acard` …) are for things scanned at a glance (budgets,
   money boxes, accounts); each card is a button that opens its details.
 - **Empty states**: `.empty`, one short sentence; add how to create the first

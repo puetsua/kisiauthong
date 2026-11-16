@@ -682,6 +682,12 @@ function periodLabel(p) {
   } catch (e) { return p.start + " – " + p.end; }
 }
 const PERIOD_KEY = "kisiauthong.txnPeriod";
+// search results are paged; the page size is remembered per browser
+const PAGE_SIZES = [10, 20, 50, 100], PAGE_KEY = "kisiauthong.searchPageSize";
+function pageSize() {
+  if (!state.pageSize) { let n = 20; try { n = parseInt(localStorage.getItem(PAGE_KEY), 10) || 20; } catch (e) { /* storage unavailable */ } state.pageSize = PAGE_SIZES.includes(n) ? n : 20; }
+  return state.pageSize;
+}
 function currentPeriod() {
   if (!state.period) {
     let saved = null;
@@ -776,14 +782,35 @@ function screenTransactions(v) {
     const list = all.filter((t) => { const d = txnDay(t); return t.state !== "planned" && (searching || (d >= p.start && d <= p.end)); });
     const modes = Object.keys(PERIOD_L).map((m) => `<button type="button" data-mode="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(PERIOD_L[m]))}</button>`).join("");
     const custom = p.mode === "custom" ? `<span class="prange"><input type="date" id="pStart" value="${esc(p.start)}" aria-label="${esc(__("Start date"))}"> – <input type="date" id="pEnd" value="${esc(p.end)}" aria-label="${esc(__("End date"))}"></span>` : "";
-    const head = searching ? `<div class="periodbar"><span class="plabel">${esc(__("{n} result(s) in all history", { n: list.length }))}</span></div>`
-      : `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
+    let shown = list, head;
+    if (searching) {
+      const size = pageSize(), pages = Math.max(1, Math.ceil(list.length / size));
+      state.searchPage = Math.min(state.searchPage || 0, pages - 1);
+      const from = state.searchPage * size;
+      shown = list.slice(from, from + size);
+      const sizes = PAGE_SIZES.map((n) => `<option value="${n}" ${n === size ? "selected" : ""}>${esc(__("{n} per page", { n }))}</option>`).join("");
+      head = list.length ? `<div class="periodbar"><nav class="periodnav pager" aria-label="${esc(__("Pages"))}">
+        <button class="smallbtn" data-page="-1" ${state.searchPage === 0 ? "disabled" : ""}>${esc(__("‹ Previous"))}</button>
+        <span class="plabel">${esc(__("{from}–{to} of {n} in all history", { from: from + 1, to: from + shown.length, n: list.length }))}</span>
+        <button class="smallbtn" data-page="1" ${state.searchPage >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button>
+        <select id="pgSize" aria-label="${esc(__("Per page"))}">${sizes}</select></nav></div>` : "";
+    } else head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
     const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, edit: true })).join("")}</ul></section>` : "";
     // search results: one flat list, each row carrying its date
-    const postedHTML = list.length ? `<section class="panel feedpanel">${searching ? `<ul class="feed">${list.map((t) => feedRow(t, { withDate: true })).join("")}</ul>` : feedHTML(list, openDays())}</section>`
+    const postedHTML = list.length ? `<section class="panel feedpanel">${searching ? `<ul class="feed">${shown.map((t) => feedRow(t, { withDate: true })).join("")}</ul>` : feedHTML(list, openDays())}</section>`
       : `<div class="empty">${esc(searching ? __("No transactions match your search.") : __("No transactions in this period."))}</div>`;
     $("#txnResults").innerHTML = expectedHTML + head + postedHTML;
     const box = $("#txnResults");
+    box.querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => {
+      state.searchPage += parseInt(b.dataset.page, 10);
+      drawResults();
+      if ($("#txnResults").getBoundingClientRect().top < 0) $("#txnResults").scrollIntoView({ block: "start" });
+    }));
+    if ($("#pgSize")) $("#pgSize").addEventListener("change", (e) => {
+      state.pageSize = parseInt(e.target.value, 10); state.searchPage = 0;
+      try { localStorage.setItem(PAGE_KEY, String(state.pageSize)); } catch (err) { /* per-browser convenience only */ }
+      drawResults();
+    });
     box.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
       const m = b.dataset.mode;
       if (m === p.mode) return;
@@ -813,7 +840,7 @@ function screenTransactions(v) {
     bindActions(box);
     bindDays(box);
   };
-  const upd = () => { state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, tag: $("#ftag").value }; countF(); drawResults(); };
+  const upd = () => { state.searchPage = 0; state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, tag: $("#ftag").value }; countF(); drawResults(); };
   ["faccount", "ftype", "ftag"].forEach((id) => $("#" + id).addEventListener("change", upd));
   $("#fq").addEventListener("input", upd);
   $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", tag: "" }; render(); });
