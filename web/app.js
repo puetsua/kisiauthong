@@ -1384,22 +1384,31 @@ function calendarStart(cycle, iso) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 const moneyField = (label, name, minor, cur, cls) => field(label, `<span class="moneyrow"><select name="${name}Cur" aria-label="${esc(__("Currency"))}">${currencyOptions(cur)}</select><input name="${name}" type="number" step="any" min="0.01" value="${minor != null ? decimal(minor, cur) : ""}"></span>`, cls);
+// What a tag is: a category, a budget (a category with a limit) or a money box (a goal tag).
+const TAGROLE_L = { category: N_("Category"), budget: N_("Budget"), goal: N_("Money box") };
+const tagRole = (t) => (t.kind === "goal" ? "goal" : t.limitMinor !== undefined ? "budget" : "category");
 // kind: "category", "goal", or "budget" (a category with a limit: an existing one, or a new one).
-// Only editing offers the kind and "Set a budget", to turn a category into a budget or a money box.
+// Only editing offers Type, to turn any of the three into another; a tag that transactions or templates
+// use cannot switch between category and money box (the server refuses), so those choices are disabled.
 function openTagDialog(kind, editId) {
   const t = editId ? state.data.tags.find((x) => x.id === editId) : null;
   const newBudget = !t && kind === "budget", free = state.data.tags.filter((x) => x.kind === "category" && x.limitMinor === undefined);
   const k = t ? t.kind : newBudget ? "category" : kind || "category", cur = (t && t.currency) || defCur();
-  const hasBudget = !!(t && t.limitMinor !== undefined);
+  const hasBudget = !!(t && t.limitMinor !== undefined), role = t ? tagRole(t) : newBudget ? "budget" : k;
+  const used = !!t && (state.data.transactions.some((x) => x.tagId === t.id || txnCats(x).includes(t.id))
+    || state.data.transactionTemplates.some((x) => x.template.tagId === t.id || (x.template.tagIds || []).includes(t.id)));
+  const locked = (r) => used && (r === "goal") !== (k === "goal");
+  const roleOpts = Object.keys(TAGROLE_L).map((r) => `<option value="${r}" ${r === role ? "selected" : ""} ${locked(r) ? "disabled" : ""}>${esc(__(TAGROLE_L[r]))}</option>`).join("");
   const cyc = (t && t.cycle) || "monthly", every = (t && t.cycleEvery) || 1;
   const preset = !hasBudget ? "monthly:1" : cyc === "range" ? "range" : BUDGET_PRESETS.some(([c, n]) => c === cyc && n === every) ? `${cyc}:${every}` : "custom";
   const presetOpts = BUDGET_PRESETS.map(([c, n]) => `<option value="${c}:${n}" ${preset === `${c}:${n}` ? "selected" : ""}>${esc(cycleName(c, n))}</option>`).join("")
     + `<option value="custom" ${preset === "custom" ? "selected" : ""}>${esc(__("Custom…"))}</option><option value="range" ${preset === "range" ? "selected" : ""}>${esc(__("Date range"))}</option>`;
-  openDialog(t ? (k === "goal" ? __("Edit money box") : __("Edit category")) : newBudget ? __("New budget") : k === "goal" ? __("New money box") : __("New category"), dialogForm(
+  openDialog(t ? (k === "goal" ? __("Edit money box") : hasBudget ? __("Edit budget") : __("Edit category")) : newBudget ? __("New budget") : k === "goal" ? __("New money box") : __("New category"), dialogForm(
     (newBudget ? field("Category", `<select name="catId">${free.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}<option value="">${esc(__("New category"))}</option></select>`) : "") +
     field("Name", `<input name="name" required maxlength="100" placeholder="${esc(k === "goal" ? __("House fund") : __("Food"))}" value="${t ? esc(t.name) : ""}">`, "f-name") +
-    (t ? field("Kind", `<select name="kind">${enumOptions(TAGKIND_L, ["category", "goal"], k)}</select>`) : `<input type="hidden" name="kind" value="${esc(k)}">`) +
-    (t ? `<label class="checkline f-category"><input type="checkbox" name="hasBudget" ${hasBudget ? "checked" : ""}> ${esc(__("Set a budget"))}</label>` : "") +
+    (t ? field("Type", `<select name="role">${roleOpts}</select>`)
+      + (used ? `<p class="formnote hint">${esc(__("Transactions use this tag, so it cannot switch between category and money box."))}</p>` : "")
+      : `<input type="hidden" name="role" value="${esc(role)}">`) +
     moneyField(N_("Limit"), "limit", t && t.limitMinor, cur, "f-budget") +
     field(N_("Period"), `<select name="preset">${presetOpts}</select>`, "f-budget") +
     field(N_("Every"), `<span class="moneyrow"><input name="every" type="number" min="1" max="99" value="${every}"><select name="unit">${enumOptions(CYCLE_UNIT_L, Object.keys(CYCLE_UNIT_L), cyc === "range" ? "monthly" : cyc)}</select></span>`, "f-budget f-custom") +
@@ -1413,12 +1422,10 @@ function openTagDialog(kind, editId) {
   onDlg("dlgAlloc", () => openDrawer("allocate", t.id));
   onDlg("dlgHistory", () => showHistory(t.id));
   const form = $("#dialogForm"), el = form.elements;
-  const budgetOn = () => newBudget || !!(el.hasBudget && el.hasBudget.checked);
   const sync = () => {
-    const goal = el.kind.value === "goal", budget = !goal && budgetOn(), pre = el.preset.value;
+    const goal = el.role.value === "goal", budget = el.role.value === "budget", pre = el.preset.value;
     // hidden fields are disabled too, so they are neither validated nor submitted
     const show = (cls, on) => form.querySelectorAll(cls).forEach((x) => { x.hidden = !on; x.querySelectorAll("input,select").forEach((c) => { c.disabled = !on; }); });
-    show(".f-category", !goal);
     show(".f-name", !newBudget || !el.catId.value);
     show(".f-budget", budget);
     show(".f-custom", budget && pre === "custom");
@@ -1427,17 +1434,17 @@ function openTagDialog(kind, editId) {
     show(".f-goal", goal);
     el.limit.required = budget; el.rangeStart.required = el.rangeEnd.required = budget && pre === "range"; el.target.required = goal;
   };
-  ["kind", "hasBudget", "preset", "catId"].forEach((n) => el[n] && el[n].addEventListener("change", sync));
+  ["role", "preset", "catId"].forEach((n) => el[n] && el[n].addEventListener("change", sync));
   sync();
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries());
     const into = newBudget && f.catId ? free.find((x) => x.id === f.catId) : null; // a budget on an existing category
-    const body = { name: into ? into.name : f.name.trim(), kind: f.kind };
-    if (f.kind === "goal") {
+    const body = { name: into ? into.name : f.name.trim(), kind: f.role === "goal" ? "goal" : "category" };
+    if (f.role === "goal") {
       body.currency = f.targetCur; body.targetMinor = toMinor(f.target, f.targetCur);
       if (f.targetDate) body.targetDate = f.targetDate;
-    } else if (budgetOn()) {
+    } else if (f.role === "budget") {
       body.currency = f.limitCur; body.limitMinor = toMinor(f.limit, f.limitCur);
       if (f.preset === "range") Object.assign(body, { cycle: "range", cycleStart: f.rangeStart, cycleEnd: f.rangeEnd });
       else {
@@ -1448,7 +1455,7 @@ function openTagDialog(kind, editId) {
     }
     try {
       if (t || into) { await put("/api/tags/" + (t || into).id, body); msg(into ? __("Budget added.") : __("Tag updated.")); }
-      else { await post("/api/tags", body); msg(newBudget ? __("Budget added.") : f.kind === "goal" ? __("Money box added.") : __("Category added.")); }
+      else { await post("/api/tags", body); msg(newBudget ? __("Budget added.") : f.role === "goal" ? __("Money box added.") : __("Category added.")); }
       $("#dialog").close(); await load();
     } catch (err) { errMsg(err); }
   });

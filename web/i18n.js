@@ -8,7 +8,7 @@ const I18N = {
   "zh-TW": {
     // navigation and screens
     "Dashboard": "總覽", "Transactions": "交易", "Accounts": "帳戶", "Budgets": "預算", "Money boxes": "存錢筒",
-    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單", "More": "更多", "Add budget": "新增預算", "New budget": "新增預算", "Budget added.": "已新增預算。", "{amount} to go": "還差 {amount}", "Target reached": "已達成目標", "On a date…": "指定日期…", "Last day": "最後一天", "{from}–{to} of {n} in all history": "全部紀錄 {n} 筆中的第 {from}–{to} 筆", "{n} per page": "每頁 {n} 筆", "Per page": "每頁筆數", "Pages": "分頁", "No transactions match your search.": "沒有符合搜尋的交易。", "Fills in": "填入", "Shortcuts": "捷徑", "+ New shortcut": "+ 新增捷徑", "No shortcuts yet. In the add form, choose ⋯ and Save as template.": "還沒有捷徑。在新增交易的表單點 ⋯，再選「存成範本」。", "More actions": "更多動作", "Save as template": "存成範本", "Type": "類型", "Filters": "篩選", "Filters · {n}": "篩選 · {n}",
+    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單", "More": "更多", "Edit budget": "編輯預算", "Transactions use this tag, so it cannot switch between category and money box.": "已有交易使用這個標籤，所以不能在分類和存錢筒之間轉換。", "Add budget": "新增預算", "New budget": "新增預算", "Budget added.": "已新增預算。", "{amount} to go": "還差 {amount}", "Target reached": "已達成目標", "On a date…": "指定日期…", "Last day": "最後一天", "{from}–{to} of {n} in all history": "全部紀錄 {n} 筆中的第 {from}–{to} 筆", "{n} per page": "每頁 {n} 筆", "Per page": "每頁筆數", "Pages": "分頁", "No transactions match your search.": "沒有符合搜尋的交易。", "Fills in": "填入", "Shortcuts": "捷徑", "+ New shortcut": "+ 新增捷徑", "No shortcuts yet. In the add form, choose ⋯ and Save as template.": "還沒有捷徑。在新增交易的表單點 ⋯，再選「存成範本」。", "More actions": "更多動作", "Save as template": "存成範本", "Type": "類型", "Filters": "篩選", "Filters · {n}": "篩選 · {n}",
     // enum labels
     "Expense": "支出", "Income": "收入", "Transfer": "轉帳", "Allocate": "分配",
     "Bank": "銀行", "Savings": "儲蓄", "Cash": "現金", "Investment": "投資", "Loan": "貸款",
@@ -69,13 +69,12 @@ const I18N = {
     "No transactions yet": "還沒有交易", 
     
     "Edit money box": "編輯存錢筒", "Edit category": "編輯分類", "New money box": "新增存錢筒", "New category": "新增分類",
-    "Set a budget": "設定預算", "Every": "每", "First period starts": "第一期開始日", "From": "從", "To": "到",
+    "Every": "每", "First period starts": "第一期開始日", "From": "從", "To": "到",
     "Add money box": "新增存錢筒", "Add category": "新增分類", "Money box added.": "已新增存錢筒。", "Category added.": "已新增分類。",
     "{spent} of {limit} spent · {period}": "已花 {spent}／{limit} · {period}",
     "Daily": "每日", "Weekly": "每週", "Monthly": "每月", "Quarterly": "每季", "Yearly": "每年",
     // common columns and fields
-    "Account": "帳戶", "Amount": "金額", "Date": "日期", "Note": "備註", "Status": "狀態", "Kind": "類型",
-    "Name": "名稱", "Currency": "幣別", "Balance": "餘額", "Earmarked": "已預留", "Free": "可用",
+    "Account": "帳戶", "Amount": "金額", "Date": "日期", "Note": "備註", "Status": "狀態",     "Name": "名稱", "Currency": "幣別", "Balance": "餘額", "Earmarked": "已預留", "Free": "可用",
     "Budget": "預算", "Spent": "已花費", "Progress": "進度", "Remaining": "剩餘", "Share": "佔比",
     "Template": "範本", "Generates": "產生", "Schedule": "排程", "Next due": "下次到期", "Decision": "決定", "To account": "轉入帳戶", "Title": "標題", "Rows": "列數", "Show": "顯示",
     // dashboard
