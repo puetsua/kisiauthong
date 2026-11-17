@@ -152,6 +152,19 @@ func normalizeReserve(r *Reserve) error {
 	return nil
 }
 
+// leavesPairHeld refuses removing allocation old from its (reserve, account) pair when the rest
+// of the pair would hold less than nothing: a take-out that depended on it would be left over.
+func (d *Data) leavesPairHeld(old *Allocation) error {
+	if d.ReservedIn(old.ReserveID, old.AccountID, old.ID) < 0 {
+		name := old.ReserveID
+		if r := d.reserveByID(old.ReserveID); r != nil {
+			name = r.Name
+		}
+		return fmt.Errorf("later take-outs from %s in this account depend on this allocation; delete or change those first", name)
+	}
+	return nil
+}
+
 // normalizeAllocation checks one allocation (ADR 0013): an existing reserve and own account,
 // a signed amount that is not zero and does not take out more than the reserve holds in that
 // account, and the account's currency.

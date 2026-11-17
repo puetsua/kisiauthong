@@ -76,6 +76,36 @@ func TestReservesAPI(t *testing.T) {
 		t.Fatalf("edit: %d %+v", code, fixed)
 	}
 
+	// a put-in that a take-out depends on can be neither deleted nor moved to another account
+	var outB Allocation
+	if code, a := put(ac, "acc-b", -1500); code != 201 {
+		t.Fatalf("take out of B: %d", code)
+	} else {
+		outB = a
+	}
+	var inB Allocation
+	for _, a := range alice().Allocations {
+		if a.ReserveID == r.ID && a.AccountID == "acc-b" && a.AmountMinor > 0 {
+			inB = a
+		}
+	}
+	if code := ac.do("DELETE", "/api/allocations/"+inB.ID, nil, nil); code != 400 {
+		t.Fatalf("deleted a put-in a take-out depends on: %d", code)
+	}
+	if code := ac.do("PUT", "/api/allocations/"+inB.ID, map[string]interface{}{"accountId": "acc-a", "amountMinor": 2000, "date": "2026-11-10"}, nil); code != 400 {
+		t.Fatalf("moved a put-in a take-out depends on: %d", code)
+	}
+	if code := ac.do("PUT", "/api/allocations/"+inB.ID, map[string]interface{}{"accountId": "acc-b", "amountMinor": 1000, "date": "2026-11-10"}, nil); code != 400 {
+		t.Fatalf("shrank a put-in below its take-outs: %d", code)
+	}
+	var timed Allocation
+	if code := ac.do("PUT", "/api/allocations/"+outB.ID, map[string]interface{}{"accountId": "acc-b", "amountMinor": -1500, "date": "2026-11-10", "time": "09:30", "tz": "Asia/Taipei"}, &timed); code != 200 || timed.At != "2026-11-10T01:30:00Z" {
+		t.Fatalf("time on an allocation: %d %+v", code, timed)
+	}
+	if code := ac.do("DELETE", "/api/allocations/"+outB.ID, nil, nil); code != 200 {
+		t.Fatalf("delete the take-out: %d", code)
+	}
+
 	// complete takes out everything, account by account
 	var out []Allocation
 	if code := ac.do("POST", "/api/reserves/"+r.ID+"/complete", map[string]interface{}{"date": "2026-11-20"}, &out); code != 201 || len(out) != 2 {

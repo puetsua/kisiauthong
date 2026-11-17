@@ -535,6 +535,11 @@ func toolDeleteAllocation(b *Book, raw json.RawMessage) (map[string]interface{},
 	if err != nil {
 		return nil, err
 	}
+	if old := b.data.allocationByID(in.ID); old != nil {
+		if err := b.data.leavesPairHeld(old); err != nil {
+			return nil, err
+		}
+	}
 	found, err := b.deleteAllocation(in.ID)
 	if err != nil {
 		return nil, err

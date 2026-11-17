@@ -583,6 +583,12 @@ func handleAllocation(w http.ResponseWriter, r *http.Request, b *Book) {
 			a.ReserveID = old.ReserveID
 		}
 		a.CreatedAt, a.TransactionTemplateID, a.OccurrenceDate = old.CreatedAt, old.TransactionTemplateID, old.OccurrenceDate
+		if a.ReserveID != old.ReserveID || a.AccountID != old.AccountID { // it leaves its old pair
+			if err := b.data.leavesPairHeld(old); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+		}
 		if err := b.data.normalizeAllocation(&a); err != nil {
 			writeErr(w, 400, err.Error())
 			return
@@ -593,6 +599,10 @@ func handleAllocation(w http.ResponseWriter, r *http.Request, b *Book) {
 		}
 		writeJSON(w, 200, a)
 	case http.MethodDelete:
+		if err := b.data.leavesPairHeld(old); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
 		if _, err := b.deleteAllocation(id); err != nil {
 			writeErr(w, 500, err.Error())
 			return

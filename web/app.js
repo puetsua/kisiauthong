@@ -1216,7 +1216,8 @@ function openAllocDialog(reserveId, dir, editId) {
     if (!a && takeOut && minor > heldIn(r, f.accountId)) { // the server refuses this too; say it with the amount first
       msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: r.name, amount: fmt(heldIn(r, f.accountId), cur), account: accName(f.accountId) }), "error"); return;
     }
-    const body = { accountId: f.accountId, amountMinor: takeOut ? -minor : minor, currency: cur, date: f.date, note: f.note || "", memo: a ? a.memo || "" : "" };
+    // an edit keeps what the dialog does not show (note, time and zone)
+    const body = { accountId: f.accountId, amountMinor: takeOut ? -minor : minor, currency: cur, date: f.date, note: f.note || "", memo: a ? a.memo || "" : "", time: a ? a.time || "" : "", tz: a ? a.tz || "" : "" };
     try {
       if (a) { await put("/api/allocations/" + a.id, body); msg(__("Allocation updated.")); }
       else { await post("/api/reserves/" + r.id + "/allocations", body); msg(__("Saved.")); }
