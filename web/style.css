@@ -378,6 +378,8 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .aicon{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:var(--accentsoft);color:var(--accent)}
 .aicon.ext{background:var(--track);color:var(--muted)}
 .acard .thead{align-items:center;justify-content:flex-start}
+/* a budget's name comes first; its period goes on the line below, so the name is never squeezed out */
+.bcard .thead{flex-direction:column;align-items:stretch;gap:2px}.bcard .thead small{text-align:left}
 .acard .aname{flex:1;min-width:0;display:flex;flex-direction:column}
 .acard .aname b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .acard .aname small{font-size:.78rem;text-align:left}

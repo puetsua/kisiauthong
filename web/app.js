@@ -133,7 +133,7 @@ function cycleName(cycle, every) {
   return every > 1 ? __(CYCLE_EVERY_L[cycle], { n: every }) : lbl(FREQ_L, cycle || "monthly");
 }
 // "Monthly · Nov 1 – 30, 2026": how a budget repeats and the period it is in now
-const budgetPeriodText = (t) => (t.cycle === "range" ? "" : cycleName(t.cycle, t.cycleEvery) + " · ") + periodLabel({ start: t.periodStart, end: t.periodEnd });
+const budgetPeriodText = (t, short) => (t.cycle === "range" ? "" : cycleName(t.cycle, t.cycleEvery) + " · ") + periodLabel({ start: t.periodStart, end: t.periodEnd }, short);
 const FREQ_L = { never: N_("Never"), daily: N_("Daily"), weekly: N_("Weekly"), monthly: N_("Monthly"), quarterly: N_("Quarterly"), yearly: N_("Yearly") };
 const lbl = (map, x) => __(map[x] || x);
 const enumOptions = (map, keys, sel) => keys.map((k) => `<option value="${esc(k)}" ${k === sel ? "selected" : ""}>${esc(lbl(map, k))}</option>`).join("");
@@ -673,10 +673,15 @@ function clampRange(start, end) {
   const tooLong = spanDays(start, end) > MAX_RANGE_DAYS;
   return { mode: "custom", start, end: tooLong ? addDays(start, MAX_RANGE_DAYS - 1) : end, clamped: tooLong };
 }
-function periodLabel(p) {
+// short: leave out the year when the whole period is in this year (cards with little room)
+function periodLabel(p, short) {
   try {
     if (p.mode === "month") return new Intl.DateTimeFormat(LANG, { year: "numeric", month: "long" }).format(parseDay(p.start));
-    const a = parseDay(p.start), b = parseDay(p.end);
+    const a = parseDay(p.start), b = parseDay(p.end), year = state.data && state.data.today.slice(0, 4);
+    if (short && p.start.slice(0, 4) === year && p.end.slice(0, 4) === year) {
+      const md = new Intl.DateTimeFormat(LANG, { month: LANG === "zh-TW" ? "long" : "short", day: "numeric" });
+      return LANG === "zh-TW" ? md.format(a) + " – " + md.format(b) : md.formatRange(a, b);
+    }
     if (LANG === "zh-TW") { // ICU's zh-TW range pattern is numeric ("2026/11/9至2026/11/15"); spell it out instead
       const withYear = new Intl.DateTimeFormat(LANG, { year: "numeric", month: "long", day: "numeric" });
       return withYear.format(a) + " – " + (a.getFullYear() === b.getFullYear() ? new Intl.DateTimeFormat(LANG, { month: "long", day: "numeric" }) : withYear).format(b);
@@ -982,7 +987,7 @@ function budgetCard(t) {
   const pace = !started ? __("Starts {date}", { date: dayLabel(t.periodStart) }) : ended ? __("Ended {date}", { date: dayLabel(t.periodEnd) })
     : t.remainingMinor > 0 ? __("{amount} a day for {n} day(s)", { amount: fmt(Math.floor(t.remainingMinor / daysLeft), t.currency, true), n: daysLeft }) : __("{n} day(s) left", { n: daysLeft });
   return `<button type="button" class="tcard bcard ${cls}" data-detail-tag="${esc(t.id)}">
-    <span class="thead"><b>${esc(t.name)}</b><small>${esc(budgetPeriodText(t))}</small></span>
+    <span class="thead"><b>${esc(t.name)}</b><small>${esc(budgetPeriodText(t, true))}</small></span>
     <span class="bamount"><b>${fmt(t.spentMinor, t.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(t.limitMinor, t.currency) }))}</small></span>
     <span class="bar"${ahead ? ` title="${esc(__("Spending faster than the period"))}"` : ""}><i class="${cls}" style="width:${Math.min(100, p)}%"></i></span>
     <span class="tfoot"><span class="${t.remainingMinor < 0 ? "neg" : ""}">${esc(left)}</span><small>${esc(pace)}</small></span></button>`;
