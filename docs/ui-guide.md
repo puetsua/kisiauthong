@@ -216,8 +216,10 @@ topmost popup only.
   button (`#fMoreBtn`, `aria-label` "More actions") that opens `.actmenu`
   upwards. Secondary or destructive actions (Save as template, Delete) go in
   that menu, never as extra buttons under Save.
-- Quick picks (`.quickpicks`) are an even grid of `.qpick` buttons
-  (name, then amount · account), long names cut with an ellipsis.
+- Quick picks (`#fQuick.quickbox`) are labelled groups (`.qgroup`, a small
+  `.qhead` title: Templates, then Recent), each an even grid (`.quickpicks`)
+  of `.qpick` buttons (name, then amount · account), long names cut with an
+  ellipsis. A template's name carries a bookmark icon (`.qtpl`).
 
 ### Dialog
 

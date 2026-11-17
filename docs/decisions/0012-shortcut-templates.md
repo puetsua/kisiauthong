@@ -24,9 +24,11 @@ manual starting point.
   `weekly`, `monthly`, `quarterly`, `yearly` or `never` (empty still means
   monthly), and a repeating schedule needs a valid start date. A `never`
   schedule drops every other field.
-- The add form also suggests, after the shortcuts, entries from the last
-  60 days that no shortcut covers: up to four made at least twice with the
-  same type, account and title, then the latest ones, six in all. Quick
-  picks show only the type chosen at the top of the form. These are derived
-  in the client and never stored.
+- The add form's quick picks come in two labelled groups, for the type
+  chosen at the top of the form: Templates (the shortcuts, most used in 90
+  days first, each marked with a bookmark) and Recent (your six latest
+  entries, newest entered first, one per account and title, leaving out
+  what a shortcut covers). Entry order comes from the transaction's
+  `createdAt` (migration 13); older transactions fall back to their date
+  and time. Recent is derived in the client and never stored.
 - No new element: this stays inside TransactionTemplate.

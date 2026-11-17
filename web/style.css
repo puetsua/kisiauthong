@@ -155,7 +155,10 @@ tr.unconfirmed td{background:#fdf0cd}
 .drawerfield{font-size:.86rem;color:var(--muted);margin-top:13px}.drawerfield[hidden]{display:none}
 .tagpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 /* add form: one-tap fills, and the ⋯ actions beside Save */
-.quickpicks{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin:10px 0 12px}
+.quickbox{display:flex;flex-direction:column;gap:10px;margin:10px 0 12px}
+.qgroup{display:flex;flex-direction:column;gap:6px}.qhead{font-size:.78rem;font-weight:600;color:var(--muted)}
+.quickpicks{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.qpick.qtpl b{display:flex;align-items:center;gap:5px}.qpick.qtpl svg{flex:none;color:var(--accent2)}
 .qpick{min-width:0;text-align:left;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:12px;padding:7px 12px;font:inherit;line-height:1.25;cursor:pointer}
 .qpick b{display:block;font-size:.9rem;font-weight:600;overflow-wrap:anywhere}
 .qpick small{display:block;color:var(--muted);font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

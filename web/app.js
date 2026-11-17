@@ -1219,36 +1219,41 @@ function pickLabel(t) {
   return t.note || (k === "allocate" ? tagName(t.tagId) : k === "transfer" ? `${accName(t.fromAccountId)} → ${accName(t.toAccountId)}`
     : txnCats(t).map(tagName).join(" · ") || (ext ? accName(ext) : ""));
 }
-// One-tap fills for the add form, for the chosen type: shortcuts (templates that never repeat, ADR 0012),
-// the most used first; then, from the last 60 days, what you entered at least twice and your latest entries.
+// when an entry was made: its entry time, or (entered before that was recorded) its date and time
+const enteredAt = (t) => t.createdAt || `${t.date}T${t.time || "00:00"}`;
+// One-tap fills for the add form, for the chosen type, in two groups: Templates (shortcuts, templates
+// that never repeat, ADR 0012; the most used in 90 days first) and Recent (your latest entries, newest
+// entered first, one per account and title, leaving out what a template already covers).
+const RECENT_PICKS = 6;
 function quickPicks(type) {
   const today = state.data.today, acc = (t) => (flow(t) === "transfer" ? t.fromAccountId + ">" + t.toAccountId : ownAcc(t));
   const key = (t, label) => [acc(t), label].join("|");
-  const recent = state.data.transactions.filter((t) => t.state === "posted" && flow(t) === type && t.date >= addDays(today, -90) && t.date <= today);
+  const mine = state.data.transactions.filter((t) => t.state === "posted" && flow(t) === type);
   const uses = {};
-  recent.forEach((t) => { const k = key(t, pickLabel(t)); uses[k] = (uses[k] || 0) + 1; });
-  const picks = state.data.transactionTemplates.filter((tp) => tp.enabled && isShortcut(tp) && flow(tp.template) === type).map((tp) => {
+  mine.filter((t) => t.date >= addDays(today, -90) && t.date <= today).forEach((t) => { const k = key(t, pickLabel(t)); uses[k] = (uses[k] || 0) + 1; });
+  const tpl = state.data.transactionTemplates.filter((tp) => tp.enabled && isShortcut(tp) && flow(tp.template) === type).map((tp) => {
     const title = tp.template.note || tp.name;
-    return { label: tp.name, title, t: tp.template, n: uses[key(tp.template, title)] || 0 };
+    return { label: tp.name, title, t: tp.template, n: uses[key(tp.template, title)] || 0, tpl: true };
   }).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
-  const covered = new Set(picks.map((p) => key(p.t, p.title))), groups = {}, when = (t) => t.date + (t.time || "");
-  recent.filter((t) => t.date >= addDays(today, -60)).forEach((t) => {
+  const seen = new Set(tpl.map((p) => key(p.t, p.title))), recent = [];
+  for (const t of [...mine].sort((a, b) => enteredAt(b).localeCompare(enteredAt(a)))) {
     const label = pickLabel(t), k = key(t, label);
-    if (!label || covered.has(k)) return;
-    const g = groups[k] || (groups[k] = { n: 0, t, label });
-    g.n++;
-    if (when(t) >= when(g.t)) g.t = t; // the latest one gives amount, payee and tags
-  });
-  const hist = Object.values(groups);
-  const often = hist.filter((g) => g.n >= 2).sort((a, b) => b.n - a.n || when(b.t).localeCompare(when(a.t))).slice(0, 4);
-  const latest = hist.filter((g) => !often.includes(g)).sort((a, b) => when(b.t).localeCompare(when(a.t))).slice(0, 6 - often.length);
-  return [...picks, ...[...often, ...latest].map((g) => ({ label: g.label, title: g.t.note, t: g.t }))];
+    if (!label || seen.has(k)) continue;
+    seen.add(k);
+    recent.push({ label, title: t.note, t });
+    if (recent.length === RECENT_PICKS) break;
+  }
+  return { tpl, recent };
 }
+const TPL_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 function drawQuick(picks) {
-  state.quick = picks;
+  const { tpl = [], recent = [] } = Array.isArray(picks) ? {} : picks;
+  state.quick = [...tpl, ...recent];
   const box = $("#fQuick"), acc = (t) => (flow(t) === "transfer" ? t.fromAccountId : ownAcc(t));
-  box.hidden = !picks.length;
-  box.innerHTML = picks.map((p, i) => `<button type="button" class="qpick" data-pick="${i}" aria-pressed="false" title="${esc(p.label)}"><b>${esc(p.label)}</b><small>${esc(fmt(Math.abs(p.t.amountMinor), p.t.currency))} · ${esc(accName(acc(p.t)))}</small></button>`).join("");
+  const chip = (p, i) => `<button type="button" class="qpick${p.tpl ? " qtpl" : ""}" data-pick="${i}" aria-pressed="false" title="${esc(p.label)}"><b>${p.tpl ? TPL_ICON : ""}${esc(p.label)}</b><small>${esc(fmt(Math.abs(p.t.amountMinor), p.t.currency))} · ${esc(accName(acc(p.t)))}</small></button>`;
+  const group = (title, list, from) => list.length ? `<div class="qgroup" role="group" aria-label="${esc(title)}"><span class="qhead">${esc(title)}</span><div class="quickpicks">${list.map((p, i) => chip(p, from + i)).join("")}</div></div>` : "";
+  box.hidden = !state.quick.length;
+  box.innerHTML = group(__("Templates"), tpl, 0) + group(__("Recent"), recent, tpl.length);
   box.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => applyPick(state.quick[+b.dataset.pick], b)));
 }
 const setSel = (sel, v) => { if (v && [...sel.options].some((o) => o.value === v)) sel.value = v; };

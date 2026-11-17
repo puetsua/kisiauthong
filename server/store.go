@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS transactions%[1]s (
   to_account_id TEXT NOT NULL DEFAULT '', tag_id TEXT NOT NULL DEFAULT '', type TEXT NOT NULL,
   state TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL,
   time TEXT NOT NULL DEFAULT '', tz TEXT NOT NULL DEFAULT '',
-  note TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT,
+  note TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT, created_at TEXT NOT NULL DEFAULT '',
   PRIMARY KEY(user_id, id), UNIQUE(user_id, transaction_template_id, occurrence_date));
 CREATE TABLE IF NOT EXISTS tags%[1]s (
   user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, limit_minor INTEGER,
@@ -128,6 +128,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migratePasskeys,                  // 10
 	migrateAvatarVersion,             // 11
 	migrateAPIKeys,                   // 12
+	migrateTransactionCreatedAt,      // 13
 }
 
 func (s *Store) migrate() error {
@@ -236,6 +237,20 @@ func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
 	}
 	return false, rows.Err()
 }
+
+// Migration 13: transactions remember when they were entered, so the add form can offer the
+// latest entries first. Older transactions stay empty and sort by their date and time instead.
+func migrateTransactionCreatedAt(tx *sql.Tx) error {
+	has, err := hasColumn(tx, "transactions", "created_at")
+	if err != nil || has {
+		return err
+	}
+	_, err = tx.Exec(`ALTER TABLE transactions ADD COLUMN created_at TEXT NOT NULL DEFAULT ''`)
+	return err
+}
+
+// createdStamp is an entry time that sorts as text: fixed width, UTC, milliseconds.
+func createdStamp() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000Z") }
 
 // Migration 7 (ADR 0006): transactions may carry a local time and its time zone.
 // Existing transactions stay date-only.
@@ -423,7 +438,7 @@ func (b *Book) reload() error {
 		d.Accounts = append(d.Accounts, a)
 	}
 	rows.Close()
-	tr, err := db.Query(`SELECT id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date FROM transactions WHERE user_id=? ORDER BY date,time,id`, uid)
+	tr, err := db.Query(`SELECT id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at FROM transactions WHERE user_id=? ORDER BY date,time,id`, uid)
 	if err != nil {
 		return err
 	}
@@ -431,7 +446,7 @@ func (b *Book) reload() error {
 	for tr.Next() {
 		var t Transaction
 		var tplID, occ sql.NullString
-		if err := tr.Scan(&t.ID, &t.AccountID, &t.FromAccountID, &t.ToAccountID, &t.TagID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Time, &t.TZ, &t.Note, &t.Memo, &tplID, &occ); err != nil {
+		if err := tr.Scan(&t.ID, &t.AccountID, &t.FromAccountID, &t.ToAccountID, &t.TagID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Time, &t.TZ, &t.Note, &t.Memo, &tplID, &occ, &t.CreatedAt); err != nil {
 			return err
 		}
 		t.At = instant(t.Date, t.Time, t.TZ)
@@ -610,9 +625,14 @@ func (b *Book) insertTag(t Tag) error {
 		t.ID, t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, n64(t.TargetMinor), t.TargetDate)
 	return err
 }
+
+// insertTransaction stores a new transaction, stamping when it was entered unless it already says.
 func (b *Book) insertTransaction(t Transaction) error {
-	_, err := b.exec(`INSERT INTO transactions(user_id,id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate))
+	if t.CreatedAt == "" {
+		t.CreatedAt = createdStamp()
+	}
+	_, err := b.exec(`INSERT INTO transactions(user_id,id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate), t.CreatedAt)
 	return err
 }
 func (b *Book) insertTemplate(t TransactionTemplate) error {
