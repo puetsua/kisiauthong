@@ -4,10 +4,6 @@
 [hidden]{display:none!important}
 .formnote{margin:8px 0 0;font-size:.86rem;color:var(--amber)}
 .formnote.hint{color:var(--muted)}
-.formnote.dropwarn{margin:4px 0 12px;padding:10px 12px;border-radius:8px;background:var(--redbg);border:1px solid #f0c4bf;color:var(--red);display:flex;flex-direction:column;gap:6px;font-size:.9rem}
-.droplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;color:var(--ink)}
-.droplist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px}.droplist li>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dropwarn a{color:var(--red);font-weight:600}
 .formnote.planned{margin:12px 0 0;padding:10px 12px;border-radius:8px;background:var(--amberbg);border:1px solid #ecd9b0;color:#7a4a00}
 html[data-width="wide"]{--page-max:1440px}
 html[data-width="full"]{--page-max:none}
@@ -380,6 +376,8 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .tsechead{flex-wrap:wrap}.tsechead .seg{margin:0}.tsechead .seg button{padding:5px 12px}
 /* a record's own page (a category): back link and actions, then figures, then lists */
 .pagebar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 16px}
+/* a reserve's actions: Put in leads, the rest follow */
+.resactions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 16px}.resactions .primarybtn{padding:8px 18px}
 .tagbudget{margin-bottom:14px}.tagbudget .bcard{cursor:default}
 .psum{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;margin:0 0 10px;font-weight:600}
 
@@ -401,7 +399,7 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .bamount.neg b{color:var(--red)}
 .splitbar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--accentsoft)}
 .splitbar i{display:block;height:100%}
-.splitbar .earmarked{background:var(--accent2)}
+.splitbar .earmarked{background:var(--accent2)}.splitbar .earmarked.over{background:var(--red)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:0}
 .dot.free{background:var(--accentsoft);box-shadow:inset 0 0 0 1px var(--accent2)}
 .dot.earmarked{background:var(--accent2)}

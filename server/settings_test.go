@@ -268,11 +268,11 @@ func TestSettingsLegacyDashboardBecomesItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, s := doSettings(t, http.MethodGet, "")
-	if itemList(s.Dashboard) != "recent,balances,spending,moneyboxes,accounts" || s.Dashboard.Items[0].Rows != 3 {
+	if itemList(s.Dashboard) != "recent,balances,spending,reserves,accounts" || s.Dashboard.Items[0].Rows != 3 {
 		t.Fatalf("legacy layout: %s %+v", itemList(s.Dashboard), s.Dashboard.Items)
 	}
 	// an older client sending the old shape is converted too
-	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"order":["expected","spending"],"hidden":["balances","budgets","moneyboxes","accounts","recent"]}}`)
+	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"order":["expected","spending"],"hidden":["balances","budgets","reserves","accounts","recent"]}}`)
 	if code != 200 || itemList(s.Dashboard) != "spending" {
 		t.Fatalf("PUT old shape: %d %s", code, itemList(s.Dashboard))
 	}

@@ -2,7 +2,7 @@
 # 0004 — Two tag kinds; budget periods beyond the calendar month
 
 Date: 2026-11-15
-Status: accepted
+Status: accepted; the `goal` kind was retired by 0013 (money boxes became reserves), so a tag has no kind
 
 ## Context
 

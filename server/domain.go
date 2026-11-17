@@ -21,9 +21,9 @@ func (d *Data) accountByID(id string) *Account {
 	return nil
 }
 
-// Balance ignores planned transactions and allocations. Every money
-// movement is a transfer; spending and income are transfers to / from an
-// external account.
+// Balance ignores planned transactions. Every money movement is a transfer;
+// spending and income are transfers to / from an external account.
+// Allocations move no money and never touch it (ADR 0013).
 func (d *Data) Balance(accountID string) int64 {
 	var bal int64
 	if a := d.accountByID(accountID); a != nil {
@@ -43,52 +43,84 @@ func (d *Data) Balance(accountID string) int64 {
 	return bal
 }
 
-func (d *Data) Allocated(accountID, tagID string) int64 {
-	var total int64
-	for _, t := range d.Transactions {
-		if t.State != "posted" || t.AccountID != accountID || t.TagID != tagID {
-			continue
+func (d *Data) reserveByID(id string) *Reserve {
+	for i := range d.Reserves {
+		if d.Reserves[i].ID == id {
+			return &d.Reserves[i]
 		}
-		if t.Type == "allocate" { // signed: negative takes money back out of the money box
-			total += t.AmountMinor
+	}
+	return nil
+}
+
+func (d *Data) allocationByID(id string) *Allocation {
+	for i := range d.Allocations {
+		if d.Allocations[i].ID == id {
+			return &d.Allocations[i]
+		}
+	}
+	return nil
+}
+
+// Reserved is what an account holds for reserves: the sum of its signed allocations.
+func (d *Data) Reserved(accountID string) int64 {
+	var total int64
+	for _, a := range d.Allocations {
+		if a.AccountID == accountID {
+			total += a.AmountMinor
 		}
 	}
 	return total
 }
 
-func (d *Data) AllocatedForAccount(accountID string) int64 {
+// ReservedIn is what one reserve holds in one account, leaving out allocation skipID
+// (so an edit is judged against everything else).
+func (d *Data) ReservedIn(reserveID, accountID, skipID string) int64 {
 	var total int64
-	for _, t := range d.Transactions {
-		if t.State != "posted" || t.AccountID != accountID {
-			continue
-		}
-		if t.Type == "allocate" { // signed: negative takes money back out of the money box
-			total += t.AmountMinor
+	for _, a := range d.Allocations {
+		if a.ID != skipID && a.ReserveID == reserveID && a.AccountID == accountID {
+			total += a.AmountMinor
 		}
 	}
 	return total
+}
+
+// ReserveSaved is what a reserve holds: its allocations in its own currency.
+// In another currency an allocation is shown but not added (ADR 0011, 0013).
+func (d *Data) ReserveSaved(id string) int64 {
+	r := d.reserveByID(id)
+	var total int64
+	for _, a := range d.Allocations {
+		if r != nil && a.ReserveID == id && a.Currency == r.Currency {
+			total += a.AmountMinor
+		}
+	}
+	return total
+}
+
+// ReserveShare is what a reserve holds in one account.
+type ReserveShare struct {
+	AccountID   string `json:"accountId"`
+	AmountMinor int64  `json:"amountMinor"`
+	Currency    string `json:"currency"`
+}
+
+// ReserveSplit is where a reserve's money is, account by account (non-zero only).
+func (d *Data) ReserveSplit(id string) []ReserveShare {
+	out := []ReserveShare{}
+	for _, acc := range d.Accounts {
+		if n := d.ReservedIn(id, acc.ID, ""); n != 0 {
+			out = append(out, ReserveShare{AccountID: acc.ID, AmountMinor: n, Currency: acc.Currency})
+		}
+	}
+	return out
 }
 
 // countsToward reports whether a transaction in currency cur adds to the
-// tag's budget or money box: only in the tag's own currency. In any other
-// currency the tag is just a label on it (ADR 0011).
+// tag's budget: only in the tag's own currency. In any other currency the
+// tag is just a label on it (ADR 0011).
 func (d *Data) countsToward(tagID, cur string) bool {
 	tag := d.tagByID(tagID)
 	return tag != nil && (tag.Currency == "" || tag.Currency == cur)
-}
-
-// TagSaved is what a money box holds: its allocations in its own currency.
-func (d *Data) TagSaved(tagID string) int64 {
-	var total int64
-	for _, t := range d.Transactions {
-		if t.State != "posted" || t.TagID != tagID || !d.countsToward(tagID, t.Currency) {
-			continue
-		}
-		if t.Type == "allocate" { // signed: negative takes money back out of the money box
-			total += t.AmountMinor
-		}
-	}
-	return total
 }
 
 // BudgetSpent sums posted spending (own account -> external) in the tag's
@@ -123,17 +155,9 @@ type TagSpend struct {
 // expense linked to two category tags counts toward both, as in BudgetSpent.
 func (d *Data) SpendingByCategory(ref string) []TagSpend {
 	month := ref[:7]
-	category := map[string]bool{}
-	for _, t := range d.Tags {
-		if t.Kind == "category" {
-			category[t.ID] = true
-		}
-	}
 	cats := map[string][]string{}
 	for _, tt := range d.TransactionTags {
-		if category[tt.TagID] {
-			cats[tt.TransactionID] = append(cats[tt.TransactionID], tt.TagID)
-		}
+		cats[tt.TransactionID] = append(cats[tt.TransactionID], tt.TagID)
 	}
 	type key struct{ tag, cur string }
 	sums := map[key]int64{}
@@ -240,10 +264,17 @@ func (d *Data) existingOccurrence(tplID, date string) bool {
 			return true
 		}
 	}
+	for _, a := range d.Allocations {
+		if a.TransactionTemplateID == tplID && a.OccurrenceDate == date {
+			return true
+		}
+	}
 	return false
 }
 
-// GenerateDue materialises occurrences up to today (inclusive). allocate posts immediately, others planned.
+// GenerateDue materialises occurrences up to today (inclusive), at most once per (template, date).
+// A transaction waits as planned until it is confirmed; an allocation template's occurrence is an
+// allocation, final at once because no money moves (ADR 0013).
 func (b *Book) GenerateDue(today string) (int, error) {
 	created := 0
 	for _, tpl := range b.data.TransactionTemplates {
@@ -254,15 +285,23 @@ func (b *Book) GenerateDue(today string) (int, error) {
 			if b.data.existingOccurrence(tpl.ID, occ) {
 				continue
 			}
-			state := "planned"
 			if tpl.Template.Type == "allocate" {
-				state = "posted"
+				a := Allocation{
+					ID: fmt.Sprintf("alc-%s-%s", tpl.ID, occ), ReserveID: tpl.Template.ReserveID, AccountID: tpl.Template.AccountID,
+					AmountMinor: tpl.Template.AmountMinor, Currency: tpl.Template.Currency, Date: occ, Note: tpl.Template.Note,
+					TransactionTemplateID: tpl.ID, OccurrenceDate: occ,
+				}
+				if err := b.insertAllocation(a); err != nil {
+					return created, err
+				}
+				b.data.Allocations = append(b.data.Allocations, a)
+				created++
+				continue
 			}
 			t := Transaction{
-				ID:        fmt.Sprintf("txn-%s-%s", tpl.ID, occ),
-				AccountID: tpl.Template.AccountID, FromAccountID: tpl.Template.FromAccountID,
-				ToAccountID: tpl.Template.ToAccountID, TagID: tpl.Template.TagID, TagIDs: tpl.Template.TagIDs,
-				Type: tpl.Template.Type, State: state, AmountMinor: tpl.Template.AmountMinor,
+				ID:            fmt.Sprintf("txn-%s-%s", tpl.ID, occ),
+				FromAccountID: tpl.Template.FromAccountID, ToAccountID: tpl.Template.ToAccountID, TagIDs: tpl.Template.TagIDs,
+				Type: tpl.Template.Type, State: "planned", AmountMinor: tpl.Template.AmountMinor,
 				Currency: tpl.Template.Currency, Date: occ, Note: tpl.Template.Note,
 				TransactionTemplateID: tpl.ID, OccurrenceDate: occ,
 			}

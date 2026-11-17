@@ -9,27 +9,37 @@ var ext = Account{ID: ExternalAccountID, Name: "External", Kind: "external"}
 func sample() Data {
 	return Data{
 		Accounts: []Account{{ID: "a", Name: "A", Currency: "TWD", OpeningBalanceMinor: 60000000}, ext},
-		Tags:     []Tag{{ID: "food", Name: "Food", Kind: "category", Currency: "TWD"}, {ID: "goal", Name: "Goal", Kind: "goal", Currency: "TWD"}},
+		Tags:     []Tag{{ID: "food", Name: "Food", Currency: "TWD"}},
+		Reserves: []Reserve{{ID: "goal", Name: "Goal", Currency: "TWD"}},
+		Allocations: []Allocation{
+			{ID: "4", ReserveID: "goal", AccountID: "a", Currency: "TWD", AmountMinor: 40000000, Date: "2026-03-01"},
+			{ID: "5", ReserveID: "goal", AccountID: "a", Currency: "TWD", AmountMinor: -5000000, Date: "2026-10-01"}, // taken back out
+		},
 		Transactions: []Transaction{
 			{ID: "1", FromAccountID: ExternalAccountID, ToAccountID: "a", Type: "transfer", State: "posted", Currency: "TWD", AmountMinor: 8000000, Date: "2026-10-05"},
 			{ID: "2", FromAccountID: "a", ToAccountID: ExternalAccountID, Type: "transfer", State: "posted", Currency: "TWD", AmountMinor: 3000000, Date: "2026-10-10"},
 			{ID: "3", FromAccountID: "a", ToAccountID: ExternalAccountID, Type: "transfer", State: "planned", Currency: "TWD", AmountMinor: 999999, Date: "2026-10-12"},
-			{ID: "4", AccountID: "a", TagID: "goal", Type: "allocate", State: "posted", Currency: "TWD", AmountMinor: 40000000, Date: "2026-03-01"},
-			{ID: "5", AccountID: "a", TagID: "goal", Type: "allocate", State: "posted", Currency: "TWD", AmountMinor: -5000000, Date: "2026-10-01"}, // taken back out
 		},
 	}
 }
 
-func TestBalanceIgnoresPlannedAndAllocate(t *testing.T) {
+func TestBalanceIgnoresPlannedAndAllocations(t *testing.T) {
 	d := sample()
 	if got := d.Balance("a"); got != 65000000 {
 		t.Fatalf("balance = %d, want 65000000", got)
 	}
-	if got := d.Allocated("a", "goal"); got != 35000000 {
-		t.Fatalf("allocated = %d, want 35000000", got)
+	if got := d.Reserved("a"); got != 35000000 {
+		t.Fatalf("reserved = %d, want 35000000", got)
 	}
-	if got := d.TagSaved("goal"); got != 35000000 {
+	if got := d.ReservedIn("goal", "a", "5"); got != 40000000 {
+		t.Fatalf("reserved without allocation 5 = %d, want 40000000", got)
+	}
+	if got := d.ReserveSaved("goal"); got != 35000000 {
 		t.Fatalf("saved = %d, want 35000000", got)
+	}
+	split := d.ReserveSplit("goal")
+	if len(split) != 1 || split[0] != (ReserveShare{AccountID: "a", AmountMinor: 35000000, Currency: "TWD"}) {
+		t.Fatalf("split = %+v", split)
 	}
 }
 
@@ -92,20 +102,19 @@ func TestBudgetPeriod(t *testing.T) {
 }
 
 func TestNormalizeTag(t *testing.T) {
-	lim, zero, target := int64(500000), int64(0), int64(100)
+	lim, zero := int64(500000), int64(0)
 	ok := []Tag{
 		{Name: "Food"},
-		{Name: "Food", Kind: "category", LimitMinor: &lim, Currency: "twd"},
-		{Name: "Trip", Kind: "category", LimitMinor: &lim, Currency: "JPY", Cycle: "range", CycleStart: "2026-12-20", CycleEnd: "2026-12-31"},
-		{Name: "Fun", Kind: "category", LimitMinor: &lim, Currency: "TWD", Cycle: "weekly", CycleEvery: 2, CycleStart: "2026-11-02"},
-		{Name: "House", Kind: "goal", TargetMinor: &target, Currency: "TWD"},
+		{Name: "Food", LimitMinor: &lim, Currency: "twd"},
+		{Name: "Trip", LimitMinor: &lim, Currency: "JPY", Cycle: "range", CycleStart: "2026-12-20", CycleEnd: "2026-12-31"},
+		{Name: "Fun", LimitMinor: &lim, Currency: "TWD", Cycle: "weekly", CycleEvery: 2, CycleStart: "2026-11-02"},
 	}
 	for _, tg := range ok {
 		if err := normalizeTag(&tg); err != nil {
 			t.Errorf("%+v: %v", tg, err)
 		}
 	}
-	plain := Tag{Name: "Rent", Kind: "category", Currency: "TWD", Cycle: "monthly"}
+	plain := Tag{Name: "Rent", Currency: "TWD", Cycle: "monthly"}
 	if err := normalizeTag(&plain); err != nil || plain.Currency != "" || plain.Cycle != "" {
 		t.Errorf("a category without a limit keeps no currency or period: %+v %v", plain, err)
 	}
@@ -114,8 +123,6 @@ func TestNormalizeTag(t *testing.T) {
 		t.Errorf("defaults: %+v %v", b, err)
 	}
 	bad := []Tag{
-		{Name: "x", Kind: "label"},
-		{Name: "x", Kind: "payee"},
 		{Name: "x", LimitMinor: &zero, Currency: "TWD"},
 		{Name: "x", LimitMinor: &lim},
 		{Name: "x", LimitMinor: &lim, Currency: "TWD", Cycle: "hourly"},
@@ -123,7 +130,6 @@ func TestNormalizeTag(t *testing.T) {
 		{Name: "x", LimitMinor: &lim, Currency: "TWD", Cycle: "monthly", CycleStart: "2026-13-01"},
 		{Name: "x", LimitMinor: &lim, Currency: "TWD", Cycle: "range", CycleStart: "2026-12-01"},
 		{Name: "x", LimitMinor: &lim, Currency: "TWD", Cycle: "range", CycleStart: "2026-12-01", CycleEnd: "2026-11-30"},
-		{Name: "x", Kind: "goal", Currency: "TWD"},
 	}
 	for _, tg := range bad {
 		if err := normalizeTag(&tg); err == nil {
@@ -138,7 +144,7 @@ func TestSpendingByCategoryPerCurrencyAndMonth(t *testing.T) {
 	}
 	d := Data{
 		Accounts: []Account{{ID: "twd", Currency: "TWD"}, {ID: "jpy", Currency: "JPY"}, {ID: "b", Currency: "TWD"}, ext},
-		Tags:     []Tag{{ID: "food", Kind: "category"}, {ID: "fun", Kind: "category"}, {ID: "trip", Kind: "label"}},
+		Tags:     []Tag{{ID: "food"}, {ID: "fun"}, {ID: "trip"}},
 		Transactions: []Transaction{
 			spend("1", "twd", 500, "TWD", "2026-11-02", "posted"),
 			spend("2", "twd", 300, "TWD", "2026-11-30", "posted"),
@@ -161,6 +167,7 @@ func TestSpendingByCategoryPerCurrencyAndMonth(t *testing.T) {
 		{TagID: "food", Currency: "JPY", AmountMinor: 1000},
 		{TagID: "food", Currency: "TWD", AmountMinor: 800},
 		{TagID: "fun", Currency: "TWD", AmountMinor: 200},
+		{TagID: "trip", Currency: "TWD", AmountMinor: 200},
 		{TagID: "", Currency: "TWD", AmountMinor: 40},
 	}
 	if len(got) != len(want) {
@@ -200,21 +207,22 @@ func TestListenAddrDefaultsToLoopback(t *testing.T) {
 	}
 }
 
-// A tag counts only transactions in its own currency; in another currency it is just a label (ADR 0011).
+// A budget or reserve counts only its own currency; in another currency it is just a label (ADR 0011).
 func TestTagCountsItsOwnCurrencyOnly(t *testing.T) {
 	d := sample()
 	d.Accounts = append(d.Accounts, Account{ID: "j", Name: "J", Currency: "JPY", OpeningBalanceMinor: 100000})
 	d.Transactions = append(d.Transactions,
 		Transaction{ID: "6", FromAccountID: "j", ToAccountID: ExternalAccountID, Type: "transfer", State: "posted", Currency: "JPY", AmountMinor: 2500, Date: "2026-10-11"},
-		Transaction{ID: "7", AccountID: "j", TagID: "goal", Type: "allocate", State: "posted", Currency: "JPY", AmountMinor: 50000, Date: "2026-10-11"})
+	)
+	d.Allocations = append(d.Allocations, Allocation{ID: "7", ReserveID: "goal", AccountID: "j", Currency: "JPY", AmountMinor: 50000, Date: "2026-10-11"})
 	d.TransactionTags = []TransactionTag{{TransactionID: "2", TagID: "food"}, {TransactionID: "6", TagID: "food"}}
 	if got := d.BudgetSpent("food", "2026-10-01", "2026-10-31"); got != 3000000 {
 		t.Fatalf("spent = %d, want 3000000 (the JPY expense only carries the label)", got)
 	}
-	if got := d.TagSaved("goal"); got != 35000000 {
+	if got := d.ReserveSaved("goal"); got != 35000000 {
 		t.Fatalf("saved = %d, want 35000000 (the JPY allocation only carries the label)", got)
 	}
-	if got := d.Allocated("j", "goal"); got != 50000 {
+	if got := d.Reserved("j"); got != 50000 {
 		t.Fatalf("the JPY account still earmarks it: %d", got)
 	}
 }

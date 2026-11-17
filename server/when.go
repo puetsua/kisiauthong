@@ -16,25 +16,26 @@ import (
 
 var clockRe = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
 
-// normalizeWhen validates Date, Time and TZ and derives At.
-func normalizeWhen(t *Transaction) error {
-	if t.Date != "" && !validDate(t.Date) {
+// normalizeWhen validates a date, an optional time and its zone, and derives the instant
+// (for transactions and allocations alike).
+func normalizeWhen(date, clock, tz, at *string) error {
+	if *date != "" && !validDate(*date) {
 		return fmt.Errorf("date must be YYYY-MM-DD")
 	}
-	if t.Time == "" {
-		t.TZ, t.At = "", ""
+	if *clock == "" {
+		*tz, *at = "", ""
 		return nil
 	}
-	if !clockRe.MatchString(t.Time) {
+	if !clockRe.MatchString(*clock) {
 		return fmt.Errorf("time must be HH:MM (24-hour)")
 	}
-	if t.TZ == "" {
+	if *tz == "" {
 		return fmt.Errorf("a time needs its time zone")
 	}
-	if _, err := time.LoadLocation(t.TZ); err != nil || t.TZ == "Local" {
-		return fmt.Errorf("unknown time zone: %s", t.TZ)
+	if _, err := time.LoadLocation(*tz); err != nil || *tz == "Local" {
+		return fmt.Errorf("unknown time zone: %s", *tz)
 	}
-	t.At = instant(t.Date, t.Time, t.TZ)
+	*at = instant(*date, *clock, *tz)
 	return nil
 }
 

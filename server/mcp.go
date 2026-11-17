@@ -21,7 +21,7 @@ import (
 
 var mcpVersions = []string{"2025-11-25", "2025-06-18", "2025-03-26"} // newest first
 
-const mcpInstructions = `The books of one person in 記數通 (KiSiauThong). Amounts are decimal strings in the currency of the account they belong to ("1234.5"); each also comes as amountMinor, an integer in the currency's minor unit. Spending is money leaving an own account to an external one, income the reverse; a transfer moves money between two own accounts of the same currency; allocate earmarks part of an account's balance for a money box and moves no cash. Dates are the person's local YYYY-MM-DD. Call list_accounts and list_tags first to learn ids.`
+const mcpInstructions = `The books of one person in 記數通 (KiSiauThong). Amounts are decimal strings in the currency of the account they belong to ("1234.5"); each also comes as amountMinor, an integer in the currency's minor unit. Spending is money leaving an own account to an external one, income the reverse; a transfer moves money between two own accounts of the same currency. A reserve sets money aside for a purpose: its allocations earmark part of an account's balance and move no cash; spending never changes a reserve. Dates are the person's local YYYY-MM-DD. Call list_accounts, list_tags and list_reserves first to learn ids.`
 
 type rpcRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -252,16 +252,25 @@ var mcpTools []mcpToolDef
 
 func init() {
 	mcpTools = []mcpToolDef{
-		{"list_accounts", "List own accounts with their balances, money-box allocations and limits, and the external accounts (shops, employers) transactions can go to.", ScopeRead,
+		{"list_accounts", "List own accounts with their balances, what they hold for reserves (reserved) and the rest (free), limits, and the external accounts (shops, employers) transactions can go to.", ScopeRead,
 			obj(map[string]interface{}{}), toolListAccounts},
-		{"list_tags", "List categories (with budget progress for the current period) and money boxes (with target and amount saved).", ScopeRead,
+		{"list_tags", "List categories, with budget progress for the current period where a category has a budget.", ScopeRead,
 			obj(map[string]interface{}{}), toolListTags},
+		{"list_reserves", "List reserves (money set aside for a purpose) with the amount saved, the optional target, and how much each account holds.", ScopeRead,
+			obj(map[string]interface{}{}), toolListReserves},
+		{"list_allocations", "Find allocations (money put into or taken out of reserves), newest first.", ScopeRead, obj(map[string]interface{}{
+			"reserveId": str("Only this reserve"),
+			"accountId": str("Only this account"),
+			"from":      str("Earliest date, YYYY-MM-DD"),
+			"to":        str("Latest date, YYYY-MM-DD"),
+			"limit":     integer("At most this many (default 50, up to 500)"),
+		}), toolListAllocations},
 		{"list_transactions", "Find transactions, newest first.", ScopeRead, obj(map[string]interface{}{
 			"from":      str("Earliest date, YYYY-MM-DD"),
 			"to":        str("Latest date, YYYY-MM-DD"),
 			"accountId": str("Only transactions touching this account"),
-			"tagId":     str("Only transactions with this category or money box"),
-			"kind":      enum("Only this kind", "spending", "income", "transfer", "allocate"),
+			"tagId":     str("Only transactions with this category"),
+			"kind":      enum("Only this kind", "spending", "income", "transfer"),
 			"state":     enum("posted = happened; planned = expected, waiting to be confirmed", "posted", "planned"),
 			"search":    str("Text to find in the title or note"),
 			"limit":     integer("At most this many (default 50, up to 500)"),
@@ -272,14 +281,13 @@ func init() {
 		}), toolSpending},
 		{"list_templates", "List recurring transaction templates (salary, rent, subscriptions, automatic saving) and when each is next due.", ScopeRead,
 			obj(map[string]interface{}{}), toolListTemplates},
-		{"add_transaction", "Record a transaction. spending: accountId pays (toAccountId may name an external account, e.g. the shop). income: accountId receives (fromAccountId may name the external payer). transfer: fromAccountId to toAccountId, both own accounts in one currency. allocate: puts amount of accountId's balance into the money box tagId; a negative amount takes it back out.",
+		{"add_transaction", "Record a transaction. spending: accountId pays (toAccountId may name an external account, e.g. the shop). income: accountId receives (fromAccountId may name the external payer). transfer: fromAccountId to toAccountId, both own accounts in one currency. To set money aside use add_allocation.",
 			ScopeTransactions, obj(map[string]interface{}{
-				"kind":          enum("What happened", "spending", "income", "transfer", "allocate"),
-				"amount":        num("Decimal amount in the own account's currency, e.g. \"120.5\"; positive except to take money out of a money box"),
-				"accountId":     str("The own account (spending, income, allocate)"),
+				"kind":          enum("What happened", "spending", "income", "transfer"),
+				"amount":        num("Positive decimal amount in the own account's currency, e.g. \"120.5\""),
+				"accountId":     str("The own account (spending, income)"),
 				"fromAccountId": str("Where the money comes from (transfer; optional external payer for income)"),
 				"toAccountId":   str("Where the money goes (transfer; optional external payee for spending)"),
-				"tagId":         str("The money box of an allocate, or a single category"),
 				"tagIds":        strs("Categories of spending, income or a transfer; a transaction can have several"),
 				"date":          str("YYYY-MM-DD, local; today when left out"),
 				"time":          str("HH:MM, local, optional"),
@@ -291,7 +299,6 @@ func init() {
 		{"update_transaction", "Change fields of a transaction; fields left out stay as they are.", ScopeTransactions, obj(map[string]interface{}{
 			"id":     str("Transaction id"),
 			"amount": num("New decimal amount in the transaction's currency"),
-			"tagId":  str("New money box of an allocate; on other transactions it sets one category, empty string removes them"),
 			"tagIds": strs("New categories (replace the current ones); empty list removes them"),
 			"date":   str("YYYY-MM-DD"),
 			"time":   str("HH:MM; empty string removes the time"),
@@ -309,17 +316,29 @@ func init() {
 			"limit":          num("Optional credit or loan limit, tracked against the amount owed"),
 			"icon":           str("Optional icon name: wallet, bank, card, piggy, chart, loan, phone"),
 		}, "name"), toolCreateAccount},
-		{"create_tag", "Create a category (optionally with a budget) or a money box (a savings goal).", ScopeTags, obj(map[string]interface{}{
+		{"create_tag", "Create a category, optionally with a budget.", ScopeTags, obj(map[string]interface{}{
 			"name":        str("Name"),
-			"kind":        enum("category or goal (money box)", "category", "goal"),
-			"currency":    str("ISO 4217 code of the budget or target"),
-			"budget":      num("Category budget per period, decimal"),
+			"currency":    str("ISO 4217 code of the budget"),
+			"budget":      num("Budget per period, decimal"),
 			"period":      enum("Budget period (monthly by default)", "daily", "weekly", "monthly", "yearly"),
 			"periodEvery": integer("Budget period length in periods, e.g. 2 with weekly for every two weeks"),
-			"target":      num("Money box target, decimal"),
-			"targetDate":  str("Money box target date, YYYY-MM-DD"),
 		}, "name"), toolCreateTag},
-		{"generate_due", "Create the planned transactions that recurring templates have due up to today.", ScopeTemplates, obj(map[string]interface{}{}), toolGenerateDue},
+		{"create_reserve", "Create a reserve: money set aside for a purpose, optionally with a target.", ScopeReserves, obj(map[string]interface{}{
+			"name":       str("Name"),
+			"currency":   str("ISO 4217 code the reserve counts in"),
+			"target":     num("Optional target, decimal"),
+			"targetDate": str("Optional target date, YYYY-MM-DD"),
+		}, "name", "currency"), toolCreateReserve},
+		{"add_allocation", "Put money of an own account into a reserve, or take it back out with a negative amount. No cash moves.", ScopeReserves, obj(map[string]interface{}{
+			"reserveId": str("The reserve"),
+			"accountId": str("The own account whose balance is set aside"),
+			"amount":    num("Decimal amount in the account's currency; negative takes money out"),
+			"date":      str("YYYY-MM-DD, local; today when left out"),
+			"title":     str("Short title"),
+			"note":      str("Longer note"),
+		}, "reserveId", "accountId", "amount"), toolAddAllocation},
+		{"delete_allocation", "Delete an allocation entered by mistake. To undo a decision, add a new allocation instead.", ScopeReserves, obj(map[string]interface{}{"id": str("Allocation id")}, "id"), toolDeleteAllocation},
+		{"generate_due", "Create what recurring templates have due up to today: planned transactions, and allocations of automatic saving.", ScopeTemplates, obj(map[string]interface{}{}), toolGenerateDue},
 	}
 }
 
@@ -351,9 +370,9 @@ func toolListAccounts(b *Book, _ json.RawMessage) (map[string]interface{}, error
 			ext = append(ext, map[string]interface{}{"id": a.ID, "name": a.Name})
 			continue
 		}
-		bal, alloc := b.data.Balance(a.ID), b.data.AllocatedForAccount(a.ID)
+		bal, reserved := b.data.Balance(a.ID), b.data.Reserved(a.ID)
 		m := map[string]interface{}{"id": a.ID, "name": a.Name, "currency": a.Currency, "icon": a.Icon,
-			"balance": money(bal, a.Currency), "allocated": money(alloc, a.Currency), "unallocated": money(bal-alloc, a.Currency)}
+			"balance": money(bal, a.Currency), "reserved": money(reserved, a.Currency), "free": money(bal-reserved, a.Currency)}
 		if a.LimitMinor != nil {
 			owed := max(-bal, 0)
 			m["limit"], m["owed"] = money(*a.LimitMinor, a.Currency), money(owed, a.Currency)
@@ -364,22 +383,9 @@ func toolListAccounts(b *Book, _ json.RawMessage) (map[string]interface{}, error
 }
 
 func toolListTags(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
-	cats, boxes := []map[string]interface{}{}, []map[string]interface{}{}
-	names := map[string]string{}
-	for _, t := range b.data.Tags {
-		names[t.ID] = t.Name
-	}
+	cats := []map[string]interface{}{}
 	for _, t := range b.data.Tags {
 		m := map[string]interface{}{"id": t.ID, "name": t.Name}
-		if t.Kind == "goal" {
-			if t.TargetMinor != nil {
-				m["target"] = money(*t.TargetMinor, t.Currency)
-				m["targetDate"] = t.TargetDate
-			}
-			m["saved"] = money(b.data.TagSaved(t.ID), t.Currency)
-			boxes = append(boxes, m)
-			continue
-		}
 		if t.LimitMinor != nil {
 			start, end := BudgetPeriod(t, today())
 			spent := b.data.BudgetSpent(t.ID, start, end)
@@ -389,14 +395,159 @@ func toolListTags(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
 		}
 		cats = append(cats, m)
 	}
-	return map[string]interface{}{"today": today(), "categories": cats, "moneyBoxes": boxes}, nil
+	return map[string]interface{}{"today": today(), "categories": cats}, nil
 }
 
-// txnKind is the label a person thinks in: spending, income, transfer or allocate.
+func toolListReserves(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
+	out := []map[string]interface{}{}
+	for _, r := range b.data.Reserves {
+		m := map[string]interface{}{"id": r.ID, "name": r.Name, "saved": money(b.data.ReserveSaved(r.ID), r.Currency)}
+		if r.TargetMinor != nil {
+			m["target"] = money(*r.TargetMinor, r.Currency)
+		}
+		if r.TargetDate != "" {
+			m["targetDate"] = r.TargetDate
+		}
+		held := []map[string]interface{}{}
+		for _, s := range b.data.ReserveSplit(r.ID) {
+			h := money(s.AmountMinor, s.Currency)
+			h["accountId"] = s.AccountID
+			if a := b.data.accountByID(s.AccountID); a != nil {
+				h["account"] = a.Name
+			}
+			held = append(held, h)
+		}
+		m["accounts"] = held
+		out = append(out, m)
+	}
+	return map[string]interface{}{"today": today(), "reserves": out}, nil
+}
+
+func (d *Data) allocationView(a Allocation) map[string]interface{} {
+	m := map[string]interface{}{"id": a.ID, "reserveId": a.ReserveID, "accountId": a.AccountID, "date": a.Date, "title": a.Note}
+	for k, v := range money(a.AmountMinor, a.Currency) {
+		m[k] = v
+	}
+	if r := d.reserveByID(a.ReserveID); r != nil {
+		m["reserve"] = r.Name
+	}
+	if acc := d.accountByID(a.AccountID); acc != nil {
+		m["account"] = acc.Name
+	}
+	if a.Memo != "" {
+		m["note"] = a.Memo
+	}
+	if a.TransactionTemplateID != "" {
+		m["templateId"] = a.TransactionTemplateID
+	}
+	return m
+}
+
+func toolListAllocations(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
+	q, err := args[struct {
+		ReserveID, AccountID, From, To string
+		Limit                          int
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	if q.Limit <= 0 {
+		q.Limit = 50
+	}
+	q.Limit = min(q.Limit, 500)
+	hits := []Allocation{}
+	for _, a := range b.data.Allocations {
+		if (q.ReserveID != "" && a.ReserveID != q.ReserveID) || (q.AccountID != "" && a.AccountID != q.AccountID) ||
+			(q.From != "" && a.Date < q.From) || (q.To != "" && a.Date > q.To) {
+			continue
+		}
+		hits = append(hits, a)
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		if hits[i].Date != hits[j].Date {
+			return hits[i].Date > hits[j].Date
+		}
+		return hits[i].CreatedAt > hits[j].CreatedAt
+	})
+	out := []map[string]interface{}{}
+	for _, a := range hits[:min(q.Limit, len(hits))] {
+		out = append(out, b.data.allocationView(a))
+	}
+	return map[string]interface{}{"total": len(hits), "allocations": out}, nil
+}
+
+func toolCreateReserve(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
+	in, err := args[struct {
+		Name, Currency, TargetDate string
+		Target                     json.Number
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	r := Reserve{ID: newID("rsv"), Name: in.Name, Currency: normCurrency(in.Currency), TargetDate: in.TargetDate}
+	if in.Target != "" {
+		v, err := parseAmount(in.Target, r.Currency)
+		if err != nil {
+			return nil, err
+		}
+		r.TargetMinor = &v
+	}
+	if err := normalizeReserve(&r); err != nil {
+		return nil, err
+	}
+	if err := b.insertReserve(r); err != nil {
+		return nil, err
+	}
+	if err := b.reload(); err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"reserve": map[string]interface{}{"id": r.ID, "name": r.Name, "currency": r.Currency}}, nil
+}
+
+func toolAddAllocation(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
+	in, err := args[struct {
+		ReserveID, AccountID, Date, Title, Note string
+		Amount                                  json.Number
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	acc := b.data.accountByID(in.AccountID)
+	if acc == nil || acc.IsExternal() {
+		return nil, fmt.Errorf("unknown own account %q: call list_accounts for ids", in.AccountID)
+	}
+	if b.data.reserveByID(in.ReserveID) == nil {
+		return nil, fmt.Errorf("unknown reserve %q: call list_reserves for ids", in.ReserveID)
+	}
+	a := Allocation{ReserveID: in.ReserveID, AccountID: in.AccountID, Date: in.Date, Note: in.Title, Memo: in.Note}
+	if a.AmountMinor, err = parseAmount(in.Amount, acc.Currency); err != nil {
+		return nil, err
+	}
+	saved, err := b.addAllocation(a)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"allocation": b.data.allocationView(saved)}, nil
+}
+
+func toolDeleteAllocation(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
+	in, err := args[struct{ ID string }](raw)
+	if err != nil {
+		return nil, err
+	}
+	found, err := b.deleteAllocation(in.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("allocation %q not found", in.ID)
+	}
+	return map[string]interface{}{"deleted": in.ID}, nil
+}
+
+// txnKind is the label a person thinks in: spending, income or transfer.
 func (d *Data) txnKind(t Transaction) string {
 	switch {
-	case t.Type == "allocate":
-		return "allocate"
 	case d.IsSpending(t):
 		return "spending"
 	case d.IsIncome(t):
@@ -428,19 +579,14 @@ func (d *Data) txnView(t Transaction, tagsOf map[string][]string) map[string]int
 	if t.Memo != "" {
 		m["note"] = t.Memo
 	}
-	if t.Type == "allocate" {
-		m["accountId"], m["account"] = t.AccountID, name(t.AccountID)
-		m["moneyBoxId"], m["moneyBox"] = t.TagID, tagName(t.TagID)
-	} else {
-		m["fromAccountId"], m["fromAccount"] = t.FromAccountID, name(t.FromAccountID)
-		m["toAccountId"], m["toAccount"] = t.ToAccountID, name(t.ToAccountID)
-		tags := []string{}
-		for _, id := range tagsOf[t.ID] {
-			tags = append(tags, tagName(id))
-		}
-		if len(tags) > 0 {
-			m["categoryIds"], m["categories"] = tagsOf[t.ID], tags
-		}
+	m["fromAccountId"], m["fromAccount"] = t.FromAccountID, name(t.FromAccountID)
+	m["toAccountId"], m["toAccount"] = t.ToAccountID, name(t.ToAccountID)
+	tags := []string{}
+	for _, id := range tagsOf[t.ID] {
+		tags = append(tags, tagName(id))
+	}
+	if len(tags) > 0 {
+		m["categoryIds"], m["categories"] = tagsOf[t.ID], tags
 	}
 	if t.TransactionTemplateID != "" {
 		m["templateId"] = t.TransactionTemplateID
@@ -451,7 +597,7 @@ func (d *Data) txnView(t Transaction, tagsOf map[string][]string) map[string]int
 func (d *Data) tagsByTransaction() map[string][]string {
 	out := map[string][]string{}
 	for _, tt := range d.TransactionTags {
-		if tag := d.tagByID(tt.TagID); tag != nil && tag.Kind == "category" {
+		if d.tagByID(tt.TagID) != nil {
 			out[tt.TransactionID] = append(out[tt.TransactionID], tt.TagID)
 		}
 	}
@@ -479,10 +625,10 @@ func toolListTransactions(b *Book, raw json.RawMessage) (map[string]interface{},
 			(q.Kind != "" && d.txnKind(t) != q.Kind) {
 			continue
 		}
-		if q.AccountID != "" && t.AccountID != q.AccountID && t.FromAccountID != q.AccountID && t.ToAccountID != q.AccountID {
+		if q.AccountID != "" && t.FromAccountID != q.AccountID && t.ToAccountID != q.AccountID {
 			continue
 		}
-		if q.TagID != "" && t.TagID != q.TagID {
+		if q.TagID != "" {
 			linked := false
 			for _, id := range tagsOf[t.ID] {
 				linked = linked || id == q.TagID
@@ -559,18 +705,18 @@ func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, e
 		Kind                                  string
 		Amount                                json.Number
 		AccountID, FromAccountID, ToAccountID string
-		TagID, Date, Time, TZ                 string
+		Date, Time, TZ                        string
 		TagIDs                                []string
 		Title, Note, State                    string
 	}](raw)
 	if err != nil {
 		return nil, err
 	}
-	types := map[string]string{"spending": "expense", "income": "income", "transfer": "transfer", "allocate": "allocate"}
+	types := map[string]string{"spending": "expense", "income": "income", "transfer": "transfer"}
 	t := Transaction{Type: types[in.Kind], AccountID: in.AccountID, FromAccountID: in.FromAccountID, ToAccountID: in.ToAccountID,
-		TagID: in.TagID, TagIDs: in.TagIDs, Date: in.Date, Time: in.Time, TZ: in.TZ, Note: in.Title, Memo: in.Note, State: in.State}
+		TagIDs: in.TagIDs, Date: in.Date, Time: in.Time, TZ: in.TZ, Note: in.Title, Memo: in.Note, State: in.State}
 	if t.Type == "" {
-		return nil, fmt.Errorf("kind must be spending, income, transfer or allocate")
+		return nil, fmt.Errorf("kind must be spending, income or transfer (use add_allocation to set money aside)")
 	}
 	// the amount is in the own account's currency
 	ownID := in.AccountID
@@ -584,13 +730,11 @@ func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, e
 	if t.AmountMinor, err = parseAmount(in.Amount, a.Currency); err != nil {
 		return nil, err
 	}
-	if t.Type == "transfer" || t.Type == "expense" || t.Type == "income" {
-		if t.AmountMinor <= 0 {
-			return nil, fmt.Errorf("amount must be positive")
-		}
+	if t.AmountMinor <= 0 {
+		return nil, fmt.Errorf("amount must be positive")
 	}
-	for _, id := range append([]string{t.TagID}, t.TagIDs...) {
-		if id != "" && b.data.tagByID(id) == nil {
+	for _, id := range t.TagIDs {
+		if b.data.tagByID(id) == nil {
 			return nil, fmt.Errorf("unknown tag %q: call list_tags for ids", id)
 		}
 	}
@@ -603,10 +747,10 @@ func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, e
 
 func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
 	in, err := args[struct {
-		ID                                        string
-		Amount                                    *json.Number
-		TagID, Date, Time, TZ, Title, Note, State *string
-		TagIDs                                    *[]string
+		ID                                 string
+		Amount                             *json.Number
+		Date, Time, TZ, Title, Note, State *string
+		TagIDs                             *[]string
 	}](raw)
 	if err != nil {
 		return nil, err
@@ -626,16 +770,8 @@ func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 			*dst = *v
 		}
 	}
-	switch {
-	case in.TagIDs != nil:
+	if in.TagIDs != nil {
 		t.TagIDs = *in.TagIDs
-	case in.TagID != nil && t.Type == "allocate":
-		t.TagID = *in.TagID
-	case in.TagID != nil: // one category in place of the current ones
-		t.TagIDs = nil
-		if *in.TagID != "" {
-			t.TagIDs = []string{*in.TagID}
-		}
 	}
 	set(&t.Date, in.Date)
 	set(&t.Time, in.Time)
@@ -714,40 +850,24 @@ func toolCreateAccount(b *Book, raw json.RawMessage) (map[string]interface{}, er
 
 func toolCreateTag(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
 	in, err := args[struct {
-		Name, Kind, Currency, Period, TargetDate string
-		Budget, Target                           json.Number
-		PeriodEvery                              int
+		Name, Currency, Period string
+		Budget                 json.Number
+		PeriodEvery            int
 	}](raw)
 	if err != nil {
 		return nil, err
 	}
-	t := Tag{ID: newID("tag"), Name: strings.TrimSpace(in.Name), Kind: in.Kind, Currency: normCurrency(in.Currency),
-		Cycle: in.Period, CycleEvery: in.PeriodEvery, TargetDate: in.TargetDate}
+	t := Tag{ID: newID("tag"), Name: strings.TrimSpace(in.Name), Currency: normCurrency(in.Currency),
+		Cycle: in.Period, CycleEvery: in.PeriodEvery}
 	if t.Name == "" {
 		return nil, fmt.Errorf("name required")
 	}
-	if t.Kind == "" {
-		t.Kind = "category"
-	}
 	if in.Budget != "" {
-		if t.Kind != "category" {
-			return nil, fmt.Errorf("only a category has a budget")
-		}
 		v, err := parseAmount(in.Budget, t.Currency)
 		if err != nil {
 			return nil, err
 		}
 		t.LimitMinor = &v
-	}
-	if in.Target != "" {
-		if t.Kind != "goal" {
-			return nil, fmt.Errorf("only a money box (goal) has a target")
-		}
-		v, err := parseAmount(in.Target, t.Currency)
-		if err != nil {
-			return nil, err
-		}
-		t.TargetMinor = &v
 	}
 	if err := normalizeTag(&t); err != nil {
 		return nil, err
@@ -758,7 +878,7 @@ func toolCreateTag(b *Book, raw json.RawMessage) (map[string]interface{}, error)
 	if err := b.reload(); err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"tag": map[string]interface{}{"id": t.ID, "name": t.Name, "kind": t.Kind}}, nil
+	return map[string]interface{}{"tag": map[string]interface{}{"id": t.ID, "name": t.Name}}, nil
 }
 
 func toolGenerateDue(b *Book, _ json.RawMessage) (map[string]interface{}, error) {

@@ -60,21 +60,16 @@ func (d *Data) tagByID(id string) *Tag {
 	return nil
 }
 
-// normalizeTransaction stores only two types: transfer and allocate.
+// normalizeTransaction stores every transaction as a transfer (ADR 0013).
 // "expense" and "income" are accepted as shorthands and become transfers to
 // or from an external account (the anonymous one unless the client names
-// another external account). It clears unused fields, takes the currency
-// from the user's own account, and rejects combinations the rules forbid:
-//   - transfer: two different accounts, at least one of them the user's own;
-//     between two own accounts the currency must match (converting currency
-//     is spending in one and income in the other); tag optional, never a
-//     money box
-//   - allocate: one own account and a money box (goal tag); posted; the
-//     amount is signed (negative takes money back out, ADR 0003) and may
-//     not take out more than the account has allocated to that money box.
-//     "release" is accepted as a shorthand for a negative allocation.
+// another external account). It takes the currency from the user's own
+// account and rejects combinations the rules forbid: two different accounts,
+// at least one of them the user's own; between two own accounts the currency
+// must match (converting currency is spending in one and income in the
+// other); a positive amount; categories that exist.
 func (d *Data) normalizeTransaction(t *Transaction) error {
-	if err := normalizeWhen(t); err != nil {
+	if err := normalizeWhen(&t.Date, &t.Time, &t.TZ, &t.At); err != nil {
 		return err
 	}
 	t.Note, t.Memo = strings.TrimSpace(t.Note), strings.TrimSpace(t.Memo)
@@ -96,30 +91,6 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 			return err
 		}
 		return d.normalizeTransaction(t)
-	case "release":
-		if t.AmountMinor > 0 {
-			t.AmountMinor = -t.AmountMinor
-		}
-		t.Type = "allocate"
-		return d.normalizeTransaction(t)
-	case "allocate":
-		a := d.accountByID(t.AccountID)
-		if a == nil || a.IsExternal() {
-			return fmt.Errorf("accountId must be one of your own accounts")
-		}
-		tag := d.tagByID(t.TagID)
-		if tag == nil || tag.Kind != "goal" {
-			return fmt.Errorf("allocate needs tagId of a money box (goal tag)")
-		}
-		if t.AmountMinor == 0 {
-			return fmt.Errorf("amountMinor must not be zero")
-		}
-		if left := d.allocatedExcept(a.ID, tag.ID, t.ID) + t.AmountMinor; left < 0 {
-			return fmt.Errorf("cannot take out more than is allocated: %s holds less than that in this account", tag.Name)
-		}
-		t.FromAccountID, t.ToAccountID, t.TagIDs = "", "", nil
-		t.Currency = a.Currency
-		t.State = "posted" // a decision moves no cash, there is nothing to confirm
 	case "transfer":
 		if t.AmountMinor <= 0 {
 			return fmt.Errorf("amountMinor must be positive")
@@ -128,40 +99,92 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 		if err != nil {
 			return err
 		}
-		ids, err := d.categoryIDs(t.TagIDs, t.TagID)
+		ids, err := d.categoryIDs(t.TagIDs)
 		if err != nil {
 			return err
 		}
-		t.TagIDs, t.TagID = ids, ""
+		t.TagIDs = ids
 		t.AccountID = ""
 		t.Currency = cur
 	default:
-		return fmt.Errorf("type must be transfer or allocate (expense, income and release are accepted as shorthands)")
+		return fmt.Errorf("type must be transfer (expense and income are accepted as shorthands); reserves take allocations")
 	}
 	return nil
 }
 
-// categoryIDs checks the categories of a transfer: tagIds plus, from older
-// clients, a single tagId. Each must be an existing tag that is not a money
-// box; duplicates are dropped and the order is kept (ADR 0010).
-func (d *Data) categoryIDs(ids []string, one string) ([]string, error) {
+// categoryIDs checks a transaction's categories: each must be an existing tag;
+// duplicates are dropped and the order is kept (ADR 0010).
+func (d *Data) categoryIDs(ids []string) ([]string, error) {
 	var out []string
 	seen := map[string]bool{}
-	for _, id := range append(append([]string{}, ids...), one) {
+	for _, id := range ids {
 		if id == "" || seen[id] {
 			continue
 		}
-		tag := d.tagByID(id)
-		if tag == nil {
+		if d.tagByID(id) == nil {
 			return nil, fmt.Errorf("unknown tag %q", id)
-		}
-		if tag.Kind == "goal" {
-			return nil, fmt.Errorf("a money box tag is only for allocations")
 		}
 		seen[id] = true
 		out = append(out, id)
 	}
 	return out, nil
+}
+
+// normalizeReserve checks a reserve: a name, a currency, and an optional target and target date.
+func normalizeReserve(r *Reserve) error {
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		return fmt.Errorf("name required")
+	}
+	if utf8.RuneCountInString(r.Name) > 100 {
+		return fmt.Errorf("name longer than 100 characters")
+	}
+	r.Currency = normCurrency(r.Currency)
+	if !currencyRe.MatchString(r.Currency) {
+		return fmt.Errorf("a reserve needs a 3-letter currency code")
+	}
+	if r.TargetMinor != nil && *r.TargetMinor <= 0 {
+		return fmt.Errorf("a target must be more than zero, or left out")
+	}
+	if r.TargetDate != "" && !validDate(r.TargetDate) {
+		return fmt.Errorf("target date must be YYYY-MM-DD")
+	}
+	return nil
+}
+
+// normalizeAllocation checks one allocation (ADR 0013): an existing reserve and own account,
+// a signed amount that is not zero and does not take out more than the reserve holds in that
+// account, and the account's currency.
+func (d *Data) normalizeAllocation(a *Allocation) error {
+	if err := normalizeWhen(&a.Date, &a.Time, &a.TZ, &a.At); err != nil {
+		return err
+	}
+	if a.Date == "" {
+		return fmt.Errorf("date required")
+	}
+	a.Note, a.Memo = strings.TrimSpace(a.Note), strings.TrimSpace(a.Memo)
+	if utf8.RuneCountInString(a.Note) > maxTitleRunes {
+		return fmt.Errorf("title longer than %d characters", maxTitleRunes)
+	}
+	if utf8.RuneCountInString(a.Memo) > maxMemoRunes {
+		return fmt.Errorf("note longer than %d characters", maxMemoRunes)
+	}
+	r := d.reserveByID(a.ReserveID)
+	if r == nil {
+		return fmt.Errorf("unknown reserve %q", a.ReserveID)
+	}
+	acc := d.accountByID(a.AccountID)
+	if acc == nil || acc.IsExternal() {
+		return fmt.Errorf("accountId must be one of your own accounts")
+	}
+	if a.AmountMinor == 0 {
+		return fmt.Errorf("amountMinor must not be zero")
+	}
+	if left := d.ReservedIn(r.ID, acc.ID, a.ID) + a.AmountMinor; left < 0 {
+		return fmt.Errorf("cannot take out more than %s holds in this account", r.Name)
+	}
+	a.Currency = acc.Currency
+	return nil
 }
 
 // expandShorthand turns expense/income into a transfer with an external side.
@@ -254,13 +277,13 @@ func (d *Data) normalizeTemplate(b *TemplateBody) error {
 			return err
 		}
 		return d.normalizeTemplate(b)
-	case "allocate":
+	case "allocate": // an allocation template (ADR 0013)
 		a := d.accountByID(b.AccountID)
 		if a == nil || a.IsExternal() {
 			return fmt.Errorf("template accountId must be one of your own accounts")
 		}
-		if tag := d.tagByID(b.TagID); tag == nil || tag.Kind != "goal" {
-			return fmt.Errorf("an allocate template needs a money box (goal tag)")
+		if d.reserveByID(b.ReserveID) == nil {
+			return fmt.Errorf("an allocation template needs a reserveId")
 		}
 		b.FromAccountID, b.ToAccountID, b.ExpectedRangeMinor, b.TagIDs = "", "", nil, nil
 		b.Currency = a.Currency
@@ -269,34 +292,28 @@ func (d *Data) normalizeTemplate(b *TemplateBody) error {
 		if err != nil {
 			return err
 		}
-		ids, err := d.categoryIDs(b.TagIDs, b.TagID)
+		ids, err := d.categoryIDs(b.TagIDs)
 		if err != nil {
 			return err
 		}
-		b.TagIDs, b.TagID = ids, ""
+		b.TagIDs, b.ReserveID = ids, ""
 		b.AccountID = ""
 		b.Currency = cur
 	default:
-		return fmt.Errorf("a template generates a transfer or an allocate (expense and income are accepted as shorthands)")
+		return fmt.Errorf("a template generates a transfer (expense and income are accepted as shorthands) or an allocate")
 	}
 	return nil
 }
 
-// allocatedExcept is the posted allocation for (account, money box) without
-// transaction skipID, so an edit is checked against everything else.
-func (d *Data) allocatedExcept(accountID, tagID, skipID string) int64 {
-	var total int64
+// accountInUse reports whether a transaction or an allocation names the account.
+func (d *Data) accountInUse(id string) bool {
 	for _, t := range d.Transactions {
-		if t.ID != skipID && t.State == "posted" && t.Type == "allocate" && t.AccountID == accountID && t.TagID == tagID {
-			total += t.AmountMinor
+		if t.FromAccountID == id || t.ToAccountID == id {
+			return true
 		}
 	}
-	return total
-}
-
-func (d *Data) accountHasTransactions(id string) bool {
-	for _, t := range d.Transactions {
-		if t.AccountID == id || t.FromAccountID == id || t.ToAccountID == id {
+	for _, a := range d.Allocations {
+		if a.AccountID == id {
 			return true
 		}
 	}

@@ -7,10 +7,10 @@ const I18N = {
   // Traditional Chinese as used in Taiwan (台灣用語).
   "zh-TW": {
     // navigation and screens
-    "Dashboard": "總覽", "Transactions": "交易", "Accounts": "帳戶", "Budgets": "預算", "Money boxes": "存錢筒",
-    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單", "More": "更多", "Recent": "最近", "Switching deletes this money box's {n} allocation(s).": "改類型會刪除這個存錢筒的 {n} 筆分配。", "Switching takes this tag off {n} transaction(s); the transactions are kept.": "改類型會從 {n} 筆交易移除這個標籤；交易本身會保留。", "{n} template(s) that allocate to it are deleted too.": "分配到這裡的 {n} 個範本也會刪除。", "{n} template(s) lose the tag too.": "{n} 個範本也會移除這個標籤。", "See all {n} in Transactions": "在交易頁查看全部 {n} 筆", "See them in Transactions": "在交易頁查看", "Day": "日", "Year": "年", "This week": "本週", "This month": "本月", "This year": "今年", "Received": "已收入", "Since {date}": "自 {date} 起", "Edit": "編輯", "Edit budget": "編輯預算",  "Add budget": "新增預算", "New budget": "新增預算", "Budget added.": "已新增預算。", "{amount} to go": "還差 {amount}", "Target reached": "已達成目標", "On a date…": "指定日期…", "Last day": "最後一天", "{from}–{to} of {n} in all history": "全部紀錄 {n} 筆中的第 {from}–{to} 筆", "{n} per page": "每頁 {n} 筆", "Per page": "每頁筆數", "Pages": "分頁", "No transactions match your search.": "沒有符合搜尋的交易。", "Fills in": "填入", "Shortcuts": "捷徑", "+ New shortcut": "+ 新增捷徑", "No shortcuts yet. In the add form, choose ⋯ and Save as template.": "還沒有捷徑。在新增交易的表單點 ⋯，再選「存成範本」。", "More actions": "更多動作", "Save as template": "存成範本", "Type": "類型", "Filters": "篩選", "Filters · {n}": "篩選 · {n}",
+    "Dashboard": "總覽", "Transactions": "交易", "Accounts": "帳戶", "Budgets": "預算",
+    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單", "More": "更多", "Recent": "最近", "Day": "日", "Year": "年", "This week": "本週", "This month": "本月", "This year": "今年", "Received": "已收入", "Since {date}": "自 {date} 起", "Edit": "編輯", "Edit budget": "編輯預算",  "Add budget": "新增預算", "New budget": "新增預算", "Budget added.": "已新增預算。", "{amount} to go": "還差 {amount}", "Target reached": "已達成目標", "On a date…": "指定日期…", "Last day": "最後一天", "{from}–{to} of {n} in all history": "全部紀錄 {n} 筆中的第 {from}–{to} 筆", "{n} per page": "每頁 {n} 筆", "Per page": "每頁筆數", "Pages": "分頁", "No transactions match your search.": "沒有符合搜尋的交易。", "Fills in": "填入", "Shortcuts": "捷徑", "+ New shortcut": "+ 新增捷徑", "No shortcuts yet. In the add form, choose ⋯ and Save as template.": "還沒有捷徑。在新增交易的表單點 ⋯，再選「存成範本」。", "More actions": "更多動作", "Save as template": "存成範本", "Type": "類型", "Filters": "篩選", "Filters · {n}": "篩選 · {n}",
     // enum labels
-    "Expense": "支出", "Income": "收入", "Transfer": "轉帳", "Allocate": "分配",
+    "Expense": "支出", "Income": "收入", "Transfer": "轉帳",
     "Bank": "銀行", "Savings": "儲蓄", "Cash": "現金", "Investment": "投資", "Loan": "貸款",
     "Category": "分類",
     "Every {n} days": "每 {n} 天", "Every {n} weeks": "每 {n} 週", "Every {n} months": "每 {n} 個月", "Every {n} years": "每 {n} 年",
@@ -19,7 +19,7 @@ const I18N = {
     "{amount} a day for {n} day(s)": "每天 {amount}，還有 {n} 天", "{n} day(s) left": "還有 {n} 天", "of {limit}": "／{limit}",
     "Categories": "分類",
     "API keys": "API 金鑰", "Read your books": "讀取你的帳本", "Add and edit transactions": "新增與編輯交易", "Add and edit accounts": "新增與編輯帳戶",
-    "Add and edit categories and money boxes": "新增與編輯分類和存錢筒", "Add and edit templates, generate due ones": "新增與編輯範本、產生到期交易",
+    "Add and edit templates, generate due ones": "新增與編輯範本、產生到期交易",
     "Change settings": "變更設定", "Read": "讀取", "Never": "永不", "30 days": "30 天", "90 days": "90 天", "1 year": "1 年",
     "Copy this key now. It will not be shown again.": "請立即複製這把金鑰，之後不會再顯示。",
     "Created {date}": "{date} 建立", "Never used": "從未使用", "Expired {date}": "{date} 已過期", "Expires {date}": "{date} 到期",
@@ -65,18 +65,18 @@ const I18N = {
     "Owed": "欠款", "Card": "卡片", "Wallet": "錢包", "Phone": "手機", "Coins": "零錢", "Home": "住家", "Car": "汽車", "Travel": "旅行",
     "Gift": "禮物", "Work": "工作", "Shop": "商店", "Globe": "地球", "Icon": "圖示", "Optional": "選填",
     "{name} is at {pct}% of its limit": "{name}已用到上限的 {pct}%",
-    "Free {amount}": "可用 {amount}", "Earmarked {amount}": "已預留 {amount}", "Last activity {date}": "最近交易 {date}",
+    "Free {amount}": "可用 {amount}", "Last activity {date}": "最近交易 {date}",
     "No transactions yet": "還沒有交易", 
     
-    "Edit money box": "編輯存錢筒", "Edit category": "編輯分類", "New money box": "新增存錢筒", "New category": "新增分類",
+    "Edit category": "編輯分類", "New category": "新增分類",
     "Every": "每", "First period starts": "第一期開始日", "From": "從", "To": "到",
-    "Add money box": "新增存錢筒", "Add category": "新增分類", "Money box added.": "已新增存錢筒。", "Category added.": "已新增分類。",
+    "Add category": "新增分類", "Category added.": "已新增分類。",
     "{spent} of {limit} spent · {period}": "已花 {spent}／{limit} · {period}",
     "Daily": "每日", "Weekly": "每週", "Monthly": "每月", "Quarterly": "每季", "Yearly": "每年",
     // common columns and fields
-    "Account": "帳戶", "Amount": "金額", "Date": "日期", "Note": "備註", "Status": "狀態",     "Name": "名稱", "Currency": "幣別", "Balance": "餘額", "Earmarked": "已預留", "Free": "可用",
+    "Account": "帳戶", "Amount": "金額", "Date": "日期", "Note": "備註", "Status": "狀態",     "Name": "名稱", "Currency": "幣別", "Balance": "餘額", "Free": "可用",
     "Budget": "預算", "Spent": "已花費", "Progress": "進度", "Remaining": "剩餘", "Share": "佔比",
-    "Template": "範本", "Generates": "產生", "Schedule": "排程", "Next due": "下次到期", "Decision": "決定", "To account": "轉入帳戶", "Title": "標題", "Rows": "列數", "Show": "顯示",
+    "Template": "範本", "Generates": "產生", "Schedule": "排程", "Next due": "下次到期", "To account": "轉入帳戶", "Title": "標題", "Rows": "列數", "Show": "顯示",
     // dashboard
     "Balances by currency": "各幣別餘額", "Expected to confirm": "待確認",
     "Spending this month": "本月支出", "Recent transactions": "最近交易", "Customize dashboard": "自訂總覽",
@@ -91,17 +91,17 @@ const I18N = {
     "Full width": "全寬", "Half width": "半寬",
     "{n} account(s)": "{n} 個帳戶",
     "No budgets yet.": "還沒有預算。",
-    "Uncategorised": "未分類", "No posted expenses this month.": "本月還沒有已入帳的支出。", "No money boxes yet.": "還沒有存錢筒。",
+    "Uncategorised": "未分類", "No posted expenses this month.": "本月還沒有已入帳的支出。",
     "Dashboard saved.": "總覽已儲存。",
-    "{spent} of {limit}": "{spent}／{limit}", "{saved} of {target} · {pct}%": "{saved}／{target} · {pct}%", "by {date}": "{date} 前",
+    "{spent} of {limit}": "{spent}／{limit}", "by {date}": "{date} 前",
     "No allocations yet": "還沒有分配",
     // transactions
     "All accounts": "所有帳戶", "All types": "所有類型", "All categories": "所有分類", "No categories yet.": "還沒有分類。",
     "Clear": "清除", "Today": "今天", "Spending faster than the period": "花得比時間進度快", "Expected range {min} – {max}.": "預計範圍 {min} – {max}。",
     "Expected on {date}, not confirmed yet. Check the amount and save to confirm it.": "預計在 {date}，尚未確認。核對金額後儲存即可確認。",
     "Has a note": "有備註",
-    "Details worth remembering: who, why, receipt number…": "值得記下的細節：和誰、為什麼、收據號碼…", "A negative amount takes money back out of the money box.": "輸入負數可以把錢從存錢筒撥回帳戶。", "Enter an amount other than zero.": "金額不能是 0。",
-    "{box} holds {amount} in {account}; you can take out at most that.": "{box}在{account}只有 {amount}，最多只能撥回這個金額。",
+    "Details worth remembering: who, why, receipt number…": "值得記下的細節：和誰、為什麼、收據號碼…", "Enter an amount other than zero.": "金額不能是 0。",
+    "{box} holds {amount} in {account}; you can take out at most that.": "{box}在{account}只有 {amount}，最多只能取出這個金額。",
     "External": "外部", "External accounts": "外部帳戶", "New external account": "新增外部帳戶",
     "Paid to": "付給", "Received from": "收自", "Employer": "雇主", "Notifications": "通知", "Notifications ({n})": "通知（{n}）", "Dismiss": "清除", "Dismiss all": "全部清除",
     "You're all caught up.": "沒有新通知。", "Open in Transactions": "到交易頁查看", "Waiting for confirmation · {date} · {amount}": "等待確認 · {date} · {amount}",
@@ -113,9 +113,9 @@ const I18N = {
     "Delete this transaction? This cannot be undone.": "要刪除這筆交易嗎？刪除後無法復原。", "Deleted.": "已刪除。",
     "Add transaction": "新增交易", "Edit transaction": "編輯交易", "Save transaction": "儲存交易", "Transaction editor": "交易編輯器",
     "Transaction updated.": "交易已更新。", "Saved.": "已儲存。", "Groceries": "買菜", "Close": "關閉",
-    "From account": "轉出帳戶", "Money box": "存錢筒", "Choose an account to transfer to.": "請選擇轉入帳戶。",
+    "From account": "轉出帳戶", "Choose an account to transfer to.": "請選擇轉入帳戶。",
     "No other {currency} account. To move money into another currency, record spending in one account and income in the other.": "沒有其他 {currency} 帳戶。要換成其他幣別，請在一個帳戶記一筆支出，再在另一個帳戶記一筆收入。", "Target amount": "目標金額",
-    "Allocate to money box": "分配到存錢筒",
+   
     // accounts
     "New account": "新增帳戶", "Edit account": "編輯帳戶",
     "Add account": "新增帳戶", "Save changes": "儲存變更", "Account added.": "帳戶已新增。", "Account updated.": "帳戶已更新。",
@@ -123,7 +123,7 @@ const I18N = {
     "{owed} owed of {limit} ({pct}%)": "欠款 {owed}／額度 {limit}（{pct}%）",
     // tags
     "Tag updated.": "標籤已更新。", "Target date": "目標日期", "House fund": "購屋基金", "Food": "餐飲",
-    "History": "紀錄", "History — {name}": "紀錄：{name}",
+   
     // money boxes
     // templates
     "Transaction templates": "交易範本", "Generate due": "產生到期項目", "+ New template": "＋ 新增範本", "No templates yet.": "還沒有範本。",
@@ -142,10 +142,11 @@ const I18N = {
     "Add currency": "新增幣別", "+ Add currency…": "＋ 新增幣別…", "Remove {currency}": "移除 {currency}", "All currencies": "所有幣別",
     "{currency} added.": "已新增 {currency}。", "{currency} removed.": "已移除 {currency}。",
     "Data": "資料", "Export JSON": "匯出 JSON", "About": "關於", "License": "授權條款", "Source": "原始碼",
-    "Set KISIAUTHONG_SOURCE_URL": "請設定 KISIAUTHONG_SOURCE_URL", "— none —": "— 無 —",
+    "Set KISIAUTHONG_SOURCE_URL": "請設定 KISIAUTHONG_SOURCE_URL",
     // errors
     "Error: {message}": "錯誤：{message}", "Failed to load: {message}": "載入失敗：{message}",
     "Settings unavailable, using defaults: {message}": "無法讀取設定，改用預設值：{message}",
+    "Reserve": "預留款", "Reserves": "預留款", "Put in reserve": "存入預留款", "Reserved": "已預留", "No reserves yet.": "還沒有預留款。", "Reserved more than its balance": "預留超過餘額", "Reserved {amount}": "已預留 {amount}", "New reserve": "新增預留款", "Put in": "存入", "Take out": "取出", "Taken out": "已取出", "Use": "動用", "Complete": "結清", "Allocations": "分配", "{n} allocation(s)": "{n} 筆分配", "No allocations in this period.": "這段期間沒有分配。", "Edit reserve": "編輯預留款", "Add reserve": "新增預留款", "Reserve updated.": "預留款已更新。", "Reserve added.": "已新增預留款。", "Delete {name}? Its {n} allocation(s) and {m} template(s) are deleted too. Your accounts and transactions stay as they are.": "要刪除「{name}」嗎？它的 {n} 筆分配和 {m} 個範本也會一併刪除。帳戶和交易不受影響。", "Take everything out of {name}? The money stays in its accounts, free to spend.": "要把「{name}」全部取出嗎？錢仍留在原帳戶，可以自由使用。", "{name} completed.": "「{name}」已結清。", "{account} · {amount} free": "{account} · 可用 {amount}", "{account} · holds {amount}": "{account} · 預留 {amount}", "Edit allocation": "編輯分配", "Use from {name}": "動用「{name}」", "Put in {name}": "存入「{name}」", "Take out of {name}": "從「{name}」取出", "Take out and add the spending": "取出並記一筆支出", "Delete this allocation? To undo a decision, add a new one instead.": "要刪除這筆分配嗎？若要撤回決定，請改為新增一筆分配。", "Allocation updated.": "分配已更新。", "Add and edit categories and budgets": "新增與編輯分類和預算", "Add and edit reserves and their allocations": "新增與編輯預留款和分配",
   },
 };
 let LANG = "en";

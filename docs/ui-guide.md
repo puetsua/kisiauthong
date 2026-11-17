@@ -165,14 +165,18 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   `history.replaceState` so typing does not fill the history; a bare
   `#screen` keeps what is on screen.
 - **Cards** (`.tcard`, `.acard` …) are for things scanned at a glance (budgets,
-  money boxes, accounts); each card is a button that opens its details.
-- **Record pages** (a category: `#tag?id=…&range=month&at=2026-10-01`): the
+  reserves, accounts); each card is a button that opens its details.
+- **Record pages** (a category: `#tag?id=…&range=month&at=2026-10-01`, a
+  reserve: `#reserve?id=…`): the
   top bar shows the record's name and the nav keeps its parent page `.on`.
   The page starts with `.pagebar` (‹ parent link left, Edit right), then
   figures as `.totcard` tiles, then panels of transactions. A period to page
   through reuses the Transactions `.periodbar` (mode `.seg`, ‹ Previous /
   Next ›, Back to today); unlike typing, each step is a new history entry, so
-  Back steps back. An unknown id returns to the parent page.
+  Back steps back (`periodBar` / `bindPeriodBar`). Actions on the record
+  (a reserve's Put in, Take out, Use, Complete) sit in a row under its
+  card, the main one as `.primarybtn`. An unknown id returns to the parent
+  page.
 - **Empty states**: `.empty`, one short sentence; add how to create the first
   item only when it is not obvious.
 - **Settings-style pages** (Settings, My account, Server): `.settings` with a
@@ -205,7 +209,7 @@ topmost popup only.
   (`--page-max`, so Settings → Page width applies), 12px clear of the screen
   edges, scrolls inside itself, 14px radius.
 - On desktop the form is two columns: short fields pair up (account with
-  payee, target account or money box; amount; date and time with time
+  payee or target account; amount; date and time with time
   zone; title), while notes, quick picks, the type selector, categories and
   the note field span both. The order is set in CSS (`order`), so fields
   that a type hides leave no gaps. On phones it is one column.

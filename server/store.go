@@ -30,6 +30,48 @@ CREATE TABLE IF NOT EXISTS accounts%[1]s (
   credit_limit_minor INTEGER, statement_close_day INTEGER, payment_due_day INTEGER,
   PRIMARY KEY(user_id, id));
 CREATE TABLE IF NOT EXISTS transactions%[1]s (
+  user_id TEXT NOT NULL, id TEXT NOT NULL, from_account_id TEXT NOT NULL DEFAULT '',
+  to_account_id TEXT NOT NULL DEFAULT '', type TEXT NOT NULL,
+  state TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL,
+  time TEXT NOT NULL DEFAULT '', tz TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT, created_at TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY(user_id, id), UNIQUE(user_id, transaction_template_id, occurrence_date));
+CREATE TABLE IF NOT EXISTS tags%[1]s (
+  user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, limit_minor INTEGER,
+  cycle TEXT NOT NULL DEFAULT '', cycle_every INTEGER NOT NULL DEFAULT 0, cycle_start TEXT NOT NULL DEFAULT '',
+  cycle_end TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY(user_id, id));
+CREATE TABLE IF NOT EXISTS transaction_tags%[1]s (
+  user_id TEXT NOT NULL, transaction_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY(user_id, transaction_id, tag_id));
+CREATE TABLE IF NOT EXISTS transaction_templates%[1]s (
+  user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+  template_json TEXT NOT NULL, schedule_json TEXT NOT NULL, PRIMARY KEY(user_id, id));
+CREATE TABLE IF NOT EXISTS settings%[1]s (
+  user_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(user_id, key));
+` + reserveTables
+
+// reserveTables hold reserves and their allocations (ADR 0013, migration 14).
+const reserveTables = `
+CREATE TABLE IF NOT EXISTS reserves%[1]s (
+  user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, currency TEXT NOT NULL,
+  target_minor INTEGER, target_date TEXT NOT NULL DEFAULT '', PRIMARY KEY(user_id, id));
+CREATE TABLE IF NOT EXISTS allocations%[1]s (
+  user_id TEXT NOT NULL, id TEXT NOT NULL, reserve_id TEXT NOT NULL, account_id TEXT NOT NULL,
+  amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL,
+  time TEXT NOT NULL DEFAULT '', tz TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT,
+  PRIMARY KEY(user_id, id), UNIQUE(user_id, transaction_template_id, occurrence_date));
+`
+
+// dataTablesV8 is the schema migration 8 copies into; frozen, so old databases
+// still upgrade step by step after later migrations reshape the tables.
+const dataTablesV8 = `
+CREATE TABLE IF NOT EXISTS accounts%[1]s (
+  user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, icon TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL,
+  opening_balance_minor INTEGER NOT NULL DEFAULT 0, allow_negative INTEGER NOT NULL DEFAULT 0,
+  credit_limit_minor INTEGER, statement_close_day INTEGER, payment_due_day INTEGER,
+  PRIMARY KEY(user_id, id));
+CREATE TABLE IF NOT EXISTS transactions%[1]s (
   user_id TEXT NOT NULL, id TEXT NOT NULL, account_id TEXT NOT NULL DEFAULT '', from_account_id TEXT NOT NULL DEFAULT '',
   to_account_id TEXT NOT NULL DEFAULT '', tag_id TEXT NOT NULL DEFAULT '', type TEXT NOT NULL,
   state TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL,
@@ -65,8 +107,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 `
 
-// tableNames are the per-user data tables, in an order safe for copying.
-var tableNames = []string{"accounts", "transactions", "tags", "transaction_tags", "transaction_templates", "settings"}
+// tableNames are the per-user data tables.
+var tableNames = []string{"accounts", "transactions", "tags", "transaction_tags", "transaction_templates", "settings", "reserves", "allocations"}
+
+// tableNamesV8 are the tables migration 8 rebuilt (frozen with dataTablesV8).
+var tableNamesV8 = []string{"accounts", "transactions", "tags", "transaction_tags", "transaction_templates", "settings"}
 
 // Store is the database plus each signed-in user's book, loaded on first use.
 // All access happens under mu.
@@ -129,6 +174,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateAvatarVersion,             // 11
 	migrateAPIKeys,                   // 12
 	migrateTransactionCreatedAt,      // 13
+	migrateReserves,                  // 14
 }
 
 func (s *Store) migrate() error {
@@ -163,10 +209,10 @@ const OwnerID = "usr-owner"
 // owner, and the owner is created without a username or password: the
 // first visit claims it (see handleSetup).
 func migrateMultiUser(tx *sql.Tx) error {
-	if _, err := tx.Exec(fmt.Sprintf(dataTables, "_v8")); err != nil {
+	if _, err := tx.Exec(fmt.Sprintf(dataTablesV8, "_v8")); err != nil {
 		return err
 	}
-	for _, t := range tableNames {
+	for _, t := range tableNamesV8 {
 		cols, err := columnNames(tx, t)
 		if err != nil {
 			return err
@@ -247,6 +293,99 @@ func migrateTransactionCreatedAt(tx *sql.Tx) error {
 	}
 	_, err = tx.Exec(`ALTER TABLE transactions ADD COLUMN created_at TEXT NOT NULL DEFAULT ''`)
 	return err
+}
+
+// Migration 14 (ADR 0013): money boxes leave Tag and allocations leave Transaction. Every goal tag
+// becomes a reserve and every allocate transaction an allocation, keeping ids and every field;
+// allocate templates point at the reserve; a transfer's old single category column joins its
+// links; then the columns only those used are dropped. Dashboards rename "moneyboxes".
+func migrateReserves(tx *sql.Tx) error {
+	steps := []string{
+		fmt.Sprintf(reserveTables, ""),
+		`INSERT INTO reserves(user_id,id,name,currency,target_minor,target_date)
+		   SELECT user_id,id,name,currency,target_minor,target_date FROM tags WHERE kind='goal'`,
+		// an allocation whose money box is gone keeps a reserve to belong to
+		`INSERT OR IGNORE INTO reserves(user_id,id,name,currency)
+		   SELECT DISTINCT user_id,tag_id,'(money box)',currency FROM transactions WHERE type='allocate'`,
+		`INSERT INTO allocations(user_id,id,reserve_id,account_id,amount_minor,currency,date,time,tz,note,memo,created_at,transaction_template_id,occurrence_date)
+		   SELECT user_id,id,tag_id,account_id,amount_minor,currency,date,time,tz,note,memo,created_at,transaction_template_id,occurrence_date
+		   FROM transactions WHERE type='allocate'`,
+		`DELETE FROM transaction_tags WHERE (user_id,transaction_id) IN (SELECT user_id,id FROM transactions WHERE type='allocate')
+		   OR (user_id,tag_id) IN (SELECT user_id,id FROM tags WHERE kind='goal')`,
+		`DELETE FROM transactions WHERE type='allocate'`,
+		// a category kept in the old single tag field becomes a link, if that category still exists
+		`INSERT OR IGNORE INTO transaction_tags(user_id,transaction_id,tag_id)
+		   SELECT user_id,id,tag_id FROM transactions
+		   WHERE tag_id<>'' AND (user_id,tag_id) IN (SELECT user_id,id FROM tags WHERE kind<>'goal')`,
+		`DELETE FROM tags WHERE kind='goal'`,
+		`UPDATE settings SET value=replace(value,'"moneyboxes"','"reserves"') WHERE key='dashboard'`,
+	}
+	for _, q := range steps {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	category := map[[2]string]bool{}
+	rows, err := tx.Query(`SELECT user_id,id FROM tags`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var k [2]string
+		if err := rows.Scan(&k[0], &k[1]); err != nil {
+			rows.Close()
+			return err
+		}
+		category[k] = true
+	}
+	rows.Close()
+	rows, err = tx.Query(`SELECT user_id,id,template_json FROM transaction_templates`)
+	if err != nil {
+		return err
+	}
+	type tplRow struct{ uid, id, js string }
+	var tpls []tplRow
+	for rows.Next() {
+		var r tplRow
+		if err := rows.Scan(&r.uid, &r.id, &r.js); err != nil {
+			rows.Close()
+			return err
+		}
+		tpls = append(tpls, r)
+	}
+	rows.Close()
+	for _, r := range tpls {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(r.js), &m); err != nil {
+			return err
+		}
+		tag, _ := m["tagId"].(string)
+		delete(m, "tagId")
+		if m["type"] == "allocate" {
+			m["reserveId"] = tag
+		} else if category[[2]string{r.uid, tag}] { // saved before ADR 0010: one category
+			ids, _ := m["tagIds"].([]interface{})
+			if !slices.Contains(ids, interface{}(tag)) {
+				m["tagIds"] = append(ids, tag)
+			}
+		}
+		js, err := json.Marshal(m)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE transaction_templates SET template_json=? WHERE user_id=? AND id=?`, string(js), r.uid, r.id); err != nil {
+			return err
+		}
+	}
+	for _, c := range []struct{ table, col string }{
+		{"transactions", "account_id"}, {"transactions", "tag_id"},
+		{"tags", "kind"}, {"tags", "target_minor"}, {"tags", "target_date"},
+	} {
+		if _, err := tx.Exec(`ALTER TABLE ` + c.table + ` DROP COLUMN ` + c.col); err != nil {
+			return fmt.Errorf("drop %s.%s: %w", c.table, c.col, err)
+		}
+	}
+	return nil
 }
 
 // createdStamp is an entry time that sorts as text: fixed width, UTC, milliseconds.
@@ -438,7 +577,7 @@ func (b *Book) reload() error {
 		d.Accounts = append(d.Accounts, a)
 	}
 	rows.Close()
-	tr, err := db.Query(`SELECT id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at FROM transactions WHERE user_id=? ORDER BY date,time,id`, uid)
+	tr, err := db.Query(`SELECT id,from_account_id,to_account_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at FROM transactions WHERE user_id=? ORDER BY date,time,id`, uid)
 	if err != nil {
 		return err
 	}
@@ -446,7 +585,7 @@ func (b *Book) reload() error {
 	for tr.Next() {
 		var t Transaction
 		var tplID, occ sql.NullString
-		if err := tr.Scan(&t.ID, &t.AccountID, &t.FromAccountID, &t.ToAccountID, &t.TagID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Time, &t.TZ, &t.Note, &t.Memo, &tplID, &occ, &t.CreatedAt); err != nil {
+		if err := tr.Scan(&t.ID, &t.FromAccountID, &t.ToAccountID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Time, &t.TZ, &t.Note, &t.Memo, &tplID, &occ, &t.CreatedAt); err != nil {
 			return err
 		}
 		t.At = instant(t.Date, t.Time, t.TZ)
@@ -455,22 +594,19 @@ func (b *Book) reload() error {
 		d.Transactions = append(d.Transactions, t)
 	}
 	tr.Close()
-	tg, err := db.Query(`SELECT id,name,kind,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,target_minor,target_date FROM tags WHERE user_id=? ORDER BY name`, uid)
+	tg, err := db.Query(`SELECT id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency FROM tags WHERE user_id=? ORDER BY name`, uid)
 	if err != nil {
 		return err
 	}
 	defer tg.Close()
 	for tg.Next() {
 		var t Tag
-		var lm, tm sql.NullInt64
-		if err := tg.Scan(&t.ID, &t.Name, &t.Kind, &lm, &t.Cycle, &t.CycleEvery, &t.CycleStart, &t.CycleEnd, &t.Currency, &tm, &t.TargetDate); err != nil {
+		var lm sql.NullInt64
+		if err := tg.Scan(&t.ID, &t.Name, &lm, &t.Cycle, &t.CycleEvery, &t.CycleStart, &t.CycleEnd, &t.Currency); err != nil {
 			return err
 		}
 		if lm.Valid {
 			t.LimitMinor = &lm.Int64
-		}
-		if tm.Valid {
-			t.TargetMinor = &tm.Int64
 		}
 		d.Tags = append(d.Tags, t)
 	}
@@ -488,22 +624,13 @@ func (b *Book) reload() error {
 		d.TransactionTags = append(d.TransactionTags, x)
 	}
 	tt.Close()
-	// a transfer's categories are its tag links; one left in the old tag_id column joins them (ADR 0010)
+	// a transaction's categories are its tag links, in the order they were given (ADR 0010)
 	links := map[string][]string{}
 	for _, x := range d.TransactionTags {
 		links[x.TransactionID] = append(links[x.TransactionID], x.TagID)
 	}
 	for i := range d.Transactions {
-		t := &d.Transactions[i]
-		if t.Type != "transfer" {
-			continue
-		}
-		ids := links[t.ID]
-		if t.TagID != "" && !slices.Contains(ids, t.TagID) {
-			ids = append(ids, t.TagID)
-			d.TransactionTags = append(d.TransactionTags, TransactionTag{TransactionID: t.ID, TagID: t.TagID})
-		}
-		t.TagIDs, t.TagID = ids, ""
+		d.Transactions[i].TagIDs = links[d.Transactions[i].ID]
 	}
 	tp, err := db.Query(`SELECT id,name,enabled,template_json,schedule_json FROM transaction_templates WHERE user_id=? ORDER BY name`, uid)
 	if err != nil {
@@ -524,15 +651,42 @@ func (b *Book) reload() error {
 		if err := json.Unmarshal([]byte(sj), &x.Schedule); err != nil {
 			return err
 		}
-		if t := &x.Template; t.Type == "transfer" && t.TagID != "" { // saved before ADR 0010
-			if !slices.Contains(t.TagIDs, t.TagID) {
-				t.TagIDs = append(t.TagIDs, t.TagID)
-			}
-			t.TagID = ""
-		}
 		d.TransactionTemplates = append(d.TransactionTemplates, x)
 	}
 	tp.Close()
+	rs, err := db.Query(`SELECT id,name,currency,target_minor,target_date FROM reserves WHERE user_id=? ORDER BY name`, uid)
+	if err != nil {
+		return err
+	}
+	defer rs.Close()
+	for rs.Next() {
+		var r Reserve
+		var tm sql.NullInt64
+		if err := rs.Scan(&r.ID, &r.Name, &r.Currency, &tm, &r.TargetDate); err != nil {
+			return err
+		}
+		if tm.Valid {
+			r.TargetMinor = &tm.Int64
+		}
+		d.Reserves = append(d.Reserves, r)
+	}
+	rs.Close()
+	al, err := db.Query(`SELECT id,reserve_id,account_id,amount_minor,currency,date,time,tz,note,memo,created_at,transaction_template_id,occurrence_date FROM allocations WHERE user_id=? ORDER BY date,time,id`, uid)
+	if err != nil {
+		return err
+	}
+	defer al.Close()
+	for al.Next() {
+		var a Allocation
+		var tplID, occ sql.NullString
+		if err := al.Scan(&a.ID, &a.ReserveID, &a.AccountID, &a.AmountMinor, &a.Currency, &a.Date, &a.Time, &a.TZ, &a.Note, &a.Memo, &a.CreatedAt, &tplID, &occ); err != nil {
+			return err
+		}
+		a.At = instant(a.Date, a.Time, a.TZ)
+		a.TransactionTemplateID, a.OccurrenceDate = tplID.String, occ.String
+		d.Allocations = append(d.Allocations, a)
+	}
+	al.Close()
 	b.s.books[uid] = d
 	b.data = d
 	return nil
@@ -574,6 +728,16 @@ func (b *Book) startBook(withSample bool) error {
 		}
 		for _, tp := range seed.TransactionTemplates {
 			if err := b.insertTemplate(tp); err != nil {
+				return err
+			}
+		}
+		for _, r := range seed.Reserves {
+			if err := b.insertReserve(r); err != nil {
+				return err
+			}
+		}
+		for _, a := range seed.Allocations {
+			if err := b.insertAllocation(a); err != nil {
 				return err
 			}
 		}
@@ -621,9 +785,38 @@ func (b *Book) insertAccount(a Account) error {
 	return err
 }
 func (b *Book) insertTag(t Tag) error {
-	_, err := b.exec(`INSERT INTO tags(user_id,id,name,kind,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,target_minor,target_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, n64(t.TargetMinor), t.TargetDate)
+	_, err := b.exec(`INSERT INTO tags(user_id,id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency) VALUES(?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency)
 	return err
+}
+func (b *Book) insertReserve(r Reserve) error {
+	_, err := b.exec(`INSERT INTO reserves(user_id,id,name,currency,target_minor,target_date) VALUES(?,?,?,?,?,?)`,
+		r.ID, r.Name, r.Currency, n64(r.TargetMinor), r.TargetDate)
+	return err
+}
+
+// insertAllocation stores a new allocation, stamping when it was entered unless it already says.
+func (b *Book) insertAllocation(a Allocation) error {
+	return b.insertAllocations([]Allocation{a})
+}
+
+// insertAllocations stores new allocations all or nothing.
+func (b *Book) insertAllocations(as []Allocation) error {
+	tx, err := b.s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, a := range as {
+		if a.CreatedAt == "" {
+			a.CreatedAt = createdStamp()
+		}
+		if _, err := tx.Exec(`INSERT INTO allocations(user_id,id,reserve_id,account_id,amount_minor,currency,date,time,tz,note,memo,created_at,transaction_template_id,occurrence_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			b.uid, a.ID, a.ReserveID, a.AccountID, a.AmountMinor, a.Currency, a.Date, a.Time, a.TZ, a.Note, a.Memo, a.CreatedAt, nullEmpty(a.TransactionTemplateID), nullEmpty(a.OccurrenceDate)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // insertTransaction stores a new transaction, stamping when it was entered unless it already says.
@@ -631,8 +824,8 @@ func (b *Book) insertTransaction(t Transaction) error {
 	if t.CreatedAt == "" {
 		t.CreatedAt = createdStamp()
 	}
-	_, err := b.exec(`INSERT INTO transactions(user_id,id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate), t.CreatedAt)
+	_, err := b.exec(`INSERT INTO transactions(user_id,id,from_account_id,to_account_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.FromAccountID, t.ToAccountID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate), t.CreatedAt)
 	return err
 }
 func (b *Book) insertTemplate(t TransactionTemplate) error {
@@ -672,77 +865,71 @@ func (b *Book) updateAccount(a Account) error {
 	return b.reload()
 }
 func (b *Book) updateTag(t Tag) error {
-	if _, err := b.s.db.Exec(`UPDATE tags SET name=?,kind=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,target_minor=?,target_date=? WHERE user_id=? AND id=?`,
-		t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, n64(t.TargetMinor), t.TargetDate, b.uid, t.ID); err != nil {
+	if _, err := b.s.db.Exec(`UPDATE tags SET name=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=? WHERE user_id=? AND id=?`,
+		t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, b.uid, t.ID); err != nil {
+		return err
+	}
+	return b.reload()
+}
+func (b *Book) updateReserve(r Reserve) error {
+	if _, err := b.s.db.Exec(`UPDATE reserves SET name=?,currency=?,target_minor=?,target_date=? WHERE user_id=? AND id=?`,
+		r.Name, r.Currency, n64(r.TargetMinor), r.TargetDate, b.uid, r.ID); err != nil {
 		return err
 	}
 	return b.reload()
 }
 
-// switchTagKind changes a used tag between category and money box (ADR 0004), in one database
-// transaction. A money box that becomes a category loses its allocations and the templates that
-// allocate to it; a category that becomes a money box is taken off its transactions and templates,
-// which are otherwise kept.
-func (b *Book) switchTagKind(t Tag, oldKind string) error {
+// deleteReserve removes a reserve with its allocations and the templates that allocate to it,
+// in one database transaction.
+func (b *Book) deleteReserve(id string) error {
 	tx, err := b.s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	// run is for statements whose first placeholder is user_id
-	run := func(q string, args ...interface{}) error {
-		_, err := tx.Exec(q, append([]interface{}{b.uid}, args...)...)
-		return err
+	for _, q := range []string{`DELETE FROM allocations WHERE user_id=? AND reserve_id=?`, `DELETE FROM reserves WHERE user_id=? AND id=?`} {
+		if _, err := tx.Exec(q, b.uid, id); err != nil {
+			return err
+		}
 	}
-	if oldKind == "goal" {
-		if err := run(`DELETE FROM transactions WHERE user_id=? AND type='allocate' AND tag_id=?`, t.ID); err != nil {
-			return err
-		}
-		for _, tp := range b.data.TransactionTemplates {
-			if tp.Template.TagID == t.ID {
-				if err := run(`DELETE FROM transaction_templates WHERE user_id=? AND id=?`, tp.ID); err != nil {
-					return err
-				}
-			}
-		}
-	} else {
-		if err := run(`DELETE FROM transaction_tags WHERE user_id=? AND tag_id=?`, t.ID); err != nil {
-			return err
-		}
-		// the old single-category column, still read as a category on transfers
-		if err := run(`UPDATE transactions SET tag_id='' WHERE user_id=? AND type<>'allocate' AND tag_id=?`, t.ID); err != nil {
-			return err
-		}
-		for _, tp := range b.data.TransactionTemplates {
-			if !slices.Contains(tp.Template.TagIDs, t.ID) && tp.Template.TagID != t.ID {
-				continue
-			}
-			tpl := tp.Template
-			tpl.TagIDs = slices.DeleteFunc(slices.Clone(tpl.TagIDs), func(id string) bool { return id == t.ID })
-			if tpl.TagID == t.ID {
-				tpl.TagID = ""
-			}
-			tj, _ := json.Marshal(tpl)
-			if _, err := tx.Exec(`UPDATE transaction_templates SET template_json=? WHERE user_id=? AND id=?`, string(tj), b.uid, tp.ID); err != nil {
+	for _, tp := range b.data.TransactionTemplates {
+		if tp.Template.Type == "allocate" && tp.Template.ReserveID == id {
+			if _, err := tx.Exec(`DELETE FROM transaction_templates WHERE user_id=? AND id=?`, b.uid, tp.ID); err != nil {
 				return err
 			}
 		}
-	}
-	if _, err := tx.Exec(`UPDATE tags SET name=?,kind=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,target_minor=?,target_date=? WHERE user_id=? AND id=?`,
-		t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, n64(t.TargetMinor), t.TargetDate, b.uid, t.ID); err != nil {
-		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return b.reload()
 }
-func (b *Book) updateTransaction(t Transaction) error {
-	if _, err := b.s.db.Exec(`UPDATE transactions SET account_id=?,from_account_id=?,to_account_id=?,tag_id=?,type=?,state=?,amount_minor=?,currency=?,date=?,time=?,tz=?,note=?,memo=? WHERE user_id=? AND id=?`,
-		t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, b.uid, t.ID); err != nil {
+func (b *Book) updateAllocation(a Allocation) error {
+	if _, err := b.s.db.Exec(`UPDATE allocations SET reserve_id=?,account_id=?,amount_minor=?,currency=?,date=?,time=?,tz=?,note=?,memo=? WHERE user_id=? AND id=?`,
+		a.ReserveID, a.AccountID, a.AmountMinor, a.Currency, a.Date, a.Time, a.TZ, a.Note, a.Memo, b.uid, a.ID); err != nil {
 		return err
 	}
-	// the links are the transfer's categories; an allocation has none (its money box is tag_id)
+	return b.reload()
+}
+
+// deleteAllocation removes one allocation; false if there was none.
+func (b *Book) deleteAllocation(id string) (bool, error) {
+	res, err := b.exec(`DELETE FROM allocations WHERE user_id=? AND id=?`, id)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil
+	}
+	return true, b.reload()
+}
+
+func (b *Book) updateTransaction(t Transaction) error {
+	if _, err := b.s.db.Exec(`UPDATE transactions SET from_account_id=?,to_account_id=?,type=?,state=?,amount_minor=?,currency=?,date=?,time=?,tz=?,note=?,memo=? WHERE user_id=? AND id=?`,
+		t.FromAccountID, t.ToAccountID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, b.uid, t.ID); err != nil {
+		return err
+	}
+	// the links are the transaction's categories
 	if _, err := b.exec(`DELETE FROM transaction_tags WHERE user_id=? AND transaction_id=?`, t.ID); err != nil {
 		return err
 	}

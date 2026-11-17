@@ -12,13 +12,13 @@ func TestSeveralCategories(t *testing.T) {
 	b := sampleBook(t)
 	today := "2025-01-15" // a day without sample spending
 	saved, err := b.addTransaction(Transaction{Type: "expense", AccountID: "acc-a", AmountMinor: 900, Date: today,
-		TagID: "tag-fun", TagIDs: []string{"tag-food", "tag-fun"}})
+		TagIDs: []string{"tag-food", "tag-fun", "tag-fun"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := b.data.transactionByID(saved.ID)
-	if !slices.Equal(got.TagIDs, []string{"tag-food", "tag-fun"}) || got.TagID != "" {
-		t.Fatalf("categories: %+v / %q", got.TagIDs, got.TagID)
+	if !slices.Equal(got.TagIDs, []string{"tag-food", "tag-fun"}) {
+		t.Fatalf("categories: %+v", got.TagIDs)
 	}
 	// each category's budget counts the whole amount
 	for _, id := range []string{"tag-food", "tag-fun"} {
@@ -53,19 +53,6 @@ func TestSeveralCategories(t *testing.T) {
 		t.Fatalf("not cleared: %+v", got.TagIDs)
 	}
 
-	// a category only in the old tag_id column still counts as one
-	if _, err := b.exec(`INSERT INTO transactions(user_id,id,account_id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,time,tz,note,memo) VALUES(?,'txn-old','','acc-a','acc-external','tag-food','transfer','posted',500,'TWD',?,'','','','')`, today); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.reload(); err != nil {
-		t.Fatal(err)
-	}
-	if old := b.data.transactionByID("txn-old"); !slices.Equal(old.TagIDs, []string{"tag-food"}) || old.TagID != "" {
-		t.Fatalf("old row: %+v / %q", old.TagIDs, old.TagID)
-	}
-	if n := b.data.BudgetSpent("tag-food", today, today); n != 500 {
-		t.Fatalf("old row in budget: %d", n)
-	}
 }
 
 func TestMCPCategories(t *testing.T) {
@@ -83,37 +70,15 @@ func TestMCPCategories(t *testing.T) {
 	if cats := b.data.transactionByID(id).TagIDs; !slices.Equal(cats, []string{"tag-food", "tag-fun"}) {
 		t.Fatalf("add: %+v", cats)
 	}
-	call(toolUpdateTransaction, `{"id":"`+id+`","tagId":"tag-transport"}`)
+	call(toolUpdateTransaction, `{"id":"`+id+`","tagIds":["tag-transport"]}`)
 	if cats := b.data.transactionByID(id).TagIDs; !slices.Equal(cats, []string{"tag-transport"}) {
-		t.Fatalf("tagId sets one: %+v", cats)
+		t.Fatalf("tagIds replaces: %+v", cats)
 	}
 	call(toolUpdateTransaction, `{"id":"`+id+`","tagIds":[]}`)
 	if cats := b.data.transactionByID(id).TagIDs; len(cats) != 0 {
 		t.Fatalf("empty tagIds clears: %+v", cats)
 	}
-	if _, err := toolAddTransaction(b, json.RawMessage(`{"kind":"spending","amount":"1","accountId":"acc-a","tagIds":["tag-house"]}`)); err == nil {
-		t.Fatal("a money box as a category was accepted")
-	}
-}
-
-// a template saved with one category before ADR 0010 generates it as a category
-func TestOldTemplateCategory(t *testing.T) {
-	b := sampleBook(t)
-	if _, err := b.exec(`INSERT INTO transaction_templates(user_id,id,name,enabled,template_json,schedule_json) VALUES(?,'tpl-old','Old',1,?,?)`,
-		`{"fromAccountId":"acc-a","toAccountId":"acc-external","tagId":"tag-food","type":"transfer","amountMinor":100,"currency":"TWD","note":"x"}`,
-		`{"frequency":"monthly","interval":1,"dayOfMonth":1,"startDate":"2026-01-01","endDate":"2026-01-31"}`); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.reload(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := b.GenerateDue("2026-02-01"); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.reload(); err != nil {
-		t.Fatal(err)
-	}
-	if got := b.data.transactionByID("txn-tpl-old-2026-01-01"); got == nil || !slices.Equal(got.TagIDs, []string{"tag-food"}) {
-		t.Fatalf("generated: %+v", got)
+	if _, err := toolAddTransaction(b, json.RawMessage(`{"kind":"spending","amount":"1","accountId":"acc-a","tagIds":["rsv-house"]}`)); err == nil {
+		t.Fatal("a reserve as a category was accepted")
 	}
 }

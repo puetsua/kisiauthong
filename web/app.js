@@ -100,8 +100,9 @@ const accById = (id) => (state.data.allAccounts || state.data.accounts).find((a)
 const accName = (id) => { const a = accById(id); if (!a) return "—"; return a.id === EXT_ID && a.name === "External" ? __("External") : a.name; };
 const accCur = (id) => (accById(id) || {}).currency || defCur();
 const isExt = (id) => { const a = accById(id); return !!a && a.kind === "external"; };
-// flow: what a record means to the user. Only transfer and allocate are stored;
-// a transfer to an external account is spending, one from an external account is income.
+// flow: what a record means to the user. Every transaction is stored as a transfer;
+// one to an external account is spending, one from an external account is income.
+// A template can also be an allocation template (type "allocate", ADR 0013).
 function flow(t) {
   if (t.type !== "transfer") return t.type;
   const f = isExt(t.fromAccountId), to = isExt(t.toAccountId);
@@ -122,8 +123,9 @@ function row(cells) {
 }
 
 /* ---------- display labels for stored enum values ---------- */
-const TYPE_L = { expense: N_("Expense"), income: N_("Income"), transfer: N_("Transfer"), allocate: N_("Allocate") };
-const TAGKIND_L = { category: N_("Category"), goal: N_("Money box") };
+const TYPE_L = { expense: N_("Expense"), income: N_("Income"), transfer: N_("Transfer") };
+// what a template generates: a transaction, or an allocation into a reserve
+const TPL_TYPE_L = { ...TYPE_L, allocate: N_("Put in reserve") };
 // Budget periods (ADR 0004): unit × every N, anchored on cycleStart; "range" is one fixed period.
 const CYCLE_EVERY_L = { daily: N_("Every {n} days"), weekly: N_("Every {n} weeks"), monthly: N_("Every {n} months"), yearly: N_("Every {n} years") };
 const CYCLE_UNIT_L = { daily: N_("days"), weekly: N_("weeks"), monthly: N_("months"), yearly: N_("years") };
@@ -152,7 +154,7 @@ const DASH_WIDGETS = [
   { id: "balances", label: N_("Balances by currency"), pick: "currencies" },
   { id: "budgets", label: N_("Budgets"), pick: "budgets" },
   { id: "spending", label: N_("Spending this month"), rows: 8 },
-  { id: "moneyboxes", label: N_("Money boxes"), pick: "goals" },
+  { id: "reserves", label: N_("Reserves"), pick: "reserves" },
   { id: "accounts", label: N_("Accounts"), pick: "accounts" },
   { id: "recent", label: N_("Recent transactions"), rows: 6 },
 ];
@@ -171,7 +173,7 @@ function pickItems(kind) {
   const d = state.data;
   if (kind === "currencies") return [...new Set(d.accounts.map((a) => a.currency))].map((c) => ({ id: c, label: c }));
   if (kind === "budgets") return d.tags.filter((t) => t.limitMinor !== undefined).map((t) => ({ id: t.id, label: t.name }));
-  if (kind === "goals") return d.tags.filter((t) => t.targetMinor !== undefined).map((t) => ({ id: t.id, label: t.name }));
+  if (kind === "reserves") return d.reserves.map((r) => ({ id: r.id, label: r.name }));
   if (kind === "accounts") return d.accounts.map((a) => ({ id: a.id, label: a.name }));
   return [];
 }
@@ -200,8 +202,8 @@ const WIDGET_COLS = {
     { key: "name", label: N_("Account"), on: 1, v: (a) => `<button class="titlelink" data-detail-account="${esc(a.id)}">${esc(a.name)}</button>` },
     { key: "currency", label: N_("Currency"), v: (a) => esc(a.currency) },
     { key: "balance", label: N_("Balance"), on: 1, num: 1, v: (a) => fmt(a.balanceMinor, a.currency) },
-    { key: "earmarked", label: N_("Earmarked"), on: 1, num: 1, v: (a) => fmt(a.allocatedMinor, a.currency) },
-    { key: "free", label: N_("Free"), on: 1, num: 1, v: (a) => fmt(a.unallocatedMinor, a.currency) },
+    { key: "earmarked", label: N_("Reserved"), on: 1, num: 1, v: (a) => fmt(a.reservedMinor, a.currency) },
+    { key: "free", label: N_("Free"), on: 1, num: 1, v: (a) => fmt(a.freeMinor, a.currency) },
     { key: "limit", label: N_("Limit"), num: 1, v: (a) => (a.limitMinor ? fmt(a.limitMinor, a.currency) : "—") },
     { key: "owed", label: N_("Owed"), num: 1, v: (a) => (a.limitMinor ? fmt(a.owedMinor, a.currency) : "—") },
   ],
@@ -241,9 +243,9 @@ function widgetBody(type, o) {
       const rowsHTML = list.map((x) => `<li><span class="sptop">${name(x)}<b>${fmt(x.amountMinor, x.currency)}</b></span>${bar(x.share)}</li>`).join("");
       return list.length ? phoneSwap(colTable(widgetCols(type, o), list), `<ul class="splist">${rowsHTML}</ul>`) : `<p class="muted">${esc(__("No posted expenses this month."))}</p>`;
     }
-    case "moneyboxes": {
-      const goals = d.tags.filter((t) => t.targetMinor !== undefined && inc(t.id));
-      return goals.length ? goals.map(goalCard).join("") : `<p class="muted">${esc(__("No money boxes yet."))}</p>`;
+    case "reserves": {
+      const list = d.reserves.filter((r) => inc(r.id));
+      return list.length ? `<div class="tgrid">${list.map(reserveCard).join("")}</div>` : `<p class="muted">${esc(__("No reserves yet."))}</p>`;
     }
     case "accounts": {
       const list = d.accounts.filter((a) => inc(a.id));
@@ -529,32 +531,8 @@ function screenDashboard(v) {
   });
   bindActions(v);
 }
-// what each account holds for a money box; an allocation in another currency is only a label on it (ADR 0011)
-function goalAllocations(tagId) {
-  const byAcc = {}, box = state.data.tags.find((x) => x.id === tagId), cur = box && box.currency;
-  state.data.transactions.forEach((t) => {
-    if (t.tagId !== tagId || t.state !== "posted" || (cur && t.currency !== cur)) return;
-    if (t.type === "allocate") byAcc[t.accountId] = (byAcc[t.accountId] || 0) + t.amountMinor; // signed
-  });
-  return Object.entries(byAcc).filter(([, v]) => v > 0);
-}
-// what a money box still needs to reach its target
-const toGo = (t) => (t.targetMinor > t.savedMinor ? __("{amount} to go", { amount: fmt(t.targetMinor - t.savedMinor, t.currency) }) : __("Target reached"));
-function goalCard(t) {
-  const p = t.targetMinor > 0 ? t.savedMinor / t.targetMinor * 100 : 0;
-  const allocs = goalAllocations(t.id);
-  // the bar is the target: each account's share is filled, the rest stays empty
-  const scale = Math.max(t.targetMinor, t.savedMinor) || 1;
-  const stack = allocs.map(([, val], i) => `<i style="width:${val / scale * 100}%;background:${BOX_COLORS[i % BOX_COLORS.length]}"></i>`).join("");
-  const where = allocs.map(([id, val]) => `${esc(accName(id))} ${fmt(val, t.currency)}`).join(" · ");
-  const head = __("{saved} of {target} · {pct}%", { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency), pct: p.toFixed(0) }) + " · " + toGo(t) + (t.targetDate ? " · " + __("by {date}", { date: dayLabel(t.targetDate) }) : "");
-  return `<div style="margin-bottom:18px"><div class="panelhead"><button class="titlelink" data-detail-goal="${esc(t.id)}">${esc(t.name)}</button><span>${esc(head)}</span></div>
-    <div class="stack" style="margin:8px 0">${stack}</div><span class="muted">${where || esc(__("No allocations yet"))}</span></div>`;
-}
 function bindActions(root) {
   root.querySelectorAll("[data-edit-txn]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.editTxn)));
-  root.querySelectorAll("[data-alloc]").forEach((b) => b.addEventListener("click", () => openDrawer("allocate", b.dataset.alloc)));
-  root.querySelectorAll("[data-history]").forEach((b) => b.addEventListener("click", () => showHistory(b.dataset.history)));
   bindDetails(root);
 }
 function bindDetails(root) {
@@ -562,7 +540,8 @@ function bindDetails(root) {
   root.querySelectorAll("[data-detail-txn]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.detailTxn)));
   root.querySelectorAll("[data-detail-account]").forEach((b) => b.addEventListener("click", () => openAccountDialog(b.dataset.detailAccount)));
   root.querySelectorAll("[data-detail-tag]").forEach((b) => b.addEventListener("click", () => { location.hash = tagURL(b.dataset.detailTag, tagRange(), ""); }));
-  root.querySelectorAll("[data-detail-goal]").forEach((b) => b.addEventListener("click", () => openTagDialog(null, b.dataset.detailGoal)));
+  root.querySelectorAll("[data-detail-reserve]").forEach((b) => b.addEventListener("click", () => { location.hash = reserveURL(b.dataset.detailReserve, tagRange(), ""); }));
+  root.querySelectorAll("[data-edit-alloc]").forEach((b) => b.addEventListener("click", () => openAllocDialog(null, "", b.dataset.editAlloc)));
   root.querySelectorAll("[data-detail-template]").forEach((b) => b.addEventListener("click", () => openTemplateDialog(b.dataset.detailTemplate)));
 }
 // pairs: [English label, HTML value]
@@ -573,22 +552,20 @@ function detailTable(pairs) {
 /* ---------- transaction feed ---------- */
 const whenKey = (t) => { const w = txnWhen(t); return w.date + " " + w.time + " " + t.id; };
 const byNewest = (a, b) => whenKey(b).localeCompare(whenKey(a));
-// stroke icons (24px grid): money out, money in, between accounts, into / out of a money box
+// stroke icons (24px grid): money out, money in, between accounts, into / out of a reserve
 const ICON_PATH = { expense: "M7 17 17 7M9 7h8v8", income: "M17 7 7 17M15 17H7V9", transfer: "M4 8h15l-3-3M20 16H5l3 3", allocate: "M4 13v6h16v-6M12 4v10M8 10l4 4 4-4", release: "M4 13v6h16v-6M12 14V4M8 8l4-4 4 4" };
 const typeIcon = (type) => `<svg viewBox="0 0 24 24" width="18" height="18"><path d="${ICON_PATH[type] || "M12 12h.01"}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-// a transfer's categories (ADR 0010); an allocation's money box is tagId
+// a transaction's categories (ADR 0010)
 const txnCats = (t) => t.tagIds || [];
 const txnTagNames = (t) => txnCats(t).map(tagName);
 // What a row says under its title: where the money went, in words a person uses.
 function txnSubtitle(t) {
   const k = flow(t);
   if (k === "transfer") return accName(t.fromAccountId) + " → " + accName(t.toAccountId);
-  if (k === "allocate") return t.amountMinor < 0 ? tagName(t.tagId) + " → " + accName(t.accountId) : accName(t.accountId) + " → " + tagName(t.tagId);
   return [txnTagNames(t).join(", "), transferAcct(t)].filter(Boolean).join(" · ");
 }
-// allocations are signed (ADR 0003): + into the money box, − back out
-const amountText = (t) => t.type === "allocate" ? (t.amountMinor < 0 ? "−" : "+") + fmt(Math.abs(t.amountMinor), t.currency) : signed(t) + fmt(t.amountMinor, t.currency);
-const iconKind = (t) => (t.type === "allocate" && t.amountMinor < 0 ? "release" : flow(t));
+const amountText = (t) => signed(t) + fmt(t.amountMinor, t.currency);
+const iconKind = (t) => flow(t);
 const amountCls = (t) => { const k = flow(t); return k === "income" ? "in" : k === "expense" ? "out" : "move"; };
 // Time zones (ADR 0006). A timed transaction has an instant (t.at, UTC); it is shown and grouped in the
 // display zone: the one chosen in Settings, or this device's when set to Auto (follows you when travelling).
@@ -743,11 +720,11 @@ function filteredTxns() {
   const f = state.filter, q = f.q.trim().toLowerCase();
   let list = [...state.data.transactions].sort(byNewest);
   if (q) list = list.filter((t) => [t.note, t.memo, lbl(TYPE_L, flow(t)), txnSubtitle(t), fmt(t.amountMinor, t.currency)].join(" ").toLowerCase().includes(q));
-  if (f.account) list = list.filter((t) => t.accountId === f.account || t.fromAccountId === f.account || t.toAccountId === f.account);
+  if (f.account) list = list.filter((t) => t.fromAccountId === f.account || t.toAccountId === f.account);
   if (f.type) list = list.filter((t) => flow(t) === f.type);
-  // "none": spending and income without a category (transfers and allocations never take one)
+  // "none": spending and income without a category
   if (f.tag === "none") list = list.filter((t) => !txnCats(t).length && (flow(t) === "expense" || flow(t) === "income"));
-  else if (f.tag) list = list.filter((t) => t.tagId === f.tag || txnCats(t).includes(f.tag));
+  else if (f.tag) list = list.filter((t) => txnCats(t).includes(f.tag));
   return list;
 }
 // The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
@@ -780,7 +757,7 @@ function screenTransactions(v) {
   const tagOpt = (t) => `<option value="${esc(t.id)}" ${f.tag === t.id ? "selected" : ""}>${esc(t.name)}</option>`;
   const tagGroup = (label, tags) => (tags.length ? `<optgroup label="${esc(label)}">${tags.map(tagOpt).join("")}</optgroup>` : "");
   const tagOpts = `<option value="">${esc(__("All categories"))}</option><option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
-    + tagGroup(__("Categories"), state.data.tags.filter((t) => !isGoal(t))) + tagGroup(__("Money boxes"), state.data.tags.filter(isGoal));
+    + tagGroup(__("Categories"), state.data.tags);
   // on phones the dropdowns fold away behind a Filters button that counts the ones in use
   v.innerHTML = `<div class="filters${state.filtersOpen ? " open" : ""}">
       <input id="fq" type="search" placeholder="${esc(__("Search note, tag, account…"))}" value="${esc(f.q)}">
@@ -913,7 +890,7 @@ const iconSvg = (name, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" h
 const accIcon = (a) => `<span class="aicon${a.kind === "external" ? " ext" : ""}" aria-hidden="true">${iconSvg(iconName(a))}</span>`;
 // the newest transaction touching an account, and how many there are
 function accountActivity(id) {
-  const list = state.data.transactions.filter((t) => t.accountId === id || t.fromAccountId === id || t.toAccountId === id);
+  const list = state.data.transactions.filter((t) => t.fromAccountId === id || t.toAccountId === id);
   const last = list.filter((t) => t.state === "posted").reduce((m, t) => (t.date > m ? t.date : m), "");
   return { n: list.length, last };
 }
@@ -923,10 +900,11 @@ function accountCard(a) {
   if (a.limitMinor) {
     const u = (a.utilisation || 0) * 100;
     detail = `<span class="bar"><i class="${barCls(u)}" style="width:${Math.min(100, u)}%"></i></span><span class="tfoot"><small>${esc(owedText(a))}</small></span>`;
-  } else if (a.allocatedMinor > 0) {
-    const e = a.balanceMinor > 0 ? Math.min(100, a.allocatedMinor / a.balanceMinor * 100) : 100;
-    detail = `<span class="splitbar"><i class="earmarked" style="width:${e}%"></i></span>
-      <span class="tfoot"><small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.unallocatedMinor, a.currency) }))}</small><small><b class="dot earmarked"></b>${esc(__("Earmarked {amount}", { amount: fmt(a.allocatedMinor, a.currency) }))}</small></span>`;
+  } else if (a.reservedMinor > 0) {
+    // reserving more than the balance is allowed (spending never touches a reserve), but it shows
+    const over = a.freeMinor < 0, e = a.balanceMinor > 0 ? Math.min(100, a.reservedMinor / a.balanceMinor * 100) : 100;
+    detail = `<span class="splitbar"><i class="earmarked${over ? " over" : ""}" style="width:${e}%"></i></span>
+      <span class="tfoot">${over ? `<small class="neg">${esc(__("Reserved more than its balance"))}</small>` : `<small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.freeMinor, a.currency) }))}</small>`}<small><b class="dot earmarked"></b>${esc(__("Reserved {amount}", { amount: fmt(a.reservedMinor, a.currency) }))}</small></span>`;
   }
   return `<button type="button" class="tcard acard" data-detail-account="${esc(a.id)}">
     <span class="thead">${accIcon(a)}<span class="aname"><b>${esc(a.name)}</b></span></span>
@@ -938,12 +916,12 @@ function accountCard(a) {
 const addTile = (id, label, cls = "") => `<button type="button" class="addtile ${cls}" id="${id}"><span aria-hidden="true">+</span>${esc(label)}</button>`;
 function screenAccounts(v) {
   const accs = state.data.accounts;
-  // totals per currency: what you have, and how much of it money boxes claim
+  // totals per currency: what you have, and how much of it reserves hold
   const curs = [...new Set(accs.map((a) => a.currency))];
   const totals = curs.map((c) => {
     const xs = accs.filter((a) => a.currency === c), sum = (k) => xs.reduce((n, a) => n + (a[k] || 0), 0);
     return `<div class="totcard"><span class="lab">${esc(__("Total"))}</span><b>${fmt(sum("balanceMinor"), c)}</b>
-      <small>${esc(__("{n} account(s)", { n: xs.length }))}${sum("allocatedMinor") ? " · " + esc(__("Earmarked {amount}", { amount: fmt(sum("allocatedMinor"), c) })) : ""}</small></div>`;
+      <small>${esc(__("{n} account(s)", { n: xs.length }))}${sum("reservedMinor") ? " · " + esc(__("Reserved {amount}", { amount: fmt(sum("reservedMinor"), c) })) : ""}</small></div>`;
   }).join("");
   const ordered = accs; // by name, as the server lists them
   const exts = state.data.externals.map((a) => {
@@ -963,7 +941,7 @@ const scheduleText = (s) => lbl(FREQ_L, s.frequency) + (s.dayOfMonth ? " · " + 
 const isShortcut = (tp) => tp.schedule.frequency === "never";
 function screenTemplates(v) {
   const name = (t) => ({ l: N_("Template"), v: `<button class="titlelink" data-detail-template="${esc(t.id)}">${esc(t.name)}</button>${t.template.expectedRangeMinor ? `<br><span class="chip due">${esc(__("variable {min}–{max}", { min: fmt(t.template.expectedRangeMinor.min, t.template.currency), max: fmt(t.template.expectedRangeMinor.max, t.template.currency) }))}</span>` : ""}` });
-  const what = (t, l) => ({ l, v: `${esc(lbl(TYPE_L, flow(t.template)))} ${fmt(t.template.amountMinor, t.template.currency)}<br><span class="muted">${esc(transferAcct(t.template))}${[t.template.tagId, ...(t.template.tagIds || [])].filter(Boolean).map((id) => " → " + esc(tagName(id))).join("")}</span>` });
+  const what = (t, l) => ({ l, v: `${esc(lbl(TPL_TYPE_L, flow(t.template)))} ${fmt(t.template.amountMinor, t.template.currency)}<br><span class="muted">${esc(transferAcct(t.template))}${t.template.reserveId ? " → " + esc(resName(t.template.reserveId)) : ""}${(t.template.tagIds || []).map((id) => " → " + esc(tagName(id))).join("")}</span>` });
   const status = (t) => ({ l: N_("Status"), v: esc(t.enabled ? __("Enabled") : __("Paused")) });
   const all = state.data.transactionTemplates;
   const rows = all.filter((t) => !isShortcut(t)).map((t) => row([name(t), what(t, N_("Generates")),
@@ -1036,72 +1014,216 @@ const plainDay = (iso) => { try { return new Intl.DateTimeFormat(LANG, { year: "
 // One category (or budget): all-time figures, then its transactions in a period to page through.
 function screenTag(v) {
   const { params } = hashParts(), t = state.data.tags.find((x) => x.id === params.get("id"));
-  if (!t || isGoal(t)) { location.hash = "#tags"; return; }
-  const today = state.data.today, mode = TAG_RANGE_L[params.get("range")] ? params.get("range") : tagRange();
-  const at = /^\d{4}-\d{2}-\d{2}$/.test(params.get("at") || "") ? params.get("at") : today, p = periodFor(mode, at);
+  if (!t) { location.hash = "#tags"; return; }
+  const { mode, p } = pagePeriod(params);
   $("#pageTitle").textContent = t.name;
   const all = tagTxns(t.id), sums = tagTotals(all), inP = tagTxns(t.id, p);
   const tile = (lab, val, sub) => `<div class="totcard"><span class="lab">${esc(lab)}</span><b>${val}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
   const money = (m) => Object.entries(m).map(([c, n]) => esc(fmt(n, c))).join("<br>");
   const tiles = tile(__("Transactions"), esc(String(all.length)), all.length ? __("Since {date}", { date: plainDay(all[all.length - 1].date) }) : "")
     + (Object.keys(sums.out).length ? tile(__("Spent"), money(sums.out)) : "") + (Object.keys(sums.in).length ? tile(__("Received"), money(sums.in)) : "");
-  const modes = Object.keys(TAG_RANGE_L).map((m) => `<button type="button" data-mode="${m}" class="${m === mode ? "on" : ""}" aria-pressed="${m === mode}">${esc(__(TAG_RANGE_L[m]))}</button>`).join("");
-  const nav = `<nav class="periodnav" aria-label="${esc(__("Period"))}">
-      <button class="smallbtn" data-shift="-1">${esc(__("‹ Previous"))}</button>
-      <span class="plabel">${esc(periodLabel(p))}</span>
-      <button class="smallbtn" data-shift="1" ${p.end >= today ? "disabled" : ""}>${esc(__("Next ›"))}</button>
-      ${!(today >= p.start && today <= p.end) ? `<button class="smallbtn" data-today>${esc(__("Back to today"))}</button>` : ""}</nav>`;
   const rows = (list) => `<ul class="feed">${list.map((x) => feedRow(x, { withDate: true })).join("")}</ul>`;
   v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#tags">‹ ${esc(__("Tags"))}</a><button type="button" class="smallbtn" id="tagEdit">${esc(__("Edit"))}</button></div>
     ${t.limitMinor !== undefined ? `<div class="tgrid tagbudget">${budgetCard(t)}</div>` : ""}
     <div class="totals">${tiles}</div>
-    <section class="tsection"><div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${nav}</div>
+    <section class="tsection">${periodBar(mode, p)}
     ${inP.length ? `<div class="psum"><span>${esc(__("{n} transaction(s)", { n: inP.length }))}</span><span class="amts">${totalsHTML(tagTotals(inP))}</span></div>
       <section class="panel feedpanel">${rows(inP)}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
-  // the period lives in the address, so Back and reload keep it
-  v.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
-    setTagRange(b.dataset.mode);
-    location.hash = tagURL(t.id, b.dataset.mode, today >= p.start && today <= p.end ? "" : p.start);
-  }));
-  v.querySelectorAll("[data-shift]").forEach((b) => b.addEventListener("click", () => {
-    const q = shiftPeriod(p, parseInt(b.dataset.shift, 10));
-    location.hash = tagURL(t.id, mode, today >= q.start && today <= q.end ? "" : q.start);
-  }));
-  v.querySelectorAll("[data-today]").forEach((b) => b.addEventListener("click", () => { location.hash = tagURL(t.id, mode, ""); }));
+  bindPeriodBar(v, mode, p, (m, at) => tagURL(t.id, m, at));
   $("#tagEdit").addEventListener("click", () => openTagDialog(null, t.id));
   v.querySelectorAll("[data-detail-txn]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.detailTxn)));
 }
-// One money box: saved of target, with the bar split by the accounts holding the money.
-const BOX_COLORS = ["#5b2a86", "#8a5cb8", "#b79ad6", "#c9a86a", "#7d6f99"];
-function boxCard(t) {
-  const allocs = goalAllocations(t.id), scale = Math.max(t.targetMinor, t.savedMinor) || 1;
-  const segs = allocs.map(([, val], i) => `<i style="width:${val / scale * 100}%;background:${BOX_COLORS[i % BOX_COLORS.length]}"></i>`).join("");
-  const legend = allocs.map(([id, val], i) => `<small><b class="dot" style="background:${BOX_COLORS[i % BOX_COLORS.length]}"></b>${esc(accName(id))} ${fmt(val, t.currency)}</small>`).join("");
-  return `<button type="button" class="tcard gcard" data-detail-goal="${esc(t.id)}">
-    <span class="thead"><b>${esc(t.name)}</b><small>${esc(t.targetDate ? __("by {date}", { date: dayLabel(t.targetDate) }) : "")}</small></span>
-    <span class="bamount"><b>${fmt(t.savedMinor, t.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(t.targetMinor, t.currency) }))}</small></span>
-    <span class="stack">${segs}</span>
-    <span class="tfoot"><span>${esc(toGo(t))}</span></span>
-    <span class="boxlegend">${legend || `<small>${esc(__("No allocations yet"))}</small>`}</span></button>`;
+// Day / Week / Month / Year and paging through periods; the period lives in the address
+// (url(mode, at); at is empty for the period holding today), so Back and reload keep it.
+function periodBar(mode, p) {
+  const today = state.data.today;
+  const modes = Object.keys(TAG_RANGE_L).map((m) => `<button type="button" data-mode="${m}" class="${m === mode ? "on" : ""}" aria-pressed="${m === mode}">${esc(__(TAG_RANGE_L[m]))}</button>`).join("");
+  return `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div><nav class="periodnav" aria-label="${esc(__("Period"))}">
+      <button class="smallbtn" data-shift="-1">${esc(__("‹ Previous"))}</button>
+      <span class="plabel">${esc(periodLabel(p))}</span>
+      <button class="smallbtn" data-shift="1" ${p.end >= today ? "disabled" : ""}>${esc(__("Next ›"))}</button>
+      ${!(today >= p.start && today <= p.end) ? `<button class="smallbtn" data-today>${esc(__("Back to today"))}</button>` : ""}</nav></div>`;
+}
+function bindPeriodBar(v, mode, p, url) {
+  const today = state.data.today, atOf = (q) => (today >= q.start && today <= q.end ? "" : q.start);
+  v.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => { setTagRange(b.dataset.mode); location.hash = url(b.dataset.mode, atOf(p)); }));
+  v.querySelectorAll("[data-shift]").forEach((b) => b.addEventListener("click", () => { location.hash = url(mode, atOf(shiftPeriod(p, parseInt(b.dataset.shift, 10)))); }));
+  v.querySelectorAll("[data-today]").forEach((b) => b.addEventListener("click", () => { location.hash = url(mode, ""); }));
+}
+// the period a page shows: from the address, else the remembered kind holding today
+function pagePeriod(params) {
+  const mode = TAG_RANGE_L[params.get("range")] ? params.get("range") : tagRange();
+  const at = /^\d{4}-\d{2}-\d{2}$/.test(params.get("at") || "") ? params.get("at") : state.data.today;
+  return { mode, p: periodFor(mode, at) };
 }
 function screenTags(v) {
   const tags = state.data.tags;
-  const budgets = tags.filter((t) => t.kind === "category" && t.limitMinor !== undefined);
-  const cats = tags.filter((t) => t.kind === "category" && t.limitMinor === undefined);
-  const boxes = tags.filter((t) => t.kind === "goal");
+  const budgets = tags.filter((t) => t.limitMinor !== undefined);
+  const cats = tags.filter((t) => t.limitMinor === undefined);
   // each grid ends with its "add" tile; categories show what happened in the chosen period up to now
   const p = periodFor(tagRange(), state.data.today);
   const switcher = `<div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${Object.keys(TAG_NOW_L).map((m) => `<button type="button" data-tag-range="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(TAG_NOW_L[m]))}</button>`).join("")}</div>`;
   const section = (title, list, card, tail, head = "") => `<section class="tsection"><div class="tsechead"><h3>${esc(title)}</h3>${head}</div>
     <div class="tgrid">${list.map((t) => card(t, p)).join("")}${tail}</div></section>`;
   v.innerHTML = section(__("Budgets"), budgets, budgetCard, addTile("newBudget", __("Add budget")))
-    + section(__("Money boxes"), boxes, boxCard, addTile("newBox", __("New money box")))
     + section(__("Categories"), cats, categoryCard, addTile("newCategory", __("New category")), switcher);
   v.querySelectorAll("[data-tag-range]").forEach((b) => b.addEventListener("click", () => { setTagRange(b.dataset.tagRange); render(); }));
   $("#newBudget").addEventListener("click", () => openTagDialog("budget"));
   $("#newCategory").addEventListener("click", () => openTagDialog("category"));
-  $("#newBox").addEventListener("click", () => openTagDialog("goal"));
   bindDetails(v);
+}
+
+/* ---------- reserves (ADR 0013): money set aside, apart from the transactions ---------- */
+const resById = (id) => state.data.reserves.find((r) => r.id === id);
+const resName = (id) => (resById(id) || {}).name || "—";
+const reserveURL = (id, mode, at) => `#reserve?${new URLSearchParams({ id, range: mode, ...(at ? { at } : {}) })}`;
+// what a reserve still needs to reach its target
+const toGo = (r) => (r.targetMinor > r.savedMinor ? __("{amount} to go", { amount: fmt(r.targetMinor - r.savedMinor, r.currency) }) : __("Target reached"));
+const BOX_COLORS = ["#5b2a86", "#8a5cb8", "#b79ad6", "#c9a86a", "#7d6f99"];
+// what each account holds; in another currency an allocation is only shown, not added (ADR 0011)
+const heldIn = (r, accId) => ((r.split || []).find((s) => s.accountId === accId) || {}).amountMinor || 0;
+// One reserve: saved (of its target, if it has one), with the bar split by the accounts holding the money.
+function reserveCard(r) {
+  const held = (r.split || []).filter((s) => s.amountMinor > 0), own = held.filter((s) => s.currency === r.currency);
+  const target = r.targetMinor > 0, scale = (target ? Math.max(r.targetMinor, r.savedMinor) : r.savedMinor) || 1;
+  const segs = own.map((s, i) => `<i style="width:${s.amountMinor / scale * 100}%;background:${BOX_COLORS[i % BOX_COLORS.length]}"></i>`).join("");
+  const legend = held.map((s) => { const i = own.indexOf(s); return `<small>${i >= 0 ? `<b class="dot" style="background:${BOX_COLORS[i % BOX_COLORS.length]}"></b>` : ""}${esc(accName(s.accountId))} ${fmt(s.amountMinor, s.currency)}</small>`; }).join("");
+  return `<button type="button" class="tcard gcard" data-detail-reserve="${esc(r.id)}">
+    <span class="thead"><b>${esc(r.name)}</b><small>${esc(r.targetDate ? __("by {date}", { date: dayLabel(r.targetDate) }) : "")}</small></span>
+    <span class="bamount"><b>${fmt(r.savedMinor, r.currency)}</b>${target ? ` <small>${esc(__("of {limit}", { limit: fmt(r.targetMinor, r.currency) }))}</small>` : ""}</span>
+    <span class="stack">${segs}</span>
+    ${target ? `<span class="tfoot"><span>${esc(toGo(r))}</span></span>` : ""}
+    <span class="boxlegend">${legend || `<small>${esc(__("No allocations yet"))}</small>`}</span></button>`;
+}
+function screenReserves(v) {
+  const rs = state.data.reserves, accs = state.data.accounts;
+  // per currency: how much is set aside, and what the accounts have left over
+  const curs = [...new Set(rs.map((r) => r.currency))];
+  const totals = curs.map((c) => {
+    const saved = rs.filter((r) => r.currency === c).reduce((n, r) => n + r.savedMinor, 0), free = accs.filter((a) => a.currency === c).reduce((n, a) => n + a.freeMinor, 0);
+    return `<div class="totcard"><span class="lab">${esc(__("Reserved"))}</span><b>${fmt(saved, c)}</b><small>${esc(__("Free {amount}", { amount: fmt(free, c) }))}</small></div>`;
+  }).join("");
+  v.innerHTML = `${totals ? `<div class="totals">${totals}</div>` : ""}
+    <section class="tsection"><div class="tgrid">${rs.map(reserveCard).join("")}${addTile("newReserve", __("New reserve"))}</div></section>`;
+  $("#newReserve").addEventListener("click", () => openReserveDialog());
+  bindDetails(v);
+}
+// a reserve's allocations, newest first; with p, only those dated in it
+function resAllocs(id, p) {
+  return state.data.allocations.filter((a) => a.reserveId === id && (!p || (a.date >= p.start && a.date <= p.end)))
+    .sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")) || (b.createdAt || "").localeCompare(a.createdAt || ""));
+}
+// put in and taken out, per currency in minor units (the shape totalsHTML shows)
+function allocTotals(list) {
+  const out = {}, inn = {};
+  list.forEach((a) => { const m = a.amountMinor < 0 ? out : inn; m[a.currency] = (m[a.currency] || 0) + Math.abs(a.amountMinor); });
+  return { out, in: inn };
+}
+function allocRow(a) {
+  const out = a.amountMinor < 0;
+  return `<li><button type="button" class="feedrow" data-edit-alloc="${esc(a.id)}">
+      <span class="ficon t-transfer" aria-hidden="true">${typeIcon(out ? "release" : "allocate")}</span>
+      <span class="fmain"><span class="ftitle">${esc(a.note || (out ? __("Take out") : __("Put in")))}</span><span class="fsub"><span class="fwhen">${esc(dayLabel(a.date))}</span>${esc(accName(a.accountId))}${a.transactionTemplateId ? " · " + esc(__("Template")) : ""}</span></span>
+      <span class="famt move">${out ? "−" : "+"}${esc(fmt(Math.abs(a.amountMinor), a.currency))}</span></button></li>`;
+}
+// One reserve: where its money is, what to do with it, and its allocations in a period to page through.
+function screenReserve(v) {
+  const { params } = hashParts(), r = resById(params.get("id"));
+  if (!r) { location.hash = "#reserves"; return; }
+  const { mode, p } = pagePeriod(params);
+  $("#pageTitle").textContent = r.name;
+  const all = resAllocs(r.id), inP = resAllocs(r.id, p), sums = allocTotals(all), holds = (r.split || []).some((s) => s.amountMinor > 0);
+  const tile = (lab, val, sub) => `<div class="totcard"><span class="lab">${esc(lab)}</span><b>${val}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
+  const money = (m) => Object.entries(m).map(([c, n]) => esc(fmt(n, c))).join("<br>");
+  const tiles = tile(__("Allocations"), esc(String(all.length)), all.length ? __("Since {date}", { date: plainDay(all[all.length - 1].date) }) : "")
+    + (Object.keys(sums.in).length ? tile(__("Put in"), money(sums.in)) : "") + (Object.keys(sums.out).length ? tile(__("Taken out"), money(sums.out)) : "");
+  v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#reserves">‹ ${esc(__("Reserves"))}</a><button type="button" class="smallbtn" id="resEdit">${esc(__("Edit"))}</button></div>
+    <div class="tgrid tagbudget">${reserveCard(r)}</div>
+    <div class="resactions"><button type="button" class="primarybtn" id="resIn">${esc(__("Put in"))}</button><button type="button" class="smallbtn" id="resOut" ${holds ? "" : "disabled"}>${esc(__("Take out"))}</button><button type="button" class="smallbtn" id="resUse" ${holds ? "" : "disabled"}>${esc(__("Use"))}</button><button type="button" class="smallbtn" id="resDone" ${holds ? "" : "disabled"}>${esc(__("Complete"))}</button></div>
+    <div class="totals">${tiles}</div>
+    <section class="tsection">${periodBar(mode, p)}
+    ${inP.length ? `<div class="psum"><span>${esc(__("{n} allocation(s)", { n: inP.length }))}</span><span class="amts">${[...sumParts(allocTotals(inP).in, "+", "move"), ...sumParts(allocTotals(inP).out, "−", "move")].join(" ")}</span></div>
+      <section class="panel feedpanel"><ul class="feed">${inP.map(allocRow).join("")}</ul></section>` : `<div class="empty">${esc(__("No allocations in this period."))}</div>`}</section>`;
+  bindPeriodBar(v, mode, p, (m, at) => reserveURL(r.id, m, at));
+  $("#resEdit").addEventListener("click", () => openReserveDialog(r.id));
+  $("#resIn").addEventListener("click", () => openAllocDialog(r.id, "in"));
+  $("#resOut").addEventListener("click", () => openAllocDialog(r.id, "out"));
+  $("#resUse").addEventListener("click", () => openAllocDialog(r.id, "use"));
+  $("#resDone").addEventListener("click", () => completeReserve(r));
+  bindDetails(v);
+}
+function openReserveDialog(editId) {
+  const r = editId ? resById(editId) : null, cur = (r && r.currency) || defCur();
+  openDialog(r ? __("Edit reserve") : __("New reserve"), dialogForm(
+    field("Name", `<input name="name" required maxlength="100" placeholder="${esc(__("House fund"))}" value="${r ? esc(r.name) : ""}">`) +
+    field("Currency", `<select name="currency" required>${currencyOptions(cur)}</select>`) +
+    field(N_("Target amount"), `<input name="target" type="number" step="any" min="0.01" placeholder="${esc(__("Optional"))}" value="${r && r.targetMinor ? decimal(r.targetMinor, r.currency) : ""}">`) +
+    field("Target date", `<input name="targetDate" type="date" value="${r ? esc(r.targetDate || "") : ""}">`),
+    r ? __("Save changes") : __("Add reserve"),
+    r ? `<button type="button" class="smallbtn danger" id="dlgDelRes">${esc(__("Delete"))}</button>` : ""));
+  onDlg("dlgDelRes", () => deleteReserve(r));
+  $("#dialogForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target).entries()), c = (f.currency || "").toUpperCase();
+    const body = { name: f.name.trim(), currency: c, targetDate: f.targetDate || "" };
+    if (f.target) body.targetMinor = toMinor(f.target, c);
+    try {
+      if (r) { await put("/api/reserves/" + r.id, body); msg(__("Reserve updated.")); }
+      else { const n = await post("/api/reserves", body); msg(__("Reserve added.")); location.hash = reserveURL(n.id, tagRange(), ""); }
+      $("#dialog").close(); await load();
+    } catch (err) { errMsg(err); }
+  });
+}
+// deleting a reserve takes its allocations and allocation templates with it; say how many first
+async function deleteReserve(r) {
+  const n = state.data.allocations.filter((a) => a.reserveId === r.id).length;
+  const m = state.data.transactionTemplates.filter((tp) => tp.template.type === "allocate" && tp.template.reserveId === r.id).length;
+  if (!confirm(__("Delete {name}? Its {n} allocation(s) and {m} template(s) are deleted too. Your accounts and transactions stay as they are.", { name: r.name, n, m }))) return;
+  try { await api("/api/reserves/" + r.id, { method: "DELETE" }); msg(__("Deleted.")); location.hash = "#reserves"; await load(); } catch (e) { errMsg(e); }
+}
+async function completeReserve(r) {
+  if (!confirm(__("Take everything out of {name}? The money stays in its accounts, free to spend.", { name: r.name }))) return;
+  try { await post("/api/reserves/" + r.id + "/complete", { date: state.data.today }); msg(__("{name} completed.", { name: r.name })); await load(); } catch (e) { errMsg(e); }
+}
+// dir: "in" puts money in, "out" takes it out, "use" takes it out and then records the spending
+// (two separate records: spending never changes a reserve). editId: an allocation to fix.
+function openAllocDialog(reserveId, dir, editId) {
+  const a = editId ? state.data.allocations.find((x) => x.id === editId) : null;
+  const r = resById(a ? a.reserveId : reserveId);
+  if (!r) return;
+  const d = a ? (a.amountMinor < 0 ? "out" : "in") : dir;
+  // taking out offers only the accounts that hold some of it
+  const accs = d === "in" || a ? accountsByUse() : accountsByUse().filter((x) => heldIn(r, x.id) > 0);
+  const opt = (x) => `<option value="${esc(x.id)}" ${a && a.accountId === x.id ? "selected" : ""}>${esc(d === "in" || a ? __("{account} · {amount} free", { account: x.name, amount: fmt(x.freeMinor, x.currency) }) : __("{account} · holds {amount}", { account: x.name, amount: fmt(heldIn(r, x.id), x.currency) }))}</option>`;
+  const DIR_L = { in: N_("Put in"), out: N_("Take out") };
+  const title = a ? __("Edit allocation") : d === "use" ? __("Use from {name}", { name: r.name }) : d === "in" ? __("Put in {name}", { name: r.name }) : __("Take out of {name}", { name: r.name });
+  openDialog(title, dialogForm(
+    (a ? field("Type", `<select name="dir">${enumOptions(DIR_L, ["in", "out"], d)}</select>`) : "") +
+    field("Account", `<select name="accountId" required>${accs.map(opt).join("")}</select>`) +
+    field("Amount", `<input name="amount" type="number" step="any" min="0.01" required inputmode="decimal" value="${a ? decimal(Math.abs(a.amountMinor), a.currency) : ""}">`) +
+    field("Date", `<input name="date" type="date" required value="${a ? esc(a.date) : state.data.today}">`) +
+    field("Title", `<input name="note" maxlength="200" value="${a ? esc(a.note || "") : ""}">`, "wide"),
+    a ? __("Save changes") : d === "use" ? __("Take out and add the spending") : __(DIR_L[d]),
+    a ? `<button type="button" class="smallbtn danger" id="dlgDelAlloc">${esc(__("Delete"))}</button>` : ""));
+  onDlg("dlgDelAlloc", async () => {
+    if (!confirm(__("Delete this allocation? To undo a decision, add a new one instead."))) return;
+    try { await api("/api/allocations/" + a.id, { method: "DELETE" }); msg(__("Deleted.")); await load(); } catch (e) { errMsg(e); }
+  });
+  $("#dialogForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target).entries()), cur = accCur(f.accountId), minor = toMinor(f.amount, cur);
+    const takeOut = a ? f.dir === "out" : d !== "in";
+    if (!a && takeOut && minor > heldIn(r, f.accountId)) { // the server refuses this too; say it with the amount first
+      msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: r.name, amount: fmt(heldIn(r, f.accountId), cur), account: accName(f.accountId) }), "error"); return;
+    }
+    const body = { accountId: f.accountId, amountMinor: takeOut ? -minor : minor, currency: cur, date: f.date, note: f.note || "", memo: a ? a.memo || "" : "" };
+    try {
+      if (a) { await put("/api/allocations/" + a.id, body); msg(__("Allocation updated.")); }
+      else { await post("/api/reserves/" + r.id + "/allocations", body); msg(__("Saved.")); }
+      $("#dialog").close(); await load();
+      if (d === "use") openDrawer("expense", "", { accountId: f.accountId, amountMinor: minor, currency: cur, note: f.note || r.name });
+    } catch (err) { errMsg(err); }
+  });
 }
 
 // Settings: sections of label | control rows; on wide screens a sticky list of the sections.
@@ -1173,19 +1295,10 @@ function screenSettings(v) {
 }
 
 /* ---------- drawer, dialogs, actions ---------- */
-const isGoal = (t) => t.kind === "goal";
-const isDecision = (type) => type === "allocate";
-// tagOptions lists the tags pick() accepts; money boxes (goal tags) are only for allocations.
-function tagOptions(sel, pick, allowNone = true) {
-  const tags = state.data.tags.filter(pick || (() => true));
-  const opts = tags.map((t) => `<option value="${esc(t.id)}" ${t.id === sel ? "selected" : ""}>${esc(t.name)}${pick ? "" : ` (${esc(lbl(TAGKIND_L, t.kind))})`}</option>`).join("");
-  if (allowNone) return `<option value="">${esc(__("— none —"))}</option>` + opts;
-  return opts || `<option value="">${esc(__("No money boxes yet."))}</option>`;
-}
 // own accounts, the most used in the last 90 days first; ties keep your order
 function accountsByUse() {
   const since = addDays(state.data.today, -90), n = {};
-  state.data.transactions.forEach((t) => { if (t.date >= since) [t.accountId, t.fromAccountId, t.toAccountId].forEach((id) => { if (id) n[id] = (n[id] || 0) + 1; }); });
+  state.data.transactions.forEach((t) => { if (t.date >= since) [t.fromAccountId, t.toAccountId].forEach((id) => { if (id) n[id] = (n[id] || 0) + 1; }); });
   return state.data.accounts.map((a, i) => ({ a, n: n[a.id] || 0, i })).sort((x, y) => y.n - x.n || x.i - y.i).map((x) => x.a);
 }
 const accOption = (a, sel) => `<option value="${esc(a.id)}" ${a.id === sel ? "selected" : ""}>${esc(a.name)} (${esc(a.currency)})</option>`;
@@ -1207,16 +1320,16 @@ function refreshToAccounts(sel) {
 }
 // Categories are toggles: a transaction can have several (ADR 0010).
 function drawCats(sel, box = $("#fCats")) {
-  const cats = state.data.tags.filter((t) => !isGoal(t));
+  const cats = state.data.tags;
   box.innerHTML = cats.length ? cats.map((t) => `<button type="button" data-cat="${esc(t.id)}" aria-pressed="${sel.includes(t.id)}">${esc(t.name)}</button>`).join("")
     : `<small class="muted">${esc(__("No categories yet."))}</small>`;
   box.querySelectorAll("[data-cat]").forEach((b) => b.addEventListener("click", () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
 }
 const pickedCats = (box = $("#fCats")) => [...box.querySelectorAll("[data-cat][aria-pressed=true]")].map((b) => b.dataset.cat);
-// what names an entry in quick picks: its title, else its tags, payee, accounts or money box
+// what names an entry in quick picks: its title, else its tags, payee or accounts
 function pickLabel(t) {
   const k = flow(t), ext = namedExt(t);
-  return t.note || (k === "allocate" ? tagName(t.tagId) : k === "transfer" ? `${accName(t.fromAccountId)} → ${accName(t.toAccountId)}`
+  return t.note || (k === "transfer" ? `${accName(t.fromAccountId)} → ${accName(t.toAccountId)}`
     : txnCats(t).map(tagName).join(" · ") || (ext ? accName(ext) : ""));
 }
 // when an entry was made: its entry time, or (entered before that was recorded) its date and time
@@ -1261,7 +1374,7 @@ const setSel = (sel, v) => { if (v && [...sel.options].some((o) => o.value === v
 function applyPick(p, btn) {
   const t = p.t, mode = flow(t), el = $("#txnForm").elements;
   setSel(el.accountId, mode === "transfer" ? t.fromAccountId : ownAcc(t));
-  setTxnType(mode, mode === "allocate" ? t.tagId : txnCats(t));
+  setTxnType(mode, txnCats(t));
   if (mode === "transfer") refreshToAccounts(t.toAccountId);
   if (mode === "expense" || mode === "income") setSel($("#fExt"), extAcc(t) || EXT_ID);
   el.amount.value = decimal(t.amountMinor, t.currency);
@@ -1270,10 +1383,10 @@ function applyPick(p, btn) {
   el.amount.focus();
   el.amount.select();
 }
-// setTxnType shows only the fields the type uses. tags: the money box id, or the category ids; kept when left out
+// setTxnType shows only the fields the type uses. tags: the category ids; kept when left out
 function setTxnType(type, tags) {
   state.txnType = type;
-  const decision = isDecision(type), transfer = type === "transfer";
+  const transfer = type === "transfer";
   document.querySelectorAll("#typeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.type === type));
   $("#fAccountLab").textContent = transfer ? __("From account") : __("Account");
   $("#fToWrap").hidden = !transfer;
@@ -1281,14 +1394,8 @@ function setTxnType(type, tags) {
   const flowMode = type === "expense" || type === "income";
   $("#fExtWrap").hidden = !flowMode || state.data.externals.length < 2;
   $("#fExtLab").textContent = type === "income" ? __("Received from") : __("Paid to");
-  $("#fTagWrap").hidden = !decision;
   $("#fCatsWrap").hidden = !flowMode;
-  if (decision) $("#fTag").innerHTML = tagOptions(tags !== undefined ? tags : $("#fTag").value, isGoal, false);
-  else if (tags !== undefined || !$("#fCats").childElementCount) drawCats(tags || []);
-  $("#fTag").required = decision;
-  const amount = $("#txnForm").elements.amount;
-  if (decision) amount.removeAttribute("min"); else amount.min = "0.01";
-  $("#fAmtNote").hidden = !decision;
+  if (tags !== undefined || !$("#fCats").childElementCount) drawCats(tags || []);
   refreshToAccounts($("#fToAccount").value);
   syncActions();
 }
@@ -1316,7 +1423,8 @@ $("#fSaveTpl").addEventListener("click", () => {
   const { body } = formBody();
   openTemplateDialog(null, { name: body.note, template: body, schedule: { frequency: "never" } });
 });
-function openDrawer(type, tag) {
+// fill: { accountId, amountMinor, currency, note } to start from (Use on a reserve's page)
+function openDrawer(type, tag, fill) {
   state.editingTxn = null;
   $("#fDelete").hidden = true;
   fillSelects();
@@ -1326,11 +1434,12 @@ function openDrawer(type, tag) {
   const now = zoneParts(new Date(), deviceTZ()), el = $("#txnForm").elements;
   el.date.value = now.date; el.time.value = now.time; $("#fTz").innerHTML = zoneOptions(deviceTZ());
   syncTz();
-  setTxnType(type || "expense", type === "allocate" ? tag : tag ? [tag] : []);
-  state.quickOn = !tag;
-  drawQuick(tag ? [] : quickPicks(state.txnType));
+  setTxnType(type || "expense", tag ? [tag] : []);
+  state.quickOn = !tag && !fill;
+  drawQuick(state.quickOn ? quickPicks(state.txnType) : []);
+  if (fill) { setSel(el.accountId, fill.accountId); el.amount.value = decimal(fill.amountMinor, fill.currency); el.note.value = fill.note || ""; }
   $("#fPlannedNote").hidden = true;
-  $("#drawerTitle").textContent = type === "allocate" ? __("Allocate to money box") : __("Add transaction");
+  $("#drawerTitle").textContent = __("Add transaction");
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
 }
 function openEditTxn(id) {
@@ -1342,7 +1451,7 @@ function openEditTxn(id) {
   form.reset();
   const mode = flow(t);
   form.elements.accountId.value = mode === "transfer" ? t.fromAccountId : ownAcc(t);
-  setTxnType(mode, mode === "allocate" ? t.tagId : txnCats(t));
+  setTxnType(mode, txnCats(t));
   if (mode === "transfer") refreshToAccounts(t.toAccountId);
   if (mode === "expense" || mode === "income") $("#fExt").value = extAcc(t);
   form.elements.amount.value = decimal(t.amountMinor, t.currency);
@@ -1402,7 +1511,6 @@ function formBody() {
     Object.assign(body, { type: "transfer", accountId: "", fromAccountId: type === "expense" ? f.accountId : ext, toAccountId: type === "expense" ? ext : f.accountId });
     body.tagIds = pickedCats();
   } else if (type === "transfer") { body.fromAccountId = f.accountId; body.toAccountId = f.toAccountId; body.accountId = ""; }
-  else if (f.tagId) body.tagId = f.tagId;
   return { f, cur, type, body };
 }
 $("#txnForm").addEventListener("submit", async (e) => {
@@ -1410,10 +1518,6 @@ $("#txnForm").addEventListener("submit", async (e) => {
   const { f, cur, type, body } = formBody();
   if (type === "transfer" && !f.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to."), "error"); return; }
   if (toMinor(f.amount, cur) === 0) { msg(__("Enter an amount other than zero."), "error"); return; }
-  if (type === "allocate" && toMinor(f.amount, cur) < 0) { // the server refuses this too; say it with the amount first
-    const held = state.data.transactions.filter((t) => t.id !== state.editingTxn && t.type === "allocate" && t.state === "posted" && t.accountId === f.accountId && t.tagId === f.tagId).reduce((n, t) => n + t.amountMinor, 0);
-    if (held + toMinor(f.amount, cur) < 0) { msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: tagName(f.tagId), amount: fmt(Math.max(0, held), cur), account: accName(f.accountId) }), "error"); return; }
-  }
   try {
     if (state.editingTxn) { await put("/api/transactions/" + state.editingTxn, body); msg(__("Transaction updated.")); }
     else { await post("/api/transactions", body); msg(__("Saved.")); }
@@ -1467,52 +1571,35 @@ function calendarStart(cycle, iso) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 const moneyField = (label, name, minor, cur, cls) => field(label, `<span class="moneyrow"><select name="${name}Cur" aria-label="${esc(__("Currency"))}">${currencyOptions(cur)}</select><input name="${name}" type="number" step="any" min="0.01" value="${minor != null ? decimal(minor, cur) : ""}"></span>`, cls);
-// What a tag is: a category, a budget (a category with a limit) or a money box (a goal tag).
-const TAGROLE_L = { category: N_("Category"), budget: N_("Budget"), goal: N_("Money box") };
-const tagRole = (t) => (t.kind === "goal" ? "goal" : t.limitMinor !== undefined ? "budget" : "category");
-// kind: "category", "goal", or "budget" (a category with a limit: an existing one, or a new one).
-// Only editing offers Type, to turn any of the three into another. Switching a used tag between category
-// and money box drops its uses (ADR 0004): a warning lists them first, and saving sends dropUses.
+// What a tag is: a category, or a budget (a category with a limit, ADR 0004).
+const TAGROLE_L = { category: N_("Category"), budget: N_("Budget") };
+const tagRole = (t) => (t.limitMinor !== undefined ? "budget" : "category");
+// kind: "category", or "budget" (a category with a limit: an existing one, or a new one).
+// Only editing offers Type, to turn one into the other.
 function openTagDialog(kind, editId) {
   const t = editId ? state.data.tags.find((x) => x.id === editId) : null;
-  const newBudget = !t && kind === "budget", free = state.data.tags.filter((x) => x.kind === "category" && x.limitMinor === undefined);
-  const k = t ? t.kind : newBudget ? "category" : kind || "category", cur = (t && t.currency) || defCur();
-  const hasBudget = !!(t && t.limitMinor !== undefined), role = t ? tagRole(t) : newBudget ? "budget" : k;
-  const usesTxns = t ? state.data.transactions.filter((x) => x.tagId === t.id || txnCats(x).includes(t.id)).sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || ""))) : [];
-  const usesTpls = t ? state.data.transactionTemplates.filter((x) => x.template.tagId === t.id || (x.template.tagIds || []).includes(t.id)) : [];
-  const used = usesTxns.length + usesTpls.length > 0;
+  const newBudget = !t && kind === "budget", free = state.data.tags.filter((x) => x.limitMinor === undefined);
+  const cur = (t && t.currency) || defCur();
+  const hasBudget = !!(t && t.limitMinor !== undefined), role = t ? tagRole(t) : newBudget ? "budget" : "category";
   const roleOpts = Object.keys(TAGROLE_L).map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${esc(__(TAGROLE_L[r]))}</option>`).join("");
-  // what switching between category and money box would drop, with the latest few to look up first
-  const SHOWN = 5, dropWarn = !used ? "" : `<div class="formnote dropwarn f-cross" role="alert">
-    <b>${esc(k === "goal" ? __("Switching deletes this money box's {n} allocation(s).", { n: usesTxns.length }) : __("Switching takes this tag off {n} transaction(s); the transactions are kept.", { n: usesTxns.length }))}</b>
-    ${usesTpls.length ? `<span>${esc(k === "goal" ? __("{n} template(s) that allocate to it are deleted too.", { n: usesTpls.length }) : __("{n} template(s) lose the tag too.", { n: usesTpls.length }))}</span>` : ""}
-    ${usesTxns.length ? `<ul class="droplist">${usesTxns.slice(0, SHOWN).map((x) => `<li><span>${esc(plainDay(x.date))}</span><span>${esc(txnTitle(x))}</span><span class="amt">${esc(amountText(x))}</span></li>`).join("")}</ul>
-      <a href="#transactions?tag=${esc(encodeURIComponent(t.id))}" id="dropAll">${esc(usesTxns.length > SHOWN ? __("See all {n} in Transactions", { n: usesTxns.length }) : __("See them in Transactions"))}</a>` : ""}</div>`;
   const cyc = (t && t.cycle) || "monthly", every = (t && t.cycleEvery) || 1;
   const preset = !hasBudget ? "monthly:1" : cyc === "range" ? "range" : BUDGET_PRESETS.some(([c, n]) => c === cyc && n === every) ? `${cyc}:${every}` : "custom";
   const presetOpts = BUDGET_PRESETS.map(([c, n]) => `<option value="${c}:${n}" ${preset === `${c}:${n}` ? "selected" : ""}>${esc(cycleName(c, n))}</option>`).join("")
     + `<option value="custom" ${preset === "custom" ? "selected" : ""}>${esc(__("Custom…"))}</option><option value="range" ${preset === "range" ? "selected" : ""}>${esc(__("Date range"))}</option>`;
-  openDialog(t ? (k === "goal" ? __("Edit money box") : hasBudget ? __("Edit budget") : __("Edit category")) : newBudget ? __("New budget") : k === "goal" ? __("New money box") : __("New category"), dialogForm(
+  openDialog(t ? (hasBudget ? __("Edit budget") : __("Edit category")) : newBudget ? __("New budget") : __("New category"), dialogForm(
     (newBudget ? field("Category", `<select name="catId">${free.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}<option value="">${esc(__("New category"))}</option></select>`) : "") +
     (t ? field("Type", `<select name="role">${roleOpts}</select>`) : `<input type="hidden" name="role" value="${esc(role)}">`) +
-    field("Name", `<input name="name" required maxlength="100" placeholder="${esc(k === "goal" ? __("House fund") : __("Food"))}" value="${t ? esc(t.name) : ""}">`, "f-name") +
-    dropWarn +
+    field("Name", `<input name="name" required maxlength="100" placeholder="${esc(__("Food"))}" value="${t ? esc(t.name) : ""}">`, "f-name") +
     moneyField(N_("Limit"), "limit", t && t.limitMinor, cur, "f-budget") +
     field(N_("Period"), `<select name="preset">${presetOpts}</select>`, "f-budget") +
     field(N_("Every"), `<span class="moneyrow"><input name="every" type="number" min="1" max="99" value="${every}"><select name="unit">${enumOptions(CYCLE_UNIT_L, Object.keys(CYCLE_UNIT_L), cyc === "range" ? "monthly" : cyc)}</select></span>`, "f-budget f-custom") +
     field(N_("First period starts"), `<input name="anchor" type="date" value="${t && cyc !== "range" ? esc(t.cycleStart || "") : ""}">`, "f-budget f-anchor") +
     field(N_("From"), `<input name="rangeStart" type="date" value="${t && cyc === "range" ? esc(t.cycleStart || "") : ""}">`, "f-budget f-range") +
-    field(N_("To"), `<input name="rangeEnd" type="date" value="${t && cyc === "range" ? esc(t.cycleEnd || "") : ""}">`, "f-budget f-range") +
-    moneyField(N_("Target amount"), "target", t && t.targetMinor, cur, "f-goal") +
-    field("Target date", `<input name="targetDate" type="date" value="${t ? esc(t.targetDate || "") : ""}">`, "f-goal"),
-    t ? __("Save changes") : newBudget ? __("Add budget") : k === "goal" ? __("Add money box") : __("Add category"),
-    t && t.kind === "goal" ? `<button type="button" class="smallbtn" id="dlgAlloc">${esc(__("Allocate"))}</button><button type="button" class="smallbtn" id="dlgHistory">${esc(__("History"))}</button>` : ""));
-  onDlg("dlgAlloc", () => openDrawer("allocate", t.id));
-  onDlg("dlgHistory", () => showHistory(t.id));
+    field(N_("To"), `<input name="rangeEnd" type="date" value="${t && cyc === "range" ? esc(t.cycleEnd || "") : ""}">`, "f-budget f-range"),
+    t ? __("Save changes") : newBudget ? __("Add budget") : __("Add category")));
   const form = $("#dialogForm"), el = form.elements;
-  const crossing = () => used && (el.role.value === "goal") !== (k === "goal");
   const sync = () => {
-    const goal = el.role.value === "goal", budget = el.role.value === "budget", pre = el.preset.value;
+    const budget = el.role.value === "budget", pre = el.preset.value;
     // hidden fields are disabled too, so they are neither validated nor submitted
     const show = (cls, on) => form.querySelectorAll(cls).forEach((x) => { x.hidden = !on; x.querySelectorAll("input,select").forEach((c) => { c.disabled = !on; }); });
     show(".f-name", !newBudget || !el.catId.value);
@@ -1520,23 +1607,16 @@ function openTagDialog(kind, editId) {
     show(".f-custom", budget && pre === "custom");
     show(".f-anchor", budget && pre !== "range");
     show(".f-range", budget && pre === "range");
-    show(".f-goal", goal);
-    show(".f-cross", crossing());
-    el.limit.required = budget; el.rangeStart.required = el.rangeEnd.required = budget && pre === "range"; el.target.required = goal;
+    el.limit.required = budget; el.rangeStart.required = el.rangeEnd.required = budget && pre === "range";
   };
   ["role", "preset", "catId"].forEach((n) => el[n] && el[n].addEventListener("change", sync));
   sync();
-  if ($("#dropAll")) $("#dropAll").addEventListener("click", () => $("#dialog").close());
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries());
     const into = newBudget && f.catId ? free.find((x) => x.id === f.catId) : null; // a budget on an existing category
-    const body = { name: into ? into.name : f.name.trim(), kind: f.role === "goal" ? "goal" : "category" };
-    if (crossing()) body.dropUses = true;
-    if (f.role === "goal") {
-      body.currency = f.targetCur; body.targetMinor = toMinor(f.target, f.targetCur);
-      if (f.targetDate) body.targetDate = f.targetDate;
-    } else if (f.role === "budget") {
+    const body = { name: into ? into.name : f.name.trim() };
+    if (f.role === "budget") {
       body.currency = f.limitCur; body.limitMinor = toMinor(f.limit, f.limitCur);
       if (f.preset === "range") Object.assign(body, { cycle: "range", cycleStart: f.rangeStart, cycleEnd: f.rangeEnd });
       else {
@@ -1547,7 +1627,7 @@ function openTagDialog(kind, editId) {
     }
     try {
       if (t || into) { await put("/api/tags/" + (t || into).id, body); msg(into ? __("Budget added.") : __("Tag updated.")); }
-      else { await post("/api/tags", body); msg(newBudget ? __("Budget added.") : f.role === "goal" ? __("Money box added.") : __("Category added.")); }
+      else { await post("/api/tags", body); msg(newBudget ? __("Budget added.") : __("Category added.")); }
       $("#dialog").close(); await load();
     } catch (err) { errMsg(err); }
   });
@@ -1564,9 +1644,9 @@ function openTemplateDialog(editId, draft) {
   const amt = body && body.amountMinor > 0 ? decimal(body.amountMinor, body.currency) : "";
   openDialog(tp ? __("Edit transaction template") : __("New transaction template"), dialogForm(
     field("Name", `<input name="name" required placeholder="${esc(__("Streaming"))}" value="${src ? esc(src.name || "") : ""}">`) +
-    field("Generates", `<select name="type">${enumOptions(TYPE_L, ["expense", "income", "allocate"], mode)}</select>`) +
+    field("Generates", `<select name="type">${enumOptions(TPL_TYPE_L, ["expense", "income", "allocate"], mode)}</select>`) +
     field("Account", `<select name="accountId">${acc}</select>`) +
-    field("Money box", `<select name="tagId">${tagOptions(body && body.tagId, isGoal, false)}</select>`, "f-goal") +
+    field("Reserve", `<select name="reserveId">${state.data.reserves.map((r) => `<option value="${esc(r.id)}" ${body && body.reserveId === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("") || `<option value="">${esc(__("No reserves yet."))}</option>`}</select>`, "f-res") +
     field("Amount", `<input name="amount" type="number" step="any" min="0.01" required value="${amt}">`) +
     field(N_("Frequency"), `<select name="frequency">${enumOptions(FREQ_L, ["never", "monthly", "quarterly", "yearly", "weekly", "daily"], freq)}</select>`) +
     field(N_("Expected min (variable bill, optional)"), `<input name="rangeMin" type="number" step="any" value="${rng ? decimal(rng.min, body.currency) : ""}">`, "f-range") +
@@ -1586,12 +1666,12 @@ function openTemplateDialog(editId, draft) {
   const sync = () => {
     const alloc = form.elements.type.value === "allocate", never = form.elements.frequency.value === "never";
     const show = (sel, on) => form.querySelectorAll(sel).forEach((el) => { el.hidden = !on; });
-    show(".f-goal", alloc);
+    show(".f-res", alloc);
     show(".f-cats", !alloc);
     show(".f-range", !alloc && !never);
     show(".f-sched", !never);
     show(".f-dom", ["monthly", "quarterly", "yearly"].includes(form.elements.frequency.value));
-    form.elements.tagId.required = alloc;
+    form.elements.reserveId.required = alloc;
     form.elements.startDate.required = !never;
   };
   form.elements.type.addEventListener("change", sync);
@@ -1601,7 +1681,7 @@ function openTemplateDialog(editId, draft) {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = accCur(f.accountId);
     const tpl = { accountId: f.accountId, type: f.type, amountMinor: toMinor(f.amount, cur), currency: cur, note: f.note || "" };
-    if (f.type === "allocate" && f.tagId) tpl.tagId = f.tagId;
+    if (f.type === "allocate") tpl.reserveId = f.reserveId;
     if (f.type !== "allocate") { // generates a transfer with an external side; keep a named one
       const ext = (body && flow(body) === f.type && namedExt(body)) || EXT_ID;
       Object.assign(tpl, { type: "transfer", accountId: "", fromAccountId: f.type === "expense" ? f.accountId : ext, toAccountId: f.type === "expense" ? ext : f.accountId });
@@ -1616,13 +1696,6 @@ function openTemplateDialog(editId, draft) {
       $("#dialog").close(); await load();
     } catch (err) { errMsg(err); }
   });
-}
-function showHistory(tagId) {
-  const list = state.data.transactions.filter((t) => t.tagId === tagId && t.type === "allocate")
-    .sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
-  openDialog(__("History — {name}", { name: tagName(tagId) }), list.length
-    ? table([{ t: "Date" }, { t: N_("Decision") }, { t: "Account" }, { t: "Amount", num: 1 }], list.map((t) => row([{ l: "Date", v: esc(dayLabel(t.date)) }, { l: "Decision", v: `${esc(lbl(TYPE_L, t.type))}${t.note ? " — " + esc(t.note) : ""}` }, { l: "Account", v: esc(accName(t.accountId)) }, { l: "Amount", v: esc(amountText(t)), num: 1 }])).join(""))
-    : `<p class="muted">${esc(__("No allocations yet"))}</p>`);
 }
 async function generateDue() {
   try { const r = await post("/api/generate", {}); msg(__("Generated {n} due transaction(s).", { n: r.created })); await load(); }
@@ -1652,10 +1725,10 @@ function allNotifications() {
     key: `credit:${a.id}:${month}`, rank: 2, level: a.utilisation > 1 ? "over" : "warn", icon: noteIcon("card"),
     title: __("{name} is at {pct}% of its limit", { name: a.name, pct: Math.round(a.utilisation * 100) }), body: owedText(a), open: () => openAccountDialog(a.id),
   }));
-  d.tags.filter((t) => t.targetMinor > 0).forEach((t) => {
-    const amounts = { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency) };
-    if (t.savedMinor >= t.targetMinor) out.push({ key: `goal-reached:${t.id}:${t.targetMinor}`, rank: 5, level: "good", icon: noteIcon("check"), title: __("{name} reached its target", { name: t.name }), body: __("{saved} of {target} saved", amounts), open: () => openTagDialog(null, t.id) });
-    else if (t.targetDate && t.targetDate < d.today) out.push({ key: `goal-late:${t.id}:${t.targetDate}`, rank: 4, level: "warn", icon: noteIcon("clock"), title: __("{name} passed its target date", { name: t.name }), body: __("{saved} of {target} saved; target date was {date}", { ...amounts, date: dayLabel(t.targetDate) }), open: () => openTagDialog(null, t.id) });
+  d.reserves.filter((r) => r.targetMinor > 0).forEach((r) => {
+    const amounts = { saved: fmt(r.savedMinor, r.currency), target: fmt(r.targetMinor, r.currency) }, open = () => { location.hash = reserveURL(r.id, tagRange(), ""); };
+    if (r.savedMinor >= r.targetMinor) out.push({ key: `goal-reached:${r.id}:${r.targetMinor}`, rank: 5, level: "good", icon: noteIcon("check"), title: __("{name} reached its target", { name: r.name }), body: __("{saved} of {target} saved", amounts), open });
+    else if (r.targetDate && r.targetDate < d.today) out.push({ key: `goal-late:${r.id}:${r.targetDate}`, rank: 4, level: "warn", icon: noteIcon("clock"), title: __("{name} passed its target date", { name: r.name }), body: __("{saved} of {target} saved; target date was {date}", { ...amounts, date: dayLabel(r.targetDate) }), open });
   });
   return out.sort((a, b) => a.rank - b.rank);
 }
@@ -2110,8 +2183,8 @@ async function drawUsers() {
 
 // API keys: for scripts and AI agents, each with only the permissions it needs (ADR 0008)
 const SCOPE_L = { read: N_("Read your books"), "transactions:write": N_("Add and edit transactions"), "accounts:write": N_("Add and edit accounts"),
-  "tags:write": N_("Add and edit categories and money boxes"), "templates:write": N_("Add and edit templates, generate due ones"), "settings:write": N_("Change settings") };
-const SCOPE_SHORT = { read: N_("Read"), "transactions:write": N_("Transactions"), "accounts:write": N_("Accounts"), "tags:write": N_("Tags"), "templates:write": N_("Templates"), "settings:write": N_("Settings") };
+  "tags:write": N_("Add and edit categories and budgets"), "reserves:write": N_("Add and edit reserves and their allocations"), "templates:write": N_("Add and edit templates, generate due ones"), "settings:write": N_("Change settings") };
+const SCOPE_SHORT = { read: N_("Read"), "transactions:write": N_("Transactions"), "accounts:write": N_("Accounts"), "tags:write": N_("Tags"), "reserves:write": N_("Reserves"), "templates:write": N_("Templates"), "settings:write": N_("Settings") };
 const EXPIRY_L = { 0: N_("Never"), 30: N_("30 days"), 90: N_("90 days"), 365: N_("1 year"), date: N_("On a date…") };
 async function drawKeys(created) {
   const card = $("#keysCard");
@@ -2195,7 +2268,7 @@ async function drawServer() {
 }
 
 /* ---------- routing ---------- */
-const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], tag: [N_("Category"), screenTag], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
+const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], tag: [N_("Category"), screenTag], reserves: [N_("Reserves"), screenReserves], reserve: [N_("Reserve"), screenReserve], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
 // the hash is "#screen", optionally with a query ("#transactions?q=rent")
 function hashParts() {
   const h = location.hash.replace(/^#/, ""), i = h.indexOf("?");
@@ -2203,7 +2276,8 @@ function hashParts() {
 }
 function currentScreen() {
   const h = hashParts().path;
-  if (h === "budgets" || h === "moneyboxes") return "tags"; // budgets and money boxes live on the Tags page now
+  if (h === "budgets") return "tags"; // budgets live on the Tags page
+  if (h === "moneyboxes") return "reserves"; // money boxes became reserves (ADR 0013)
   if (isAdminScreen(h) && !(state.me && state.me.isAdmin)) return "dashboard";
   return SCREENS[h] ? h : "dashboard";
 }
@@ -2213,7 +2287,7 @@ function render() {
   const admin = isAdminScreen(key);
   if (!admin) state.lastBookScreen = key;
   $("#nav").hidden = admin; $("#adminNav").hidden = !admin;
-  const navKey = key === "tag" ? "tags" : key; // a category's page belongs to Tags
+  const navKey = key === "tag" ? "tags" : key === "reserve" ? "reserves" : key; // one category's or reserve's page belongs to its list
   document.querySelectorAll("#nav a, #adminNav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === navKey));
   document.querySelectorAll("#tabbar a, #moreSheet a").forEach((a) => a.classList.toggle("on", a.dataset.tab === navKey));
   $("#tabMore").classList.toggle("on", !["dashboard", "transactions", "accounts"].includes(navKey));

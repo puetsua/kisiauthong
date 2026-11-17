@@ -19,21 +19,17 @@ func TestNormalizeTransactionRejects(t *testing.T) {
 		"unknown type":            {Type: "refund", AccountID: "acc-a"},
 		"expense without account": {Type: "expense"},
 		"expense unknown account": {Type: "expense", AccountID: "acc-nope"},
-		"expense with money box":  {Type: "expense", AccountID: "acc-b", TagID: "tag-house"},
-		"income unknown tag":      {Type: "income", AccountID: "acc-a", TagID: "tag-nope"},
+		"income unknown tag":      {Type: "income", AccountID: "acc-a", AmountMinor: 1, TagIDs: []string{"tag-nope"}},
 		"transfer missing to":     {Type: "transfer", FromAccountID: "acc-a"},
 		"transfer same account":   {Type: "transfer", FromAccountID: "acc-a", ToAccountID: "acc-a"},
 		"transfer across TWD/JPY": {Type: "transfer", FromAccountID: "acc-a", ToAccountID: "acc-jpy"},
 		"external to external":    {Type: "transfer", FromAccountID: ExternalAccountID, ToAccountID: "acc-shop"},
-		"allocate without box":    {Type: "allocate", AccountID: "acc-a"},
-		"allocate to a category":  {Type: "allocate", AccountID: "acc-a", TagID: "tag-food"},
-		"allocate on external":    {Type: "allocate", AccountID: ExternalAccountID, TagID: "tag-house"},
-		"release unknown account": {Type: "release", AccountID: "acc-nope", TagID: "tag-house"},
+		"allocate is retired":     {Type: "allocate", AccountID: "acc-a", AmountMinor: 1},
+		"release is retired":      {Type: "release", AccountID: "acc-a", AmountMinor: 1},
 		"bad state":               {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID, AmountMinor: 1, State: "maybe"},
 		"transfer of zero":        {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID},
 		"negative transfer":       {Type: "transfer", FromAccountID: "acc-b", ToAccountID: ExternalAccountID, AmountMinor: -5},
-		"allocation of zero":      {Type: "allocate", AccountID: "acc-a", TagID: "tag-house"},
-		"categories with a box":   {Type: "expense", AccountID: "acc-a", TagIDs: []string{"tag-food", "tag-house"}},
+		"a reserve as category":   {Type: "expense", AccountID: "acc-a", AmountMinor: 1, TagIDs: []string{"tag-food", "rsv-house"}},
 		"unknown category":        {Type: "expense", AccountID: "acc-a", AmountMinor: 1, TagIDs: []string{"tag-nope"}},
 	}
 	for name, tx := range cases {
@@ -50,11 +46,11 @@ func TestNormalizeTransactionRejects(t *testing.T) {
 func TestExpenseAndIncomeBecomeTransfers(t *testing.T) {
 	d := seededData(t)
 	d.Accounts = append(d.Accounts, Account{ID: "acc-shop", Name: "Shop", Kind: "external"})
-	exp := Transaction{Type: "expense", AccountID: "acc-jpy", Currency: "TWD", TagID: "tag-travel", AmountMinor: 500}
+	exp := Transaction{Type: "expense", AccountID: "acc-jpy", Currency: "TWD", TagIDs: []string{"tag-travel", "tag-travel"}, AmountMinor: 500}
 	if err := d.normalizeTransaction(&exp); err != nil {
 		t.Fatal(err)
 	}
-	if exp.Type != "transfer" || exp.FromAccountID != "acc-jpy" || exp.ToAccountID != ExternalAccountID || exp.AccountID != "" || exp.Currency != "JPY" || exp.TagID != "" || len(exp.TagIDs) != 1 || exp.TagIDs[0] != "tag-travel" {
+	if exp.Type != "transfer" || exp.FromAccountID != "acc-jpy" || exp.ToAccountID != ExternalAccountID || exp.AccountID != "" || exp.Currency != "JPY" || len(exp.TagIDs) != 1 || exp.TagIDs[0] != "tag-travel" {
 		t.Errorf("expense shorthand: %+v", exp)
 	}
 	named := Transaction{Type: "expense", AccountID: "acc-b", ToAccountID: "acc-shop", AmountMinor: 500}
@@ -70,44 +66,64 @@ func TestExpenseAndIncomeBecomeTransfers(t *testing.T) {
 	if err := d.normalizeTransaction(&tr); err != nil || tr.Currency != "JPY" {
 		t.Errorf("own JPY -> external: %v %+v", err, tr)
 	}
-	al := Transaction{Type: "allocate", AccountID: "acc-a", TagID: "tag-house", State: "planned", AmountMinor: 500}
-	if err := d.normalizeTransaction(&al); err != nil || al.State != "posted" || al.Currency != "TWD" {
-		t.Errorf("allocate: %v %+v", err, al)
-	}
 }
 
 func TestSignedAllocations(t *testing.T) {
 	d := seededData(t)
-	held := d.Allocated("acc-a", "tag-furniture") // the seed keeps part of Furniture in Savings A
+	held := d.ReservedIn("rsv-furniture", "acc-a", "") // the seed keeps part of Furniture in Savings A
 	if held <= 0 {
 		t.Fatalf("seed should hold Furniture in acc-a, got %d", held)
 	}
-	rel := Transaction{Type: "release", AccountID: "acc-a", TagID: "tag-furniture", AmountMinor: 1000}
-	if err := d.normalizeTransaction(&rel); err != nil || rel.Type != "allocate" || rel.AmountMinor != -1000 {
-		t.Errorf("release shorthand: %v %+v", err, rel)
+	in := Allocation{ReserveID: "rsv-house", AccountID: "acc-jpy", AmountMinor: 500, Currency: "TWD", Date: "2026-11-01"}
+	if err := d.normalizeAllocation(&in); err != nil || in.Currency != "JPY" {
+		t.Errorf("the account decides the currency: %v %+v", err, in)
 	}
-	out := Transaction{Type: "allocate", AccountID: "acc-a", TagID: "tag-furniture", AmountMinor: -held}
-	if err := d.normalizeTransaction(&out); err != nil {
+	out := Allocation{ReserveID: "rsv-furniture", AccountID: "acc-a", AmountMinor: -held, Date: "2026-11-01"}
+	if err := d.normalizeAllocation(&out); err != nil {
 		t.Errorf("taking out exactly what is held: %v", err)
 	}
-	over := Transaction{Type: "allocate", AccountID: "acc-a", TagID: "tag-furniture", AmountMinor: -held - 1}
-	if err := d.normalizeTransaction(&over); err == nil || !strings.Contains(err.Error(), "more than is allocated") {
+	over := Allocation{ReserveID: "rsv-furniture", AccountID: "acc-a", AmountMinor: -held - 1, Date: "2026-11-01"}
+	if err := d.normalizeAllocation(&over); err == nil || !strings.Contains(err.Error(), "cannot take out more") {
 		t.Errorf("over-release accepted: %v", err)
 	}
-	if err := (&Transaction{Type: "allocate", AccountID: "acc-c", TagID: "tag-furniture", AmountMinor: -1}).normalizeOn(d); err == nil {
-		t.Errorf("releasing from an account that holds none of the money box was accepted")
+	for name, a := range map[string]Allocation{
+		"from an account holding none": {ReserveID: "rsv-furniture", AccountID: "acc-c", AmountMinor: -1, Date: "2026-11-01"},
+		"zero":                         {ReserveID: "rsv-house", AccountID: "acc-a", Date: "2026-11-01"},
+		"unknown reserve":              {ReserveID: "rsv-nope", AccountID: "acc-a", AmountMinor: 1, Date: "2026-11-01"},
+		"a tag as reserve":             {ReserveID: "tag-food", AccountID: "acc-a", AmountMinor: 1, Date: "2026-11-01"},
+		"external account":             {ReserveID: "rsv-house", AccountID: ExternalAccountID, AmountMinor: 1, Date: "2026-11-01"},
+		"no date":                      {ReserveID: "rsv-house", AccountID: "acc-a", AmountMinor: 1},
+		"long note":                    {ReserveID: "rsv-house", AccountID: "acc-a", AmountMinor: 1, Date: "2026-11-01", Memo: strings.Repeat("x", maxMemoRunes+1)},
+	} {
+		if err := d.normalizeAllocation(&a); err == nil {
+			t.Errorf("%s: accepted %+v", name, a)
+		}
 	}
 	// editing an allocation is checked against the others, not itself
-	var existing Transaction
-	for _, x := range d.Transactions {
-		if x.Type == "allocate" && x.AccountID == "acc-a" && x.TagID == "tag-furniture" && x.AmountMinor > 0 {
+	var existing Allocation
+	for _, x := range d.Allocations {
+		if x.ReserveID == "rsv-furniture" && x.AccountID == "acc-a" && x.AmountMinor > 0 {
 			existing = x
 		}
 	}
 	edit := existing
 	edit.AmountMinor = -(held - existing.AmountMinor) // flip it so the pair ends at exactly zero
-	if err := d.normalizeTransaction(&edit); err != nil {
+	if err := d.normalizeAllocation(&edit); err != nil {
 		t.Errorf("edit excluding itself: %v", err)
+	}
+}
+
+func TestNormalizeReserve(t *testing.T) {
+	target, zero := int64(100), int64(0)
+	for _, r := range []Reserve{{Name: "Trip", Currency: "twd"}, {Name: "House", Currency: "TWD", TargetMinor: &target, TargetDate: "2027-12-31"}} {
+		if err := normalizeReserve(&r); err != nil || r.Currency != "TWD" {
+			t.Errorf("%+v: %v", r, err)
+		}
+	}
+	for _, r := range []Reserve{{Name: " ", Currency: "TWD"}, {Name: "x"}, {Name: "x", Currency: "TWD", TargetMinor: &zero}, {Name: "x", Currency: "TWD", TargetDate: "2027-13-01"}} {
+		if err := normalizeReserve(&r); err == nil {
+			t.Errorf("accepted %+v", r)
+		}
 	}
 }
 
@@ -169,9 +185,17 @@ func TestNormalizeTemplate(t *testing.T) {
 	if err := d.normalizeTemplate(&b); err != nil || b.Type != "transfer" || b.FromAccountID != ExternalAccountID || b.ToAccountID != "acc-a" || b.Currency != "TWD" {
 		t.Errorf("income template: %v %+v", err, b)
 	}
-	bad := TemplateBody{Type: "allocate", AccountID: "acc-a", TagID: "tag-food"}
+	bad := TemplateBody{Type: "allocate", AccountID: "acc-a", ReserveID: "tag-food"}
 	if err := d.normalizeTemplate(&bad); err == nil {
-		t.Errorf("allocate template to a category accepted")
+		t.Errorf("allocation template to a category accepted")
+	}
+	good := TemplateBody{Type: "allocate", AccountID: "acc-jpy", ReserveID: "rsv-house", TagIDs: []string{"tag-food"}, AmountMinor: 100}
+	if err := d.normalizeTemplate(&good); err != nil || good.Currency != "JPY" || good.TagIDs != nil {
+		t.Errorf("allocation template: %v %+v", err, good)
+	}
+	tr := TemplateBody{Type: "expense", AccountID: "acc-a", ReserveID: "rsv-house", AmountMinor: 100}
+	if err := d.normalizeTemplate(&tr); err != nil || tr.ReserveID != "" {
+		t.Errorf("a transaction template keeps no reserve: %v %+v", err, tr)
 	}
 }
 
@@ -206,10 +230,14 @@ func TestSeedTransactionsFollowRules(t *testing.T) {
 		if err := d.normalizeTransaction(&c); err != nil {
 			t.Errorf("%s: %v", tx.ID, err)
 		}
-		if tx.Type != "transfer" && tx.Type != "allocate" {
+		if tx.Type != "transfer" {
 			t.Errorf("%s: stored type %q", tx.ID, tx.Type)
 		}
 	}
+	for _, a := range d.Allocations {
+		c := a
+		if err := d.normalizeAllocation(&c); err != nil {
+			t.Errorf("%s: %v", a.ID, err)
+		}
+	}
 }
-
-func (t *Transaction) normalizeOn(d *Data) error { return d.normalizeTransaction(t) }

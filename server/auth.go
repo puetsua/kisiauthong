@@ -42,10 +42,11 @@ const (
 	ScopeAccounts     = "accounts:write"
 	ScopeTags         = "tags:write"
 	ScopeTemplates    = "templates:write"
+	ScopeReserves     = "reserves:write"
 	ScopeSettings     = "settings:write"
 )
 
-var allScopes = []string{ScopeRead, ScopeTransactions, ScopeAccounts, ScopeTags, ScopeTemplates, ScopeSettings}
+var allScopes = []string{ScopeRead, ScopeTransactions, ScopeAccounts, ScopeTags, ScopeReserves, ScopeTemplates, ScopeSettings}
 
 // Principal is who is making a request and what they may do.
 type Principal struct {

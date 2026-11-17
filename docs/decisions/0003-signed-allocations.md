@@ -2,7 +2,7 @@
 # 0003 — One allocation type with a signed amount (no `release`)
 
 Date: 2026-11-15
-Status: accepted (amends 0002, which listed `release` as a stored type)
+Status: superseded by 0013 (allocations belong to reserves, not transactions; the signed amount stays)
 
 ## Context
 

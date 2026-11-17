@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"slices"
 	"time"
 )
 
@@ -95,16 +94,10 @@ func BudgetPeriod(t Tag, ref string) (start, end string) {
 	}
 }
 
-// normalizeTag validates a tag and drops fields its kind does not use.
-// Kinds are "category" (optionally budgeted) and "goal" (a money box).
+// normalizeTag validates a tag: a category, a budget when it has a limit (ADR 0004, 0013).
 func normalizeTag(t *Tag) error {
-	if t.Kind == "" {
-		t.Kind = "category"
-	}
 	t.Currency = normCurrency(t.Currency)
-	switch t.Kind {
-	case "category":
-		t.TargetMinor, t.TargetDate = nil, ""
+	{
 		if t.LimitMinor == nil {
 			t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency = "", 0, "", "", ""
 			return nil
@@ -142,38 +135,5 @@ func normalizeTag(t *Tag) error {
 			return fmt.Errorf("budget start date must be YYYY-MM-DD")
 		}
 		return nil
-	case "goal":
-		t.LimitMinor, t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd = nil, "", 0, "", ""
-		if t.TargetMinor == nil || *t.TargetMinor <= 0 {
-			return fmt.Errorf("a money box needs a target amount")
-		}
-		if !currencyRe.MatchString(t.Currency) {
-			return fmt.Errorf("a money box needs a 3-letter currency code")
-		}
-		if t.TargetDate != "" && !validDate(t.TargetDate) {
-			return fmt.Errorf("target date must be YYYY-MM-DD")
-		}
-		return nil
 	}
-	return fmt.Errorf("tag kind must be category or goal")
-}
-
-// tagInUse reports whether any transaction or template refers to the tag.
-func (d *Data) tagInUse(id string) bool {
-	for _, t := range d.Transactions {
-		if t.TagID == id {
-			return true
-		}
-	}
-	for _, l := range d.TransactionTags {
-		if l.TagID == id {
-			return true
-		}
-	}
-	for _, tp := range d.TransactionTemplates {
-		if tp.Template.TagID == id || slices.Contains(tp.Template.TagIDs, id) {
-			return true
-		}
-	}
-	return false
 }

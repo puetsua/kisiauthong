@@ -16,13 +16,13 @@ type Account struct {
 	PaymentDueDay       *int   `json:"paymentDueDay,omitempty"`
 }
 
+// Transaction is a money movement (ADR 0013): always stored as a transfer.
 type Transaction struct {
 	ID                    string   `json:"id"`
-	AccountID             string   `json:"accountId"`
+	AccountID             string   `json:"accountId,omitempty"` // input only: the own account of an expense or income shorthand
 	FromAccountID         string   `json:"fromAccountId,omitempty"`
 	ToAccountID           string   `json:"toAccountId,omitempty"`
-	TagID                 string   `json:"tagId,omitempty"`  // the money box of an allocate
-	TagIDs                []string `json:"tagIds,omitempty"` // categories of a transfer (ADR 0010)
+	TagIDs                []string `json:"tagIds,omitempty"` // its categories (ADR 0010)
 	Type                  string   `json:"type"`
 	State                 string   `json:"state"`
 	AmountMinor           int64    `json:"amountMinor"`
@@ -43,12 +43,14 @@ type Range struct {
 	Max int64 `json:"max"`
 }
 
+// TemplateBody is what a template generates: a transfer, or with type "allocate" an
+// allocation into ReserveID from AccountID (ADR 0013).
 type TemplateBody struct {
-	AccountID          string   `json:"accountId,omitempty"`
+	AccountID          string   `json:"accountId,omitempty"` // an allocation's account; input for expense/income shorthands
 	FromAccountID      string   `json:"fromAccountId,omitempty"`
 	ToAccountID        string   `json:"toAccountId,omitempty"`
-	TagID              string   `json:"tagId,omitempty"`  // money box of an allocate
-	TagIDs             []string `json:"tagIds,omitempty"` // categories of a transfer
+	ReserveID          string   `json:"reserveId,omitempty"` // an allocation template's reserve
+	TagIDs             []string `json:"tagIds,omitempty"`    // categories of a transfer
 	Type               string   `json:"type"`
 	AmountMinor        int64    `json:"amountMinor"`
 	ExpectedRangeMinor *Range   `json:"expectedRangeMinor,omitempty"`
@@ -73,18 +75,45 @@ type TransactionTemplate struct {
 	Schedule Schedule     `json:"schedule"`
 }
 
+// Tag is a category, a budget when it has a limit (ADR 0004, 0013).
 type Tag struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	LimitMinor *int64 `json:"limitMinor,omitempty"`
+	Cycle      string `json:"cycle,omitempty"`      // budget period unit (budget.go)
+	CycleEvery int    `json:"cycleEvery,omitempty"` // period length in units; 0 = 1
+	CycleStart string `json:"cycleStart,omitempty"` // first day of one period; "" = calendar-aligned
+	CycleEnd   string `json:"cycleEnd,omitempty"`   // "range" budgets only
+	Currency   string `json:"currency,omitempty"`   // a budget's currency
+}
+
+// Reserve earmarks money in own accounts, optionally toward a target (ADR 0013).
+// What it holds is derived from its allocations, never stored.
+type Reserve struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Kind        string `json:"kind"`
-	LimitMinor  *int64 `json:"limitMinor,omitempty"`
-	Cycle       string `json:"cycle,omitempty"`      // budget period unit (budget.go)
-	CycleEvery  int    `json:"cycleEvery,omitempty"` // period length in units; 0 = 1
-	CycleStart  string `json:"cycleStart,omitempty"` // first day of one period; "" = calendar-aligned
-	CycleEnd    string `json:"cycleEnd,omitempty"`   // "range" budgets only
-	Currency    string `json:"currency,omitempty"`
+	Currency    string `json:"currency"`
 	TargetMinor *int64 `json:"targetMinor,omitempty"`
 	TargetDate  string `json:"targetDate,omitempty"`
+}
+
+// Allocation is one decision to put money of an account into a reserve (positive)
+// or take it back out (negative). It moves no money.
+type Allocation struct {
+	ID                    string `json:"id"`
+	ReserveID             string `json:"reserveId"`
+	AccountID             string `json:"accountId"`
+	AmountMinor           int64  `json:"amountMinor"`
+	Currency              string `json:"currency"` // the account's
+	Date                  string `json:"date"`
+	Time                  string `json:"time,omitempty"`
+	TZ                    string `json:"tz,omitempty"`
+	At                    string `json:"at,omitempty"` // derived, as on transactions
+	Note                  string `json:"note"`
+	Memo                  string `json:"memo,omitempty"`
+	CreatedAt             string `json:"createdAt,omitempty"`
+	TransactionTemplateID string `json:"transactionTemplateId,omitempty"`
+	OccurrenceDate        string `json:"occurrenceDate,omitempty"`
 }
 
 type TransactionTag struct {
@@ -99,4 +128,6 @@ type Data struct {
 	Tags                 []Tag                 `json:"tags"`
 	TransactionTags      []TransactionTag      `json:"transactionTags"`
 	TransactionTemplates []TransactionTemplate `json:"transactionTemplates"`
+	Reserves             []Reserve             `json:"reserves"`
+	Allocations          []Allocation          `json:"allocations"`
 }

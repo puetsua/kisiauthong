@@ -13,13 +13,13 @@ func TestManualTransactionsDoNotCollideOnTemplateKey(t *testing.T) {
 	b := sampleBook(t)
 	// seed already contains several manual transactions; adding two more must succeed
 	for _, id := range []string{"manual-1", "manual-2"} {
-		tx := Transaction{ID: id, AccountID: "acc-a", Type: "expense", State: "posted", AmountMinor: 100, Currency: "TWD", Date: "2026-10-20", Note: "manual"}
+		tx := Transaction{ID: id, FromAccountID: "acc-a", ToAccountID: ExternalAccountID, Type: "transfer", State: "posted", AmountMinor: 100, Currency: "TWD", Date: "2026-10-20", Note: "manual"}
 		if err := b.insertTransaction(tx); err != nil {
 			t.Fatalf("insert %s: %v", id, err)
 		}
 	}
 	// a duplicate generated occurrence must be rejected
-	dup := Transaction{ID: "dup-1", AccountID: "acc-a", Type: "expense", State: "planned", AmountMinor: 100, Currency: "TWD", Date: "2026-10-12", TransactionTemplateID: "tpl-streaming", OccurrenceDate: "2026-10-12"}
+	dup := Transaction{ID: "dup-1", FromAccountID: "acc-a", ToAccountID: ExternalAccountID, Type: "transfer", State: "planned", AmountMinor: 100, Currency: "TWD", Date: "2026-10-12", TransactionTemplateID: "tpl-streaming", OccurrenceDate: "2026-10-12"}
 	if err := b.insertTransaction(dup); err == nil {
 		t.Fatalf("duplicate generated occurrence was accepted")
 	}
@@ -30,7 +30,7 @@ func TestSettingsPersist(t *testing.T) {
 	if _, ok, _ := b.getSetting("dashboard"); ok {
 		t.Fatalf("dashboard setting should start unset")
 	}
-	want := `{"order":["moneyboxes","balances"],"hidden":["recent"]}`
+	want := `{"order":["reserves","balances"],"hidden":["recent"]}`
 	if err := b.setSetting("dashboard", want); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -100,12 +100,12 @@ func TestSeedRespectsBalanceInvariants(t *testing.T) {
 		if a.IsExternal() {
 			continue // outside the books: no balance of its own
 		}
-		bal, alloc := d.Balance(a.ID), d.AllocatedForAccount(a.ID)
+		bal, reserved := d.Balance(a.ID), d.Reserved(a.ID)
 		if a.LimitMinor == nil && bal < 0 {
 			t.Errorf("%s balance %d < 0", a.ID, bal)
 		}
-		if alloc > bal {
-			t.Errorf("%s allocated %d > balance %d", a.ID, alloc, bal)
+		if reserved > bal {
+			t.Errorf("%s reserved %d > balance %d", a.ID, reserved, bal)
 		}
 	}
 	for _, tt := range d.TransactionTags {
@@ -176,9 +176,14 @@ func TestMigrationsUpgradeTheFirstSchema(t *testing.T) {
 		`INSERT INTO tags(id,name,kind) VALUES('old-label','trip-2026','label'),('old-payee','7-Eleven','payee')`,
 		`INSERT INTO transactions(id,account_id,type,state,amount_minor,currency,date,note) VALUES('old-exp','acc-b','expense','posted',500,'TWD','2026-11-01','Lunch'),('old-inc','acc-a','income','posted',900,'TWD','2026-11-02','Pay')`,
 		`INSERT INTO transactions(id,account_id,tag_id,type,state,amount_minor,currency,date,note) VALUES('old-alloc','acc-a','tag-furniture','allocate','posted',2000,'TWD','2026-11-02','Save'),('old-rel','acc-a','tag-furniture','release','posted',700,'TWD','2026-11-03','Back out')`,
-		`INSERT INTO transaction_tags(transaction_id,tag_id) VALUES('old-exp','tag-food')`,
+		`INSERT INTO transactions(id,account_id,tag_id,type,state,amount_minor,currency,date,note,transaction_template_id,occurrence_date) VALUES('old-auto','acc-b','tag-furniture','allocate','planned',300,'TWD','2026-11-05','Auto','tpl-box','2026-11-05')`,
+		`INSERT INTO transactions(id,account_id,tag_id,type,state,amount_minor,currency,date,note) VALUES('old-orphan','acc-a','gone-box','allocate','posted',50,'TWD','2026-11-04','Box deleted since')`,
+		`INSERT INTO transactions(id,from_account_id,to_account_id,tag_id,type,state,amount_minor,currency,date,note) VALUES('old-food','acc-b','acc-external','tag-food','transfer','posted',80,'TWD','2026-11-06','One tag field'),('old-boxcat','acc-b','acc-external','tag-furniture','transfer','posted',90,'TWD','2026-11-06','Box as category')`,
+		`INSERT INTO transaction_tags(transaction_id,tag_id) VALUES('old-exp','tag-food'),('old-exp','tag-furniture'),('old-alloc','tag-food')`,
 		`INSERT INTO transaction_templates(id,name,enabled,template_json,schedule_json) VALUES('tpl-salary','Salary',1,'{"accountId":"acc-a","type":"income","amountMinor":8000000,"currency":"TWD","note":"Salary"}','{"frequency":"monthly","interval":1,"dayOfMonth":5,"startDate":"2026-01-05"}')`,
-		`INSERT INTO settings(key,value) VALUES('general','{"defaultCurrency":"JPY"}')`,
+		`INSERT INTO transaction_templates(id,name,enabled,template_json,schedule_json) VALUES('tpl-box','Auto save',1,'{"accountId":"acc-b","tagId":"tag-furniture","type":"allocate","amountMinor":300,"currency":"TWD"}','{"frequency":"monthly","interval":1,"dayOfMonth":5,"startDate":"2026-11-05"}')`,
+		`INSERT INTO transaction_templates(id,name,enabled,template_json,schedule_json) VALUES('tpl-lunch','Lunch',1,'{"fromAccountId":"acc-b","toAccountId":"acc-external","tagId":"tag-food","type":"transfer","amountMinor":120,"currency":"TWD"}','{"frequency":"never"}')`,
+		`INSERT INTO settings(key,value) VALUES('general','{"defaultCurrency":"JPY"}'),('dashboard','{"order":["moneyboxes","balances"]}')`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)
@@ -220,12 +225,51 @@ func TestMigrationsUpgradeTheFirstSchema(t *testing.T) {
 	if tp := d.templateByID("tpl-salary"); tp == nil || tp.Template.Type != "transfer" || tp.Template.FromAccountID != ExternalAccountID || tp.Template.ToAccountID != "acc-a" {
 		t.Errorf("migration 1: template not converted: %+v", tp)
 	}
-	if r := byID["old-rel"]; r.Type != "allocate" || r.AmountMinor != -700 || r.AccountID != "acc-a" || r.TagID != "tag-furniture" {
-		t.Errorf("migration 2: release not converted: %+v", r)
+	// migration 14: money boxes become reserves with the same ids, allocations leave the transactions
+	if r := d.allocationByID("old-rel"); r == nil || r.AmountMinor != -700 || r.AccountID != "acc-a" || r.ReserveID != "tag-furniture" || r.Note != "Back out" {
+		t.Errorf("migrations 2 and 14: release not an allocation: %+v", r)
+	}
+	if r := d.reserveByID("tag-furniture"); r == nil || r.Name != "Furniture" || r.Currency != "TWD" || r.TargetMinor == nil || *r.TargetMinor != 8000000 {
+		t.Errorf("migration 14: money box not a reserve: %+v", r)
+	}
+	if d.tagByID("tag-furniture") != nil {
+		t.Errorf("migration 14: the money box is still a tag")
+	}
+	if got := d.ReserveSaved("tag-furniture"); got != 2000-700+300 {
+		t.Errorf("migration 14: saved = %d", got)
+	}
+	if a := d.allocationByID("old-auto"); a == nil || a.TransactionTemplateID != "tpl-box" || a.OccurrenceDate != "2026-11-05" || a.AccountID != "acc-b" {
+		t.Errorf("migration 14: generated allocation keeps its template: %+v", a)
+	}
+	if r := d.reserveByID("gone-box"); r == nil || d.allocationByID("old-orphan") == nil {
+		t.Errorf("migration 14: an allocation whose money box is gone keeps a reserve: %+v", r)
+	}
+	if len(d.Allocations) != 4 {
+		t.Errorf("migration 14: %d allocations, want 4", len(d.Allocations))
+	}
+	for _, id := range []string{"old-alloc", "old-rel", "old-auto", "old-orphan"} {
+		if _, ok := byID[id]; ok {
+			t.Errorf("migration 14: %s is still a transaction", id)
+		}
+	}
+	if f := byID["old-food"]; len(f.TagIDs) != 1 || f.TagIDs[0] != "tag-food" {
+		t.Errorf("migration 14: the single tag field becomes a link: %+v", f)
+	}
+	if f := byID["old-boxcat"]; len(f.TagIDs) != 0 {
+		t.Errorf("migration 14: a money box is no category: %+v", f)
+	}
+	if tp := d.templateByID("tpl-box"); tp == nil || tp.Template.ReserveID != "tag-furniture" || tp.Template.Type != "allocate" {
+		t.Errorf("migration 14: allocation template: %+v", tp)
+	}
+	if tp := d.templateByID("tpl-lunch"); tp == nil || len(tp.Template.TagIDs) != 1 || tp.Template.TagIDs[0] != "tag-food" {
+		t.Errorf("migration 14: template category: %+v", tp)
+	}
+	if v, _, _ := b.getSetting("dashboard"); v != `{"order":["reserves","balances"]}` {
+		t.Errorf("migration 14: dashboard widget renamed: %q", v)
 	}
 	for _, id := range []string{"old-label", "old-payee"} {
-		if tg := d.tagByID(id); tg == nil || tg.Kind != "category" {
-			t.Errorf("migration 4: %s should be a category: %+v", id, tg)
+		if d.tagByID(id) == nil {
+			t.Errorf("migration 4: %s should be a category", id)
 		}
 	}
 	if food := d.tagByID("tag-food"); food == nil || food.Cycle != "monthly" || food.CycleEvery != 0 || food.CycleStart != "" {
@@ -239,8 +283,11 @@ func TestMigrationsUpgradeTheFirstSchema(t *testing.T) {
 	if a := d.accountByID("old-card"); a == nil || a.LimitMinor == nil || *a.LimitMinor != 5000000 {
 		t.Errorf("migration 6: the card keeps its limit: %+v", a)
 	}
-	if len(d.TransactionTags) != 1 || d.TransactionTags[0].TagID != "tag-food" {
-		t.Errorf("migration 8: tag links kept: %+v", d.TransactionTags)
+	if e := byID["old-exp"]; len(e.TagIDs) != 1 || e.TagIDs[0] != "tag-food" {
+		t.Errorf("migrations 8 and 14: category links kept, money box links dropped: %+v", e.TagIDs)
+	}
+	if len(d.TransactionTags) != 2 {
+		t.Errorf("migration 14: tag links: %+v", d.TransactionTags)
 	}
 	if v, ok, _ := b.getSetting("general"); !ok || v != `{"defaultCurrency":"JPY"}` {
 		t.Errorf("migration 8: settings kept: %q", v)

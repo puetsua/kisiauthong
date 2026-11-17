@@ -27,6 +27,7 @@ func TestMCP(t *testing.T) {
 	signedIn(t, bob, "bob")
 	reader := createKey(t, alice, "Reader", ScopeRead)
 	writer := createKey(t, alice, "Agent", ScopeRead, ScopeTransactions)
+	saver := createKey(t, alice, "Saver", ScopeRead, ScopeReserves)
 	bobKey := createKey(t, bob, "Bob", ScopeRead)
 	anon := newClient(t, srv)
 	id := 0
@@ -108,8 +109,12 @@ func TestMCP(t *testing.T) {
 		t.Fatalf("accounts: %+v", accts)
 	}
 	tags := tool(reader, "list_tags", nil).Result.Structured
-	if len(tags["categories"].([]interface{})) == 0 || len(tags["moneyBoxes"].([]interface{})) == 0 {
+	if len(tags["categories"].([]interface{})) == 0 || tags["moneyBoxes"] != nil {
 		t.Fatalf("tags: %+v", tags)
+	}
+	res := tool(reader, "list_reserves", nil).Result.Structured["reserves"].([]interface{})
+	if len(res) != 2 || res[0].(map[string]interface{})["saved"].(map[string]interface{})["amountMinor"].(float64) <= 0 {
+		t.Fatalf("reserves: %+v", res)
 	}
 	list := tool(reader, "list_transactions", map[string]interface{}{"kind": "spending", "limit": 5}).Result
 	if n := len(list.Structured["transactions"].([]interface{})); n != 5 || list.Content[0].Text == "" {
@@ -121,7 +126,7 @@ func TestMCP(t *testing.T) {
 
 	// writing: a spending of NT$120.5 lands in minor units, exactly
 	added := tool(writer, "add_transaction", map[string]interface{}{"kind": "spending", "amount": "120.5", "accountId": "acc-b",
-		"tagId": "tag-food", "title": "Lunch", "date": "2026-11-15"}).Result.Structured["transaction"].(map[string]interface{})
+		"tagIds": []string{"tag-food"}, "title": "Lunch", "date": "2026-11-15"}).Result.Structured["transaction"].(map[string]interface{})
 	if added["amountMinor"].(float64) != 12050 || added["kind"] != "spending" || added["categories"].([]interface{})[0] != "Food" {
 		t.Fatalf("added: %+v", added)
 	}
@@ -145,6 +150,31 @@ func TestMCP(t *testing.T) {
 	}
 	if out := tool(writer, "delete_transaction", map[string]interface{}{"id": txID}); !out.Result.IsError {
 		t.Fatalf("deleted twice")
+	}
+
+	// reserves take allocations, with their own scope
+	if out := tool(writer, "add_allocation", map[string]interface{}{"reserveId": "rsv-house", "accountId": "acc-b", "amount": "10"}); !out.Result.IsError {
+		t.Fatalf("a key without reserves:write allocated")
+	}
+	if out := tool(writer, "add_transaction", map[string]interface{}{"kind": "allocate", "amount": "10", "accountId": "acc-b"}); !out.Result.IsError {
+		t.Fatalf("allocate as a transaction accepted")
+	}
+	alc := tool(saver, "add_allocation", map[string]interface{}{"reserveId": "rsv-house", "accountId": "acc-b", "amount": "-12.5", "title": "Back out"}).Result
+	if alc.IsError {
+		t.Fatalf("allocation: %+v", alc.Content)
+	}
+	a := alc.Structured["allocation"].(map[string]interface{})
+	if a["amountMinor"].(float64) != -1250 || a["reserve"] != "House fund" {
+		t.Fatalf("allocation: %+v", a)
+	}
+	if n := tool(saver, "list_allocations", map[string]interface{}{"reserveId": "rsv-house", "accountId": "acc-b"}).Result.Structured["total"].(float64); n != 2 {
+		t.Fatalf("allocations in Bank B: %v", n)
+	}
+	if out := tool(saver, "delete_allocation", map[string]interface{}{"id": a["id"]}); out.Result.IsError {
+		t.Fatalf("delete allocation: %+v", out.Result.Content)
+	}
+	if out := tool(saver, "create_reserve", map[string]interface{}{"name": "Trip", "currency": "JPY", "target": "50000"}); out.Result.IsError {
+		t.Fatalf("create reserve: %+v", out.Result.Content)
 	}
 
 	// a key sees its own user's books only

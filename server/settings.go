@@ -15,7 +15,7 @@ import (
 )
 
 // dashboardWidgets is the known widget types, in default order.
-var dashboardWidgets = []string{"balances", "budgets", "spending", "moneyboxes", "accounts", "recent"}
+var dashboardWidgets = []string{"balances", "budgets", "spending", "reserves", "accounts", "recent"}
 
 // retiredWidgets were once valid; saved layouts that still name them are cleaned, not rejected.
 // "expected" left the dashboard when expected transactions moved to the notification bell.

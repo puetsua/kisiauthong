@@ -42,10 +42,10 @@ func stateView(d *Data) map[string]interface{} {
 	accounts := []map[string]interface{}{}
 	for _, a := range d.Accounts {
 		bal := d.Balance(a.ID)
-		alloc := d.AllocatedForAccount(a.ID)
+		reserved := d.Reserved(a.ID)
 		m := map[string]interface{}{
 			"id": a.ID, "name": a.Name, "kind": a.Kind, "icon": a.Icon, "currency": a.Currency, "openingBalanceMinor": a.OpeningBalanceMinor,
-			"balanceMinor": bal, "allocatedMinor": alloc, "unallocatedMinor": bal - alloc,
+			"balanceMinor": bal, "reservedMinor": reserved, "freeMinor": bal - reserved,
 		}
 		if a.LimitMinor != nil {
 			owed := -bal
@@ -62,7 +62,7 @@ func stateView(d *Data) map[string]interface{} {
 	}
 	tags := []map[string]interface{}{}
 	for _, t := range d.Tags {
-		m := map[string]interface{}{"id": t.ID, "name": t.Name, "kind": t.Kind, "currency": t.Currency}
+		m := map[string]interface{}{"id": t.ID, "name": t.Name, "currency": t.Currency}
 		if t.LimitMinor != nil {
 			start, end := BudgetPeriod(t, today)
 			spent := d.BudgetSpent(t.ID, start, end)
@@ -76,13 +76,22 @@ func stateView(d *Data) map[string]interface{} {
 			m["spentMinor"] = spent
 			m["remainingMinor"] = *t.LimitMinor - spent
 		}
-		if t.TargetMinor != nil {
-			saved := d.TagSaved(t.ID)
-			m["targetMinor"] = *t.TargetMinor
-			m["targetDate"] = t.TargetDate
-			m["savedMinor"] = saved
-		}
 		tags = append(tags, m)
+	}
+	reserves := []map[string]interface{}{}
+	for _, r := range d.Reserves {
+		m := map[string]interface{}{
+			"id": r.ID, "name": r.Name, "currency": r.Currency, "targetDate": r.TargetDate,
+			"savedMinor": d.ReserveSaved(r.ID), "split": d.ReserveSplit(r.ID),
+		}
+		if r.TargetMinor != nil {
+			m["targetMinor"] = *r.TargetMinor
+		}
+		reserves = append(reserves, m)
+	}
+	allocs := d.Allocations
+	if allocs == nil {
+		allocs = []Allocation{}
 	}
 	templates := []map[string]interface{}{}
 	for _, tp := range d.TransactionTemplates {
@@ -105,6 +114,7 @@ func stateView(d *Data) map[string]interface{} {
 	}
 	return map[string]interface{}{
 		"accounts": accounts, "transactions": txns, "tags": tags,
+		"reserves": reserves, "allocations": allocs,
 		"transactionTags": links, "transactionTemplates": templates, "today": today,
 		"spendingThisMonth": d.SpendingByCategory(today),
 	}
@@ -279,6 +289,9 @@ func newMux(webDir string) *http.ServeMux {
 	mux.HandleFunc("/api/accounts/", api(ScopeAccounts, handleUpdateAccount))
 	mux.HandleFunc("/api/tags", api(ScopeTags, handleCreateTag))
 	mux.HandleFunc("/api/tags/", api(ScopeTags, handleUpdateTag))
+	mux.HandleFunc("/api/reserves", api(ScopeReserves, handleCreateReserve))
+	mux.HandleFunc("/api/reserves/", api(ScopeReserves, handleReserve))
+	mux.HandleFunc("/api/allocations/", api(ScopeReserves, handleAllocation))
 	mux.HandleFunc("/api/transactions", api(ScopeTransactions, handleCreateTransaction))
 	mux.HandleFunc("/api/transactions/", api(ScopeTransactions, handleTransaction))
 	mux.HandleFunc("/api/templates", api(ScopeTemplates, handleCreateTemplate))
@@ -345,8 +358,8 @@ func handleUpdateAccount(w http.ResponseWriter, r *http.Request, b *Book) {
 		writeErr(w, 404, "account not found")
 		return
 	}
-	if old.IsExternal() != a.IsExternal() && b.data.accountHasTransactions(a.ID) {
-		writeErr(w, 400, "an account with transactions cannot switch between your own and external")
+	if old.IsExternal() != a.IsExternal() && b.data.accountInUse(a.ID) {
+		writeErr(w, 400, "an account with transactions or allocations cannot switch between your own and external")
 		return
 	}
 	if err := b.updateAccount(a); err != nil {
@@ -392,15 +405,10 @@ func handleUpdateTag(w http.ResponseWriter, r *http.Request, b *Book) {
 		writeErr(w, 404, "not found")
 		return
 	}
-	// dropUses: switching a used tag between category and money box drops what used it the old way
-	var body struct {
-		Tag
-		DropUses bool `json:"dropUses"`
-	}
-	if !decode(w, r, &body) {
+	var t Tag
+	if !decode(w, r, &t) {
 		return
 	}
-	t := body.Tag
 	t.ID = id
 	t.Name = strings.TrimSpace(t.Name)
 	if t.Name == "" {
@@ -411,21 +419,8 @@ func handleUpdateTag(w http.ResponseWriter, r *http.Request, b *Book) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	old := b.data.tagByID(t.ID)
-	if old == nil {
+	if b.data.tagByID(t.ID) == nil {
 		writeErr(w, 404, "tag not found")
-		return
-	}
-	if old.Kind != t.Kind && b.data.tagInUse(t.ID) {
-		if !body.DropUses {
-			writeErr(w, 400, "this tag is used by transactions, so switching between category and money box needs dropUses (see ADR 0004)")
-			return
-		}
-		if err := b.switchTagKind(t, old.Kind); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		writeJSON(w, 200, t)
 		return
 	}
 	if err := b.updateTag(t); err != nil {
@@ -433,6 +428,179 @@ func handleUpdateTag(w http.ResponseWriter, r *http.Request, b *Book) {
 		return
 	}
 	writeJSON(w, 200, t)
+}
+
+func handleCreateReserve(w http.ResponseWriter, r *http.Request, b *Book) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "POST only")
+		return
+	}
+	var res Reserve
+	if !decode(w, r, &res) {
+		return
+	}
+	res.ID = newID("rsv")
+	if err := normalizeReserve(&res); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if err := b.insertReserve(res); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	if err := b.reload(); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 201, res)
+}
+
+// handleReserve serves /api/reserves/{id} (PUT, DELETE) and its actions:
+// POST allocations adds one allocation; POST complete takes out everything it holds.
+func handleReserve(w http.ResponseWriter, r *http.Request, b *Book) {
+	id, action, ok := pathID(r)
+	if !ok {
+		writeErr(w, 404, "not found")
+		return
+	}
+	if b.data.reserveByID(id) == nil {
+		writeErr(w, 404, "reserve not found")
+		return
+	}
+	switch {
+	case r.Method == http.MethodPut && action == "":
+		var res Reserve
+		if !decode(w, r, &res) {
+			return
+		}
+		res.ID = id
+		if err := normalizeReserve(&res); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		if err := b.updateReserve(res); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, res)
+	case r.Method == http.MethodDelete && action == "":
+		if err := b.deleteReserve(id); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"deleted": id})
+	case r.Method == http.MethodPost && action == "allocations":
+		var a Allocation
+		if !decode(w, r, &a) {
+			return
+		}
+		a.ReserveID = id
+		a, err := b.addAllocation(a)
+		if err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 201, a)
+	case r.Method == http.MethodPost && action == "complete":
+		var body struct {
+			Date string `json:"date"`
+			Note string `json:"note"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		out, err := b.completeReserve(id, body.Date, body.Note)
+		if err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 201, out)
+	default:
+		writeErr(w, 404, "not found")
+	}
+}
+
+// addAllocation validates and stores one allocation.
+func (b *Book) addAllocation(a Allocation) (Allocation, error) {
+	if a.Date == "" {
+		a.Date = time.Now().Format("2006-01-02")
+	}
+	a.ID, a.CreatedAt = newID("alc"), createdStamp()
+	a.TransactionTemplateID, a.OccurrenceDate = "", ""
+	if err := b.data.normalizeAllocation(&a); err != nil {
+		return a, err
+	}
+	if err := b.insertAllocation(a); err != nil {
+		return a, err
+	}
+	return a, b.reload()
+}
+
+// completeReserve takes out everything a reserve holds, one negative allocation per account,
+// all or nothing.
+func (b *Book) completeReserve(id, date, note string) ([]Allocation, error) {
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+	var out []Allocation
+	for _, s := range b.data.ReserveSplit(id) {
+		if s.AmountMinor <= 0 {
+			continue
+		}
+		a := Allocation{ID: newID("alc"), CreatedAt: createdStamp(), ReserveID: id, AccountID: s.AccountID, AmountMinor: -s.AmountMinor, Date: date, Note: note}
+		if err := b.data.normalizeAllocation(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("this reserve holds nothing to take out")
+	}
+	if err := b.insertAllocations(out); err != nil {
+		return nil, err
+	}
+	return out, b.reload()
+}
+
+// handleAllocation serves /api/allocations/{id}: PUT fixes a typo, DELETE removes one.
+func handleAllocation(w http.ResponseWriter, r *http.Request, b *Book) {
+	id, action, ok := pathID(r)
+	if !ok || action != "" {
+		writeErr(w, 404, "not found")
+		return
+	}
+	old := b.data.allocationByID(id)
+	if old == nil {
+		writeErr(w, 404, "allocation not found")
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		var a Allocation
+		if !decode(w, r, &a) {
+			return
+		}
+		a.ID = id
+		if a.ReserveID == "" {
+			a.ReserveID = old.ReserveID
+		}
+		a.CreatedAt, a.TransactionTemplateID, a.OccurrenceDate = old.CreatedAt, old.TransactionTemplateID, old.OccurrenceDate
+		if err := b.data.normalizeAllocation(&a); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		if err := b.updateAllocation(a); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, a)
+	case http.MethodDelete:
+		if _, err := b.deleteAllocation(id); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"deleted": id})
+	default:
+		writeErr(w, 405, "PUT or DELETE only")
+	}
 }
 
 func handleCreateTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
