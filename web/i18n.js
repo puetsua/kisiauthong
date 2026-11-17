@@ -8,7 +8,7 @@ const I18N = {
   "zh-TW": {
     // navigation and screens
     "Dashboard": "總覽", "Transactions": "交易", "Accounts": "帳戶", "Budgets": "預算", "Money boxes": "存錢筒",
-    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單", "More": "更多", "{amount} to go": "還差 {amount}", "Target reached": "已達成目標", "On a date…": "指定日期…", "Last day": "最後一天", "{from}–{to} of {n} in all history": "全部紀錄 {n} 筆中的第 {from}–{to} 筆", "{n} per page": "每頁 {n} 筆", "Per page": "每頁筆數", "Pages": "分頁", "No transactions match your search.": "沒有符合搜尋的交易。", "Fills in": "填入", "Shortcuts": "捷徑", "+ New shortcut": "+ 新增捷徑", "No shortcuts yet. In the add form, choose ⋯ and Save as template.": "還沒有捷徑。在新增交易的表單點 ⋯，再選「存成範本」。", "More actions": "更多動作", "Save as template": "存成範本", "Type": "類型", "Filters": "篩選", "Filters · {n}": "篩選 · {n}",
+    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單", "More": "更多", "Add budget": "新增預算", "New budget": "新增預算", "Budget added.": "已新增預算。", "{amount} to go": "還差 {amount}", "Target reached": "已達成目標", "On a date…": "指定日期…", "Last day": "最後一天", "{from}–{to} of {n} in all history": "全部紀錄 {n} 筆中的第 {from}–{to} 筆", "{n} per page": "每頁 {n} 筆", "Per page": "每頁筆數", "Pages": "分頁", "No transactions match your search.": "沒有符合搜尋的交易。", "Fills in": "填入", "Shortcuts": "捷徑", "+ New shortcut": "+ 新增捷徑", "No shortcuts yet. In the add form, choose ⋯ and Save as template.": "還沒有捷徑。在新增交易的表單點 ⋯，再選「存成範本」。", "More actions": "更多動作", "Save as template": "存成範本", "Type": "類型", "Filters": "篩選", "Filters · {n}": "篩選 · {n}",
     // enum labels
     "Expense": "支出", "Income": "收入", "Transfer": "轉帳", "Allocate": "分配",
     "Bank": "銀行", "Savings": "儲蓄", "Cash": "現金", "Investment": "投資", "Loan": "貸款",
@@ -67,7 +67,7 @@ const I18N = {
     "{name} is at {pct}% of its limit": "{name}已用到上限的 {pct}%",
     "Free {amount}": "可用 {amount}", "Earmarked {amount}": "已預留 {amount}", "Last activity {date}": "最近交易 {date}",
     "No transactions yet": "還沒有交易", 
-    "No budgets yet. Give a category a limit to track it here.": "還沒有預算。替分類設定上限，就會在這裡追蹤。", 
+    
     "Edit money box": "編輯存錢筒", "Edit category": "編輯分類", "New money box": "新增存錢筒", "New category": "新增分類",
     "Set a budget": "設定預算", "Every": "每", "First period starts": "第一期開始日", "From": "從", "To": "到",
     "Add money box": "新增存錢筒", "Add category": "新增分類", "Money box added.": "已新增存錢筒。", "Category added.": "已新增分類。",
