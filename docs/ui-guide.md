@@ -166,6 +166,13 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   `#screen` keeps what is on screen.
 - **Cards** (`.tcard`, `.acard` …) are for things scanned at a glance (budgets,
   money boxes, accounts); each card is a button that opens its details.
+- **Record pages** (a category: `#tag?id=…&range=month&at=2026-10-01`): the
+  top bar shows the record's name and the nav keeps its parent page `.on`.
+  The page starts with `.pagebar` (‹ parent link left, Edit right), then
+  figures as `.totcard` tiles, then panels of transactions. A period to page
+  through reuses the Transactions `.periodbar` (mode `.seg`, ‹ Previous /
+  Next ›, Back to today); unlike typing, each step is a new history entry, so
+  Back steps back. An unknown id returns to the parent page.
 - **Empty states**: `.empty`, one short sentence; add how to create the first
   item only when it is not obvious.
 - **Settings-style pages** (Settings, My account, Server): `.settings` with a

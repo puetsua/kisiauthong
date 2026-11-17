@@ -561,7 +561,8 @@ function bindDetails(root) {
   // a title opens its edit form straight away; there is no read-only pane in between
   root.querySelectorAll("[data-detail-txn]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.detailTxn)));
   root.querySelectorAll("[data-detail-account]").forEach((b) => b.addEventListener("click", () => openAccountDialog(b.dataset.detailAccount)));
-  root.querySelectorAll("[data-detail-tag],[data-detail-goal]").forEach((b) => b.addEventListener("click", () => openTagDialog(null, b.dataset.detailTag || b.dataset.detailGoal)));
+  root.querySelectorAll("[data-detail-tag]").forEach((b) => b.addEventListener("click", () => { location.hash = tagURL(b.dataset.detailTag, tagRange(), ""); }));
+  root.querySelectorAll("[data-detail-goal]").forEach((b) => b.addEventListener("click", () => openTagDialog(null, b.dataset.detailGoal)));
   root.querySelectorAll("[data-detail-template]").forEach((b) => b.addEventListener("click", () => openTemplateDialog(b.dataset.detailTemplate)));
 }
 // pairs: [English label, HTML value]
@@ -655,15 +656,19 @@ const PERIOD_L = { week: N_("Week"), month: N_("Month"), custom: N_("Custom") };
 const parseDay = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); };
 const addDays = (iso, n) => { const d = parseDay(iso); d.setDate(d.getDate() + n); return isoDay(d); };
 const spanDays = (a, b) => Math.round((parseDay(b) - parseDay(a)) / 86400000) + 1; // inclusive; rounding absorbs DST hours
-// periodFor returns the week (Monday-Sunday) or month containing the anchor date.
+// periodFor returns the day, week (Monday-Sunday), month or year containing the anchor date.
 function periodFor(mode, anchor) {
   const d = parseDay(anchor);
+  if (mode === "day") return { mode, start: anchor, end: anchor };
+  if (mode === "year") return { mode, start: `${d.getFullYear()}-01-01`, end: `${d.getFullYear()}-12-31` };
   if (mode === "week") { const start = addDays(anchor, -((d.getDay() + 6) % 7)); return { mode, start, end: addDays(start, 6) }; }
   return { mode: "month", start: isoDay(new Date(d.getFullYear(), d.getMonth(), 1)), end: isoDay(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
 }
 function shiftPeriod(p, dir) {
   if (p.mode === "month") { const s = parseDay(p.start); return periodFor("month", isoDay(new Date(s.getFullYear(), s.getMonth() + dir, 1))); }
   if (p.mode === "week") return periodFor("week", addDays(p.start, 7 * dir));
+  if (p.mode === "day") return periodFor("day", addDays(p.start, dir));
+  if (p.mode === "year") return periodFor("year", `${parseDay(p.start).getFullYear() + dir}-01-01`);
   const len = spanDays(p.start, p.end);
   return { mode: "custom", start: addDays(p.start, len * dir), end: addDays(p.end, len * dir) };
 }
@@ -677,6 +682,8 @@ function clampRange(start, end) {
 function periodLabel(p, short) {
   try {
     if (p.mode === "month") return new Intl.DateTimeFormat(LANG, { year: "numeric", month: "long" }).format(parseDay(p.start));
+    if (p.mode === "year") return new Intl.DateTimeFormat(LANG, { year: "numeric" }).format(parseDay(p.start));
+    if (p.mode === "day") return dayLabel(p.start);
     const a = parseDay(p.start), b = parseDay(p.end), year = state.data && state.data.today.slice(0, 4);
     if (short && p.start.slice(0, 4) === year && p.end.slice(0, 4) === year) {
       const md = new Intl.DateTimeFormat(LANG, { month: LANG === "zh-TW" ? "long" : "short", day: "numeric" });
@@ -993,13 +1000,77 @@ function budgetCard(t) {
     <span class="tfoot"><span class="${t.remainingMinor < 0 ? "neg" : ""}">${esc(left)}</span><small>${esc(pace)}</small></span></button>`;
 }
 // spending this month per currency for one category, from the server's monthly summary
-const monthSpend = (id) => (state.data.spendingThisMonth || []).filter((x) => x.tagId === id).map((x) => fmt(x.amountMinor, x.currency)).join(" · ");
-const tagUses = (id) => state.data.transactions.filter((t) => t.tagId === id || txnCats(t).includes(id)).length;
-function categoryCard(t) {
-  const spent = monthSpend(t.id), n = tagUses(t.id);
+/* ---------- categories: activity in a period, and a page per category ---------- */
+const TAG_RANGE_L = { day: N_("Day"), week: N_("Week"), month: N_("Month"), year: N_("Year") };
+const TAG_NOW_L = { day: N_("Today"), week: N_("This week"), month: N_("This month"), year: N_("This year") };
+const TAG_RANGE_KEY = "kisiauthong.tagRange";
+// the period kind the Categories cards show, remembered per browser
+function tagRange() {
+  if (!state.tagRange) { let m = ""; try { m = localStorage.getItem(TAG_RANGE_KEY) || ""; } catch (e) { /* storage unavailable */ } state.tagRange = TAG_RANGE_L[m] ? m : "month"; }
+  return state.tagRange;
+}
+function setTagRange(m) { state.tagRange = m; try { localStorage.setItem(TAG_RANGE_KEY, m); } catch (e) { /* per-browser convenience only */ } }
+// a category's posted transactions, newest first; with p, only those whose stored date is in it
+// (the same day rule budgets use, ADR 0006, so a month here matches the budget card)
+function tagTxns(id, p) {
+  const when = (t) => t.date + (t.time || "");
+  return state.data.transactions.filter((t) => t.state !== "planned" && txnCats(t).includes(id) && (!p || (t.date >= p.start && t.date <= p.end)))
+    .sort((a, b) => when(b).localeCompare(when(a)) || b.id.localeCompare(a.id));
+}
+// money out and in, per currency in minor units (never converted)
+function tagTotals(list) {
+  const out = {}, inn = {};
+  list.forEach((t) => { const k = flow(t), m = k === "expense" ? out : k === "income" ? inn : null; if (m) m[t.currency] = (m[t.currency] || 0) + t.amountMinor; });
+  return { out, in: inn };
+}
+const sumParts = (m, sign, cls) => Object.entries(m).map(([c, v]) => `<span class="amt ${cls}">${sign}${esc(fmt(v, c))}</span>`);
+const totalsHTML = (s) => [...sumParts(s.out, "−", "out"), ...sumParts(s.in, "+", "in")].join(" ");
+function categoryCard(t, p) {
+  const list = tagTxns(t.id, p);
   return `<button type="button" class="tcard ccard" data-detail-tag="${esc(t.id)}">
-    <span class="thead"><b>${esc(t.name)}</b><small>${esc(__("{n} transaction(s)", { n }))}</small></span>
-    <span class="tfoot"><span>${spent ? esc(__("{amount} this month", { amount: spent })) : `<small>${esc(__("Nothing spent this month"))}</small>`}</span></span></button>`;
+    <span class="thead"><b>${esc(t.name)}</b><small>${esc(__("{n} transaction(s)", { n: list.length }))}</small></span>
+    <span class="tfoot">${list.length ? `<span class="amts">${totalsHTML(tagTotals(list))}</span>` : `<small>${esc(__("No transactions in this period."))}</small>`}</span></button>`;
+}
+const tagURL = (id, mode, at) => `#tag?${new URLSearchParams({ id, range: mode, ...(at ? { at } : {}) })}`;
+const plainDay = (iso) => { try { return new Intl.DateTimeFormat(LANG, { year: "numeric", month: "short", day: "numeric" }).format(parseDay(iso)); } catch (e) { return iso; } };
+// One category (or budget): all-time figures, its latest transactions, and a period to page through.
+function screenTag(v) {
+  const { params } = hashParts(), t = state.data.tags.find((x) => x.id === params.get("id"));
+  if (!t || isGoal(t)) { location.hash = "#tags"; return; }
+  const today = state.data.today, mode = TAG_RANGE_L[params.get("range")] ? params.get("range") : tagRange();
+  const at = /^\d{4}-\d{2}-\d{2}$/.test(params.get("at") || "") ? params.get("at") : today, p = periodFor(mode, at);
+  $("#pageTitle").textContent = t.name;
+  const all = tagTxns(t.id), sums = tagTotals(all), inP = tagTxns(t.id, p);
+  const tile = (lab, val, sub) => `<div class="totcard"><span class="lab">${esc(lab)}</span><b>${val}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
+  const money = (m) => Object.entries(m).map(([c, n]) => esc(fmt(n, c))).join("<br>");
+  const tiles = tile(__("Transactions"), esc(String(all.length)), all.length ? __("Since {date}", { date: plainDay(all[all.length - 1].date) }) : "")
+    + (Object.keys(sums.out).length ? tile(__("Spent"), money(sums.out)) : "") + (Object.keys(sums.in).length ? tile(__("Received"), money(sums.in)) : "");
+  const modes = Object.keys(TAG_RANGE_L).map((m) => `<button type="button" data-mode="${m}" class="${m === mode ? "on" : ""}" aria-pressed="${m === mode}">${esc(__(TAG_RANGE_L[m]))}</button>`).join("");
+  const nav = `<nav class="periodnav" aria-label="${esc(__("Period"))}">
+      <button class="smallbtn" data-shift="-1">${esc(__("‹ Previous"))}</button>
+      <span class="plabel">${esc(periodLabel(p))}</span>
+      <button class="smallbtn" data-shift="1" ${p.end >= today ? "disabled" : ""}>${esc(__("Next ›"))}</button>
+      ${!(today >= p.start && today <= p.end) ? `<button class="smallbtn" data-today>${esc(__("Back to today"))}</button>` : ""}</nav>`;
+  const rows = (list) => `<ul class="feed">${list.map((x) => feedRow(x, { withDate: true })).join("")}</ul>`;
+  v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#tags">‹ ${esc(__("Tags"))}</a><button type="button" class="smallbtn" id="tagEdit">${esc(__("Edit"))}</button></div>
+    ${t.limitMinor !== undefined ? `<div class="tgrid tagbudget">${budgetCard(t)}</div>` : ""}
+    <div class="totals">${tiles}</div>
+    ${all.length ? `<section class="panel feedpanel"><h3>${esc(__("Recent transactions"))}</h3>${rows(all.slice(0, 5))}</section>` : ""}
+    <section class="tsection"><div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${nav}</div>
+    ${inP.length ? `<div class="psum"><span>${esc(__("{n} transaction(s)", { n: inP.length }))}</span><span class="amts">${totalsHTML(tagTotals(inP))}</span></div>
+      <section class="panel feedpanel">${rows(inP)}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
+  // the period lives in the address, so Back and reload keep it
+  v.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+    setTagRange(b.dataset.mode);
+    location.hash = tagURL(t.id, b.dataset.mode, today >= p.start && today <= p.end ? "" : p.start);
+  }));
+  v.querySelectorAll("[data-shift]").forEach((b) => b.addEventListener("click", () => {
+    const q = shiftPeriod(p, parseInt(b.dataset.shift, 10));
+    location.hash = tagURL(t.id, mode, today >= q.start && today <= q.end ? "" : q.start);
+  }));
+  v.querySelectorAll("[data-today]").forEach((b) => b.addEventListener("click", () => { location.hash = tagURL(t.id, mode, ""); }));
+  $("#tagEdit").addEventListener("click", () => openTagDialog(null, t.id));
+  v.querySelectorAll("[data-detail-txn]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.detailTxn)));
 }
 // One money box: saved of target, with the bar split by the accounts holding the money.
 const BOX_COLORS = ["#5b2a86", "#8a5cb8", "#b79ad6", "#c9a86a", "#7d6f99"];
@@ -1019,12 +1090,15 @@ function screenTags(v) {
   const budgets = tags.filter((t) => t.kind === "category" && t.limitMinor !== undefined);
   const cats = tags.filter((t) => t.kind === "category" && t.limitMinor === undefined);
   const boxes = tags.filter((t) => t.kind === "goal");
-  // each grid ends with its "add" tile
-  const section = (title, list, card, tail) => `<section class="tsection"><div class="tsechead"><h3>${esc(title)}</h3></div>
-    <div class="tgrid">${list.map(card).join("")}${tail}</div></section>`;
+  // each grid ends with its "add" tile; categories show what happened in the chosen period up to now
+  const p = periodFor(tagRange(), state.data.today);
+  const switcher = `<div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${Object.keys(TAG_NOW_L).map((m) => `<button type="button" data-tag-range="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(TAG_NOW_L[m]))}</button>`).join("")}</div>`;
+  const section = (title, list, card, tail, head = "") => `<section class="tsection"><div class="tsechead"><h3>${esc(title)}</h3>${head}</div>
+    <div class="tgrid">${list.map((t) => card(t, p)).join("")}${tail}</div></section>`;
   v.innerHTML = section(__("Budgets"), budgets, budgetCard, addTile("newBudget", __("Add budget")))
     + section(__("Money boxes"), boxes, boxCard, addTile("newBox", __("New money box")))
-    + section(__("Categories"), cats, categoryCard, addTile("newCategory", __("New category")));
+    + section(__("Categories"), cats, categoryCard, addTile("newCategory", __("New category")), switcher);
+  v.querySelectorAll("[data-tag-range]").forEach((b) => b.addEventListener("click", () => { setTagRange(b.dataset.tagRange); render(); }));
   $("#newBudget").addEventListener("click", () => openTagDialog("budget"));
   $("#newCategory").addEventListener("click", () => openTagDialog("category"));
   $("#newBox").addEventListener("click", () => openTagDialog("goal"));
@@ -2108,7 +2182,7 @@ async function drawServer() {
 }
 
 /* ---------- routing ---------- */
-const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
+const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], tag: [N_("Category"), screenTag], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
 // the hash is "#screen", optionally with a query ("#transactions?q=rent")
 function hashParts() {
   const h = location.hash.replace(/^#/, ""), i = h.indexOf("?");
@@ -2126,9 +2200,10 @@ function render() {
   const admin = isAdminScreen(key);
   if (!admin) state.lastBookScreen = key;
   $("#nav").hidden = admin; $("#adminNav").hidden = !admin;
-  document.querySelectorAll("#nav a, #adminNav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === key));
-  document.querySelectorAll("#tabbar a, #moreSheet a").forEach((a) => a.classList.toggle("on", a.dataset.tab === key));
-  $("#tabMore").classList.toggle("on", !["dashboard", "transactions", "accounts"].includes(key));
+  const navKey = key === "tag" ? "tags" : key; // a category's page belongs to Tags
+  document.querySelectorAll("#nav a, #adminNav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === navKey));
+  document.querySelectorAll("#tabbar a, #moreSheet a").forEach((a) => a.classList.toggle("on", a.dataset.tab === navKey));
+  $("#tabMore").classList.toggle("on", !["dashboard", "transactions", "accounts"].includes(navKey));
   $("#moreAdmin").hidden = !(state.me && state.me.isAdmin);
   drawSideAdmin();
   renderBell();

@@ -8,7 +8,7 @@ const I18N = {
   "zh-TW": {
     // navigation and screens
     "Dashboard": "總覽", "Transactions": "交易", "Accounts": "帳戶", "Budgets": "預算", "Money boxes": "存錢筒",
-    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單", "More": "更多", "Edit budget": "編輯預算", "Transactions use this tag, so it cannot switch between category and money box.": "已有交易使用這個標籤，所以不能在分類和存錢筒之間轉換。", "Add budget": "新增預算", "New budget": "新增預算", "Budget added.": "已新增預算。", "{amount} to go": "還差 {amount}", "Target reached": "已達成目標", "On a date…": "指定日期…", "Last day": "最後一天", "{from}–{to} of {n} in all history": "全部紀錄 {n} 筆中的第 {from}–{to} 筆", "{n} per page": "每頁 {n} 筆", "Per page": "每頁筆數", "Pages": "分頁", "No transactions match your search.": "沒有符合搜尋的交易。", "Fills in": "填入", "Shortcuts": "捷徑", "+ New shortcut": "+ 新增捷徑", "No shortcuts yet. In the add form, choose ⋯ and Save as template.": "還沒有捷徑。在新增交易的表單點 ⋯，再選「存成範本」。", "More actions": "更多動作", "Save as template": "存成範本", "Type": "類型", "Filters": "篩選", "Filters · {n}": "篩選 · {n}",
+    "Templates": "範本", "Tags": "標籤", "Settings": "設定", "Main": "主選單", "Menu": "選單", "More": "更多", "Day": "日", "Year": "年", "This week": "本週", "This month": "本月", "This year": "今年", "Received": "已收入", "Since {date}": "自 {date} 起", "Edit": "編輯", "Edit budget": "編輯預算", "Transactions use this tag, so it cannot switch between category and money box.": "已有交易使用這個標籤，所以不能在分類和存錢筒之間轉換。", "Add budget": "新增預算", "New budget": "新增預算", "Budget added.": "已新增預算。", "{amount} to go": "還差 {amount}", "Target reached": "已達成目標", "On a date…": "指定日期…", "Last day": "最後一天", "{from}–{to} of {n} in all history": "全部紀錄 {n} 筆中的第 {from}–{to} 筆", "{n} per page": "每頁 {n} 筆", "Per page": "每頁筆數", "Pages": "分頁", "No transactions match your search.": "沒有符合搜尋的交易。", "Fills in": "填入", "Shortcuts": "捷徑", "+ New shortcut": "+ 新增捷徑", "No shortcuts yet. In the add form, choose ⋯ and Save as template.": "還沒有捷徑。在新增交易的表單點 ⋯，再選「存成範本」。", "More actions": "更多動作", "Save as template": "存成範本", "Type": "類型", "Filters": "篩選", "Filters · {n}": "篩選 · {n}",
     // enum labels
     "Expense": "支出", "Income": "收入", "Transfer": "轉帳", "Allocate": "分配",
     "Bank": "銀行", "Savings": "儲蓄", "Cash": "現金", "Investment": "投資", "Loan": "貸款",
@@ -17,7 +17,7 @@ const I18N = {
     "days": "天", "weeks": "週", "months": "個月", "years": "年", "Date range": "指定期間", "Custom…": "自訂…",
     "{amount} left": "剩 {amount}", "{amount} over": "超支 {amount}", "Starts {date}": "{date} 開始", "Ended {date}": "{date} 已結束",
     "{amount} a day for {n} day(s)": "每天 {amount}，還有 {n} 天", "{n} day(s) left": "還有 {n} 天", "of {limit}": "／{limit}",
-    "{amount} this month": "本月 {amount}", "Nothing spent this month": "本月沒有支出", "Categories": "分類",
+    "Categories": "分類",
     "API keys": "API 金鑰", "Read your books": "讀取你的帳本", "Add and edit transactions": "新增與編輯交易", "Add and edit accounts": "新增與編輯帳戶",
     "Add and edit categories and money boxes": "新增與編輯分類和存錢筒", "Add and edit templates, generate due ones": "新增與編輯範本、產生到期交易",
     "Change settings": "變更設定", "Read": "讀取", "Never": "永不", "30 days": "30 天", "90 days": "90 天", "1 year": "1 年",
