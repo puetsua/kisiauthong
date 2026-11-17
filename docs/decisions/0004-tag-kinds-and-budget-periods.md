@@ -36,8 +36,13 @@ Tags had four kinds: `category`, `goal`, `payee` and `label`.
   tag with a date inside the current period. Spending reports stay per
   calendar month.
 - A category without a limit carries no currency or period. A tag that
-  transactions or templates use cannot switch between category and money
-  box.
+  transactions or templates use switches between category and money box
+  only when the update says `dropUses: true`, after the client has warned
+  that its uses go: a money box that becomes a category deletes its
+  allocations and the templates that allocate to it (they mean nothing
+  without a money box); a category that becomes a money box is taken off
+  its transactions and templates, which are kept. Category and budget
+  switch freely: a budget is a category with a limit.
 
 ## Migration
 

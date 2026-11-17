@@ -658,6 +658,65 @@ func (b *Book) updateTag(t Tag) error {
 	}
 	return b.reload()
 }
+
+// switchTagKind changes a used tag between category and money box (ADR 0004), in one database
+// transaction. A money box that becomes a category loses its allocations and the templates that
+// allocate to it; a category that becomes a money box is taken off its transactions and templates,
+// which are otherwise kept.
+func (b *Book) switchTagKind(t Tag, oldKind string) error {
+	tx, err := b.s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// run is for statements whose first placeholder is user_id
+	run := func(q string, args ...interface{}) error {
+		_, err := tx.Exec(q, append([]interface{}{b.uid}, args...)...)
+		return err
+	}
+	if oldKind == "goal" {
+		if err := run(`DELETE FROM transactions WHERE user_id=? AND type='allocate' AND tag_id=?`, t.ID); err != nil {
+			return err
+		}
+		for _, tp := range b.data.TransactionTemplates {
+			if tp.Template.TagID == t.ID {
+				if err := run(`DELETE FROM transaction_templates WHERE user_id=? AND id=?`, tp.ID); err != nil {
+					return err
+				}
+			}
+		}
+	} else {
+		if err := run(`DELETE FROM transaction_tags WHERE user_id=? AND tag_id=?`, t.ID); err != nil {
+			return err
+		}
+		// the old single-category column, still read as a category on transfers
+		if err := run(`UPDATE transactions SET tag_id='' WHERE user_id=? AND type<>'allocate' AND tag_id=?`, t.ID); err != nil {
+			return err
+		}
+		for _, tp := range b.data.TransactionTemplates {
+			if !slices.Contains(tp.Template.TagIDs, t.ID) && tp.Template.TagID != t.ID {
+				continue
+			}
+			tpl := tp.Template
+			tpl.TagIDs = slices.DeleteFunc(slices.Clone(tpl.TagIDs), func(id string) bool { return id == t.ID })
+			if tpl.TagID == t.ID {
+				tpl.TagID = ""
+			}
+			tj, _ := json.Marshal(tpl)
+			if _, err := tx.Exec(`UPDATE transaction_templates SET template_json=? WHERE user_id=? AND id=?`, string(tj), b.uid, tp.ID); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.Exec(`UPDATE tags SET name=?,kind=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,target_minor=?,target_date=? WHERE user_id=? AND id=?`,
+		t.Name, t.Kind, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, n64(t.TargetMinor), t.TargetDate, b.uid, t.ID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return b.reload()
+}
 func (b *Book) updateTransaction(t Transaction) error {
 	if _, err := b.s.db.Exec(`UPDATE transactions SET account_id=?,from_account_id=?,to_account_id=?,tag_id=?,type=?,state=?,amount_minor=?,currency=?,date=?,time=?,tz=?,note=?,memo=? WHERE user_id=? AND id=?`,
 		t.AccountID, t.FromAccountID, t.ToAccountID, t.TagID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, b.uid, t.ID); err != nil {

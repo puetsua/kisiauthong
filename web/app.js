@@ -1466,17 +1466,23 @@ const moneyField = (label, name, minor, cur, cls) => field(label, `<span class="
 const TAGROLE_L = { category: N_("Category"), budget: N_("Budget"), goal: N_("Money box") };
 const tagRole = (t) => (t.kind === "goal" ? "goal" : t.limitMinor !== undefined ? "budget" : "category");
 // kind: "category", "goal", or "budget" (a category with a limit: an existing one, or a new one).
-// Only editing offers Type, to turn any of the three into another; a tag that transactions or templates
-// use cannot switch between category and money box (the server refuses), so those choices are disabled.
+// Only editing offers Type, to turn any of the three into another. Switching a used tag between category
+// and money box drops its uses (ADR 0004): a warning lists them first, and saving sends dropUses.
 function openTagDialog(kind, editId) {
   const t = editId ? state.data.tags.find((x) => x.id === editId) : null;
   const newBudget = !t && kind === "budget", free = state.data.tags.filter((x) => x.kind === "category" && x.limitMinor === undefined);
   const k = t ? t.kind : newBudget ? "category" : kind || "category", cur = (t && t.currency) || defCur();
   const hasBudget = !!(t && t.limitMinor !== undefined), role = t ? tagRole(t) : newBudget ? "budget" : k;
-  const used = !!t && (state.data.transactions.some((x) => x.tagId === t.id || txnCats(x).includes(t.id))
-    || state.data.transactionTemplates.some((x) => x.template.tagId === t.id || (x.template.tagIds || []).includes(t.id)));
-  const locked = (r) => used && (r === "goal") !== (k === "goal");
-  const roleOpts = Object.keys(TAGROLE_L).map((r) => `<option value="${r}" ${r === role ? "selected" : ""} ${locked(r) ? "disabled" : ""}>${esc(__(TAGROLE_L[r]))}</option>`).join("");
+  const usesTxns = t ? state.data.transactions.filter((x) => x.tagId === t.id || txnCats(x).includes(t.id)).sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || ""))) : [];
+  const usesTpls = t ? state.data.transactionTemplates.filter((x) => x.template.tagId === t.id || (x.template.tagIds || []).includes(t.id)) : [];
+  const used = usesTxns.length + usesTpls.length > 0;
+  const roleOpts = Object.keys(TAGROLE_L).map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${esc(__(TAGROLE_L[r]))}</option>`).join("");
+  // what switching between category and money box would drop, with the latest few to look up first
+  const SHOWN = 5, dropWarn = !used ? "" : `<div class="formnote dropwarn f-cross" role="alert">
+    <b>${esc(k === "goal" ? __("Switching deletes this money box's {n} allocation(s).", { n: usesTxns.length }) : __("Switching takes this tag off {n} transaction(s); the transactions are kept.", { n: usesTxns.length }))}</b>
+    ${usesTpls.length ? `<span>${esc(k === "goal" ? __("{n} template(s) that allocate to it are deleted too.", { n: usesTpls.length }) : __("{n} template(s) lose the tag too.", { n: usesTpls.length }))}</span>` : ""}
+    ${usesTxns.length ? `<ul class="droplist">${usesTxns.slice(0, SHOWN).map((x) => `<li><span>${esc(plainDay(x.date))}</span><span>${esc(txnTitle(x))}</span><span class="amt">${esc(amountText(x))}</span></li>`).join("")}</ul>
+      <a href="#transactions?tag=${esc(encodeURIComponent(t.id))}" id="dropAll">${esc(usesTxns.length > SHOWN ? __("See all {n} in Transactions", { n: usesTxns.length }) : __("See them in Transactions"))}</a>` : ""}</div>`;
   const cyc = (t && t.cycle) || "monthly", every = (t && t.cycleEvery) || 1;
   const preset = !hasBudget ? "monthly:1" : cyc === "range" ? "range" : BUDGET_PRESETS.some(([c, n]) => c === cyc && n === every) ? `${cyc}:${every}` : "custom";
   const presetOpts = BUDGET_PRESETS.map(([c, n]) => `<option value="${c}:${n}" ${preset === `${c}:${n}` ? "selected" : ""}>${esc(cycleName(c, n))}</option>`).join("")
@@ -1485,7 +1491,7 @@ function openTagDialog(kind, editId) {
     (newBudget ? field("Category", `<select name="catId">${free.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}<option value="">${esc(__("New category"))}</option></select>`) : "") +
     (t ? field("Type", `<select name="role">${roleOpts}</select>`) : `<input type="hidden" name="role" value="${esc(role)}">`) +
     field("Name", `<input name="name" required maxlength="100" placeholder="${esc(k === "goal" ? __("House fund") : __("Food"))}" value="${t ? esc(t.name) : ""}">`, "f-name") +
-    (used ? `<p class="formnote hint">${esc(k === "goal" ? __("Transactions use this money box, so it cannot become a category or a budget.") : __("Transactions use this tag, so it cannot become a money box."))}</p>` : "") +
+    dropWarn +
     moneyField(N_("Limit"), "limit", t && t.limitMinor, cur, "f-budget") +
     field(N_("Period"), `<select name="preset">${presetOpts}</select>`, "f-budget") +
     field(N_("Every"), `<span class="moneyrow"><input name="every" type="number" min="1" max="99" value="${every}"><select name="unit">${enumOptions(CYCLE_UNIT_L, Object.keys(CYCLE_UNIT_L), cyc === "range" ? "monthly" : cyc)}</select></span>`, "f-budget f-custom") +
@@ -1499,6 +1505,7 @@ function openTagDialog(kind, editId) {
   onDlg("dlgAlloc", () => openDrawer("allocate", t.id));
   onDlg("dlgHistory", () => showHistory(t.id));
   const form = $("#dialogForm"), el = form.elements;
+  const crossing = () => used && (el.role.value === "goal") !== (k === "goal");
   const sync = () => {
     const goal = el.role.value === "goal", budget = el.role.value === "budget", pre = el.preset.value;
     // hidden fields are disabled too, so they are neither validated nor submitted
@@ -1509,15 +1516,18 @@ function openTagDialog(kind, editId) {
     show(".f-anchor", budget && pre !== "range");
     show(".f-range", budget && pre === "range");
     show(".f-goal", goal);
+    show(".f-cross", crossing());
     el.limit.required = budget; el.rangeStart.required = el.rangeEnd.required = budget && pre === "range"; el.target.required = goal;
   };
   ["role", "preset", "catId"].forEach((n) => el[n] && el[n].addEventListener("change", sync));
   sync();
+  if ($("#dropAll")) $("#dropAll").addEventListener("click", () => $("#dialog").close());
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries());
     const into = newBudget && f.catId ? free.find((x) => x.id === f.catId) : null; // a budget on an existing category
     const body = { name: into ? into.name : f.name.trim(), kind: f.role === "goal" ? "goal" : "category" };
+    if (crossing()) body.dropUses = true;
     if (f.role === "goal") {
       body.currency = f.targetCur; body.targetMinor = toMinor(f.target, f.targetCur);
       if (f.targetDate) body.targetDate = f.targetDate;

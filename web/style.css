@@ -4,6 +4,10 @@
 [hidden]{display:none!important}
 .formnote{margin:8px 0 0;font-size:.86rem;color:var(--amber)}
 .formnote.hint{color:var(--muted)}
+.formnote.dropwarn{margin:4px 0 12px;padding:10px 12px;border-radius:8px;background:var(--redbg);border:1px solid #f0c4bf;color:var(--red);display:flex;flex-direction:column;gap:6px;font-size:.9rem}
+.droplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;color:var(--ink)}
+.droplist li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px}.droplist li>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dropwarn a{color:var(--red);font-weight:600}
 .formnote.planned{margin:12px 0 0;padding:10px 12px;border-radius:8px;background:var(--amberbg);border:1px solid #ecd9b0;color:#7a4a00}
 html[data-width="wide"]{--page-max:1440px}
 html[data-width="full"]{--page-max:none}

@@ -392,10 +392,15 @@ func handleUpdateTag(w http.ResponseWriter, r *http.Request, b *Book) {
 		writeErr(w, 404, "not found")
 		return
 	}
-	var t Tag
-	if !decode(w, r, &t) {
+	// dropUses: switching a used tag between category and money box drops what used it the old way
+	var body struct {
+		Tag
+		DropUses bool `json:"dropUses"`
+	}
+	if !decode(w, r, &body) {
 		return
 	}
+	t := body.Tag
 	t.ID = id
 	t.Name = strings.TrimSpace(t.Name)
 	if t.Name == "" {
@@ -412,7 +417,15 @@ func handleUpdateTag(w http.ResponseWriter, r *http.Request, b *Book) {
 		return
 	}
 	if old.Kind != t.Kind && b.data.tagInUse(t.ID) {
-		writeErr(w, 400, "this tag is used by transactions, so it cannot switch between category and money box")
+		if !body.DropUses {
+			writeErr(w, 400, "this tag is used by transactions, so switching between category and money box needs dropUses (see ADR 0004)")
+			return
+		}
+		if err := b.switchTagKind(t, old.Kind); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, t)
 		return
 	}
 	if err := b.updateTag(t); err != nil {
