@@ -202,8 +202,8 @@ topmost popup only.
   zone; title), while notes, quick picks, the type selector, categories and
   the note field span both. The order is set in CSS (`order`), so fields
   that a type hides leave no gaps. On phones it is one column.
-- Order: title row, quick picks (add only), type selector (`.seg`), fields,
-  then the save row.
+- Order: title row, type selector (`.seg`), quick picks (add only, for the
+  chosen type), fields, then the save row.
 - **Save row** (`.saverow`): the primary button (full width on phones,
   320px at the right on desktop) and an icon-only ⋯
   button (`#fMoreBtn`, `aria-label` "More actions") that opens `.actmenu`

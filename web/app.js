@@ -112,7 +112,8 @@ const extAcc = (t) => { const k = flow(t); return k === "expense" ? t.toAccountI
 const namedExt = (t) => { const e = extAcc(t); return e && e !== EXT_ID ? e : ""; };
 const tagName = (id) => (state.data.tags.find((t) => t.id === id) || {}).name || "—";
 const signed = (t) => { const k = flow(t); return k === "income" ? "+" : k === "expense" ? "−" : ""; };
-const barCls = (p) => p >= 100 ? "over" : p >= 80 ? "warn" : "";
+// spending exactly the limit uses it up but is not over it
+const barCls = (p) => p > 100 ? "over" : p >= 80 ? "warn" : "";
 function table(headers, rows) {
   return `<div style="overflow-x:auto"><table><thead><tr>${headers.map((h) => `<th class="${h.num ? "num" : ""}">${esc(__(h.t))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -537,6 +538,8 @@ function goalAllocations(tagId) {
   });
   return Object.entries(byAcc).filter(([, v]) => v > 0);
 }
+// what a money box still needs to reach its target
+const toGo = (t) => (t.targetMinor > t.savedMinor ? __("{amount} to go", { amount: fmt(t.targetMinor - t.savedMinor, t.currency) }) : __("Target reached"));
 function goalCard(t) {
   const p = t.targetMinor > 0 ? t.savedMinor / t.targetMinor * 100 : 0;
   const allocs = goalAllocations(t.id);
@@ -544,7 +547,7 @@ function goalCard(t) {
   const scale = Math.max(t.targetMinor, t.savedMinor) || 1;
   const stack = allocs.map(([, val], i) => `<i style="width:${val / scale * 100}%;background:${BOX_COLORS[i % BOX_COLORS.length]}"></i>`).join("");
   const where = allocs.map(([id, val]) => `${esc(accName(id))} ${fmt(val, t.currency)}`).join(" · ");
-  const head = __("{saved} of {target} · {pct}%", { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency), pct: p.toFixed(0) }) + (t.targetDate ? " · " + __("by {date}", { date: dayLabel(t.targetDate) }) : "");
+  const head = __("{saved} of {target} · {pct}%", { saved: fmt(t.savedMinor, t.currency), target: fmt(t.targetMinor, t.currency), pct: p.toFixed(0) }) + " · " + toGo(t) + (t.targetDate ? " · " + __("by {date}", { date: dayLabel(t.targetDate) }) : "");
   return `<div style="margin-bottom:18px"><div class="panelhead"><button class="titlelink" data-detail-goal="${esc(t.id)}">${esc(t.name)}</button><span>${esc(head)}</span></div>
     <div class="stack" style="margin:8px 0">${stack}</div><span class="muted">${where || esc(__("No allocations yet"))}</span></div>`;
 }
@@ -973,8 +976,8 @@ function budgetCard(t) {
   const started = today >= t.periodStart, ended = today > t.periodEnd;
   const elapsed = !started ? 0 : ended ? 100 : spanDays(t.periodStart, today) / total * 100;
   const daysLeft = started && !ended ? spanDays(today, t.periodEnd) : 0;
-  const running = started && !ended, ahead = running && p < 100 && p > elapsed;
-  const cls = running ? (p >= 100 ? "over" : ahead ? "warn" : "") : barCls(p);
+  const running = started && !ended, ahead = running && p <= 100 && p > elapsed;
+  const cls = running ? (p > 100 ? "over" : ahead ? "warn" : "") : barCls(p);
   const left = t.remainingMinor >= 0 ? __("{amount} left", { amount: fmt(t.remainingMinor, t.currency) }) : __("{amount} over", { amount: fmt(-t.remainingMinor, t.currency) });
   const pace = !started ? __("Starts {date}", { date: dayLabel(t.periodStart) }) : ended ? __("Ended {date}", { date: dayLabel(t.periodEnd) })
     : t.remainingMinor > 0 ? __("{amount} a day for {n} day(s)", { amount: fmt(Math.floor(t.remainingMinor / daysLeft), t.currency, true), n: daysLeft }) : __("{n} day(s) left", { n: daysLeft });
@@ -1003,6 +1006,7 @@ function boxCard(t) {
     <span class="thead"><b>${esc(t.name)}</b><small>${esc(t.targetDate ? __("by {date}", { date: dayLabel(t.targetDate) }) : "")}</small></span>
     <span class="bamount"><b>${fmt(t.savedMinor, t.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(t.targetMinor, t.currency) }))}</small></span>
     <span class="stack">${segs}</span>
+    <span class="tfoot"><span>${esc(toGo(t))}</span></span>
     <span class="boxlegend">${legend || `<small>${esc(__("No allocations yet"))}</small>`}</span></button>`;
 }
 function screenTags(v) {
@@ -1130,26 +1134,36 @@ function drawCats(sel, box = $("#fCats")) {
   box.querySelectorAll("[data-cat]").forEach((b) => b.addEventListener("click", () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
 }
 const pickedCats = (box = $("#fCats")) => [...box.querySelectorAll("[data-cat][aria-pressed=true]")].map((b) => b.dataset.cat);
-// One-tap fills for the add form: shortcuts (templates that never repeat, ADR 0012), the most used first,
-// then what you entered at least twice in the last 60 days that no shortcut covers.
-function quickPicks() {
-  const today = state.data.today, key = (t, title) => [flow(t), ownAcc(t), title].join("|");
-  const recent = state.data.transactions.filter((t) => t.state === "posted" && t.note && t.date >= addDays(today, -90) && t.date <= today);
+// what names an entry in quick picks: its title, else its tags, payee, accounts or money box
+function pickLabel(t) {
+  const k = flow(t), ext = namedExt(t);
+  return t.note || (k === "allocate" ? tagName(t.tagId) : k === "transfer" ? `${accName(t.fromAccountId)} → ${accName(t.toAccountId)}`
+    : txnCats(t).map(tagName).join(" · ") || (ext ? accName(ext) : ""));
+}
+// One-tap fills for the add form, for the chosen type: shortcuts (templates that never repeat, ADR 0012),
+// the most used first; then, from the last 60 days, what you entered at least twice and your latest entries.
+function quickPicks(type) {
+  const today = state.data.today, acc = (t) => (flow(t) === "transfer" ? t.fromAccountId + ">" + t.toAccountId : ownAcc(t));
+  const key = (t, label) => [acc(t), label].join("|");
+  const recent = state.data.transactions.filter((t) => t.state === "posted" && flow(t) === type && t.date >= addDays(today, -90) && t.date <= today);
   const uses = {};
-  recent.forEach((t) => { const k = key(t, t.note); uses[k] = (uses[k] || 0) + 1; });
-  const picks = state.data.transactionTemplates.filter((tp) => tp.enabled && isShortcut(tp)).map((tp) => {
+  recent.forEach((t) => { const k = key(t, pickLabel(t)); uses[k] = (uses[k] || 0) + 1; });
+  const picks = state.data.transactionTemplates.filter((tp) => tp.enabled && isShortcut(tp) && flow(tp.template) === type).map((tp) => {
     const title = tp.template.note || tp.name;
     return { label: tp.name, title, t: tp.template, n: uses[key(tp.template, title)] || 0 };
   }).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
-  const covered = new Set(picks.map((p) => key(p.t, p.title))), groups = {};
-  recent.filter((t) => t.date >= addDays(today, -60) && (flow(t) === "expense" || flow(t) === "income")).forEach((t) => {
-    const k = key(t, t.note), g = groups[k] || (groups[k] = { n: 0, t });
+  const covered = new Set(picks.map((p) => key(p.t, p.title))), groups = {}, when = (t) => t.date + (t.time || "");
+  recent.filter((t) => t.date >= addDays(today, -60)).forEach((t) => {
+    const label = pickLabel(t), k = key(t, label);
+    if (!label || covered.has(k)) return;
+    const g = groups[k] || (groups[k] = { n: 0, t, label });
     g.n++;
-    if (t.date + (t.time || "") > g.t.date + (g.t.time || "")) g.t = t; // the latest one gives amount, payee and tags
+    if (when(t) >= when(g.t)) g.t = t; // the latest one gives amount, payee and tags
   });
-  const often = Object.entries(groups).filter(([k, g]) => g.n >= 2 && !covered.has(k)).map(([, g]) => g)
-    .sort((a, b) => b.n - a.n || b.t.date.localeCompare(a.t.date)).slice(0, 4);
-  return [...picks, ...often.map((g) => ({ label: g.t.note, title: g.t.note, t: g.t }))];
+  const hist = Object.values(groups);
+  const often = hist.filter((g) => g.n >= 2).sort((a, b) => b.n - a.n || when(b.t).localeCompare(when(a.t))).slice(0, 4);
+  const latest = hist.filter((g) => !often.includes(g)).sort((a, b) => when(b.t).localeCompare(when(a.t))).slice(0, 6 - often.length);
+  return [...picks, ...[...often, ...latest].map((g) => ({ label: g.label, title: g.t.note, t: g.t }))];
 }
 function drawQuick(picks) {
   state.quick = picks;
@@ -1229,7 +1243,8 @@ function openDrawer(type, tag) {
   el.date.value = now.date; el.time.value = now.time; $("#fTz").innerHTML = zoneOptions(deviceTZ());
   syncTz();
   setTxnType(type || "expense", type === "allocate" ? tag : tag ? [tag] : []);
-  drawQuick(tag ? [] : quickPicks());
+  state.quickOn = !tag;
+  drawQuick(tag ? [] : quickPicks(state.txnType));
   $("#fPlannedNote").hidden = true;
   $("#drawerTitle").textContent = type === "allocate" ? __("Allocate to money box") : __("Add transaction");
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
@@ -1261,6 +1276,7 @@ function openEditTxn(id) {
     + (range ? " " + __("Expected range {min} – {max}.", { min: fmt(range.min, t.currency), max: fmt(range.max, t.currency) }) : "");
   $("#drawerTitle").textContent = t.state === "planned" ? __("Confirm expected transaction") : __("Edit transaction");
   $("#fDelete").hidden = false;
+  state.quickOn = false;
   drawQuick([]);
   syncActions();
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
@@ -1273,7 +1289,11 @@ $("#txnForm").elements.time.addEventListener("input", syncTz);
 $("#fDelete").addEventListener("click", async () => { showActions(false); if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
 $("#drawerBackdrop").addEventListener("click", closeDrawer);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden && !$("#dialog").open) closeDrawer(); });
-document.querySelectorAll("#typeSeg button").forEach((b) => b.addEventListener("click", () => setTxnType(b.dataset.type)));
+// the type comes first; its quick picks follow it
+document.querySelectorAll("#typeSeg button").forEach((b) => b.addEventListener("click", () => {
+  setTxnType(b.dataset.type);
+  if (state.quickOn) drawQuick(quickPicks(b.dataset.type));
+}));
 $("#fAccount").addEventListener("change", () => refreshToAccounts($("#fToAccount").value));
 $("#addBtn").addEventListener("click", () => openDrawer("expense"));
 $("#tabAdd").addEventListener("click", () => openDrawer("expense"));
@@ -1517,11 +1537,11 @@ function allNotifications() {
   d.tags.filter((t) => t.limitMinor > 0).forEach((t) => {
     const pct = Math.round(t.spentMinor / t.limitMinor * 100), body = __("{spent} of {limit} spent · {period}", { spent: fmt(t.spentMinor, t.currency), limit: fmt(t.limitMinor, t.currency), period: periodLabel({ start: t.periodStart, end: t.periodEnd }) });
     // keyed by period, so a dismissed alert comes back when the next period runs over
-    if (pct >= 100) out.push({ key: `budget-over:${t.id}:${t.periodStart}`, rank: 1, level: "over", icon: noteIcon("warn"), title: __("{name} is over budget", { name: t.name }), body, open: () => openTagDialog(null, t.id) });
+    if (t.spentMinor > t.limitMinor) out.push({ key: `budget-over:${t.id}:${t.periodStart}`, rank: 1, level: "over", icon: noteIcon("warn"), title: __("{name} is over budget", { name: t.name }), body, open: () => openTagDialog(null, t.id) });
     else if (pct >= 80) out.push({ key: `budget-near:${t.id}:${t.periodStart}`, rank: 3, level: "warn", icon: noteIcon("warn"), title: __("{name} has used {pct}% of its budget", { name: t.name, pct }), body, open: () => openTagDialog(null, t.id) });
   });
   d.accounts.filter((a) => a.limitMinor && (a.utilisation || 0) >= 0.8).forEach((a) => out.push({
-    key: `credit:${a.id}:${month}`, rank: 2, level: a.utilisation >= 1 ? "over" : "warn", icon: noteIcon("card"),
+    key: `credit:${a.id}:${month}`, rank: 2, level: a.utilisation > 1 ? "over" : "warn", icon: noteIcon("card"),
     title: __("{name} is at {pct}% of its limit", { name: a.name, pct: Math.round(a.utilisation * 100) }), body: owedText(a), open: () => openAccountDialog(a.id),
   }));
   d.tags.filter((t) => t.targetMinor > 0).forEach((t) => {

@@ -295,7 +295,7 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
   #txnForm>#fAccWrap,#txnForm>#fExtWrap,#txnForm>#fToWrap,#txnForm>#fAmtWrap,#txnForm>.daterow,#txnForm>#fTzWrap,#txnForm>#fTitleWrap,#txnForm>#fTagWrap,#txnForm>#fAmtNote{grid-column:auto}
   #fAccWrap{order:2}#fExtWrap,#fToWrap{order:3}#fToNone{order:4}#fAmtWrap{order:5}#fAmtNote{order:6}
   #txnForm>.daterow{order:7}#fTzWrap{order:8}#fTitleWrap{order:9}#fTagWrap{order:3}#fAmtNote{align-self:end;margin-bottom:12px}#fCatsWrap{order:11}#fMemoWrap{order:12}#txnForm>.saverow{order:13}
-  #fPlannedNote{order:-1}#fQuick{order:0}#typeSeg{order:1}
+  #fPlannedNote{order:-1}#typeSeg{order:0}#fQuick{order:1}
   .saverow{justify-content:flex-end}.saverow .primarybtn.big{flex:0 1 320px}
 }
 /* dashboard widgets: tables on desktop, cards on phones */
@@ -398,6 +398,8 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .xcard b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xcard small{color:var(--muted);font-size:.8rem}
 @media (max-width:800px){.totcard{flex:1;min-width:0}}
+/* phones: one total per row, so long amounts are never cut off */
+@media (max-width:600px){.totals{display:grid;grid-template-columns:1fr;gap:8px}.totcard{padding:10px 14px}.totcard b{font-size:1.35rem;overflow-wrap:anywhere}}
 .boxlegend{display:flex;flex-wrap:wrap;gap:4px 14px}
 .gcard .stack{height:10px}
 
