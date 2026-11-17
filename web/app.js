@@ -1033,7 +1033,7 @@ function categoryCard(t, p) {
 }
 const tagURL = (id, mode, at) => `#tag?${new URLSearchParams({ id, range: mode, ...(at ? { at } : {}) })}`;
 const plainDay = (iso) => { try { return new Intl.DateTimeFormat(LANG, { year: "numeric", month: "short", day: "numeric" }).format(parseDay(iso)); } catch (e) { return iso; } };
-// One category (or budget): all-time figures, its latest transactions, and a period to page through.
+// One category (or budget): all-time figures, then its transactions in a period to page through.
 function screenTag(v) {
   const { params } = hashParts(), t = state.data.tags.find((x) => x.id === params.get("id"));
   if (!t || isGoal(t)) { location.hash = "#tags"; return; }
@@ -1055,7 +1055,6 @@ function screenTag(v) {
   v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#tags">‹ ${esc(__("Tags"))}</a><button type="button" class="smallbtn" id="tagEdit">${esc(__("Edit"))}</button></div>
     ${t.limitMinor !== undefined ? `<div class="tgrid tagbudget">${budgetCard(t)}</div>` : ""}
     <div class="totals">${tiles}</div>
-    ${all.length ? `<section class="panel feedpanel"><h3>${esc(__("Recent transactions"))}</h3>${rows(all.slice(0, 5))}</section>` : ""}
     <section class="tsection"><div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${nav}</div>
     ${inP.length ? `<div class="psum"><span>${esc(__("{n} transaction(s)", { n: inP.length }))}</span><span class="amts">${totalsHTML(tagTotals(inP))}</span></div>
       <section class="panel feedpanel">${rows(inP)}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
@@ -1484,10 +1483,9 @@ function openTagDialog(kind, editId) {
     + `<option value="custom" ${preset === "custom" ? "selected" : ""}>${esc(__("Custom…"))}</option><option value="range" ${preset === "range" ? "selected" : ""}>${esc(__("Date range"))}</option>`;
   openDialog(t ? (k === "goal" ? __("Edit money box") : hasBudget ? __("Edit budget") : __("Edit category")) : newBudget ? __("New budget") : k === "goal" ? __("New money box") : __("New category"), dialogForm(
     (newBudget ? field("Category", `<select name="catId">${free.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}<option value="">${esc(__("New category"))}</option></select>`) : "") +
+    (t ? field("Type", `<select name="role">${roleOpts}</select>`) : `<input type="hidden" name="role" value="${esc(role)}">`) +
     field("Name", `<input name="name" required maxlength="100" placeholder="${esc(k === "goal" ? __("House fund") : __("Food"))}" value="${t ? esc(t.name) : ""}">`, "f-name") +
-    (t ? field("Type", `<select name="role">${roleOpts}</select>`)
-      + (used ? `<p class="formnote hint">${esc(__("Transactions use this tag, so it cannot switch between category and money box."))}</p>` : "")
-      : `<input type="hidden" name="role" value="${esc(role)}">`) +
+    (used ? `<p class="formnote hint">${esc(k === "goal" ? __("Transactions use this money box, so it cannot become a category or a budget.") : __("Transactions use this tag, so it cannot become a money box."))}</p>` : "") +
     moneyField(N_("Limit"), "limit", t && t.limitMinor, cur, "f-budget") +
     field(N_("Period"), `<select name="preset">${presetOpts}</select>`, "f-budget") +
     field(N_("Every"), `<span class="moneyrow"><input name="every" type="number" min="1" max="99" value="${every}"><select name="unit">${enumOptions(CYCLE_UNIT_L, Object.keys(CYCLE_UNIT_L), cyc === "range" ? "monthly" : cyc)}</select></span>`, "f-budget f-custom") +
