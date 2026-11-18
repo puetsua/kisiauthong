@@ -36,7 +36,7 @@ const document = new Proxy({}, { get: (t, k) => (k === "querySelectorAll" ? list
 const location = { hash: "", search: "", pathname: "/", href: "http://localhost/" };
 const sandbox = {
   document, location, console, URLSearchParams, Intl, Date, Math, JSON, Promise, setTimeout, clearTimeout,
-  navigator: { languages: ["en"] }, history: { replaceState: () => {} }, localStorage: { getItem: () => null, setItem: () => {} },
+  navigator: { languages: ["en"] }, history: { replaceState: (st, title, url) => { location.hash = url; } }, localStorage: { getItem: () => null, setItem: () => {} },
   fetch: () => new Promise(() => {}), MutationObserver: function () { return { observe: () => {} }; }, WeakMap, Map, Set,
   matchMedia: () => ({ matches: false, addEventListener: () => {} }), addEventListener: () => {},
 };
@@ -105,13 +105,23 @@ test("account page: same card, then scheduled rows soonest first, then posted", 
   assert.ok(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1])), "soonest first");
   assert.ok(html.indexOf("November salary") > order[2], "posted after the scheduled list");
   assert.match(html, /−TWD 18,000/); assert.match(html, /\+TWD 52,000/);
+  // posted rows are signed from the account's side as well
+  assert.match(html.slice(html.indexOf("November salary")), /class="famt in">\+TWD 52,000/);
+});
+
+test("scheduled row: the post-date chip has its own line, outside the ellipsized subtitle", () => {
+  const html = strip(t.feedRow(txns[1], { sched: true, acct: "a1" }));
+  assert.match(html, /class="feedrow withpost"/);
+  assert.match(html, /<span class="famt out">−TWD 18,000<\/span><span class="fpost"><span class="chip sched">Posts 11\/25<\/span><\/span><\/button>/);
+  assert.doesNotMatch(html.slice(html.indexOf('class="fsub"'), html.indexOf('class="famt')), /chip/);
+  assert.doesNotMatch(strip(t.feedRow(txns[3])), /withpost|fpost/);
 });
 
 test("account page: unknown or external id goes back to Accounts", () => {
   for (const id of ["nope", "acc-external"]) {
     location.hash = "#acct?id=" + id;
     t.screenAcct(view());
-    assert.strictEqual(location.hash, "#accounts");
+    assert.strictEqual(location.hash, "#accounts"); // replaced in history, not pushed
   }
 });
 

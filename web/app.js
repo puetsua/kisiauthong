@@ -724,12 +724,13 @@ function feedRow(t, opts = {}) {
   // acct: the amount is signed as that account sees it (− leaving it, + arriving), transfers included
   const out = opts.acct && t.fromAccountId === opts.acct;
   const amt = opts.acct ? (out ? "−" : "+") + fmt(t.amountMinor, t.currency) : amountText(t), cls = opts.acct ? (out ? "out" : "in") : amountCls(t);
-  const sub = txnSubtitle(t), when = opts.sched ? `<span class="chip sched">${esc(__("Posts {date}", { date: shortDay(t.date) }))}</span> `
-    : opts.withDate ? `<span class="fwhen">${esc(dayLabel(txnDay(t)))}</span>` : "";
-  return `<li><button type="button" class="feedrow" ${opts.edit ? "data-edit-txn" : "data-detail-txn"}="${esc(t.id)}">
+  // the post-date chip gets a line of its own under the row, so a narrow phone never cuts the date short
+  const sub = txnSubtitle(t), chip = opts.sched ? `<span class="chip sched">${esc(__("Posts {date}", { date: shortDay(t.date) }))}</span>` : "",
+    when = !opts.sched && opts.withDate ? `<span class="fwhen">${esc(dayLabel(txnDay(t)))}</span>` : "";
+  return `<li><button type="button" class="feedrow${chip ? " withpost" : ""}" ${opts.edit ? "data-edit-txn" : "data-detail-txn"}="${esc(t.id)}">
       <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span>
       <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub">${when}${txnClock(t)}<span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
-      <span class="famt ${cls}">${esc(amt)}</span></button></li>`;
+      <span class="famt ${cls}">${esc(amt)}</span>${chip ? `<span class="fpost">${chip}</span>` : ""}</button></li>`;
 }
 /* ---------- transaction periods (the list pages by calendar period, not by entry count) ---------- */
 const MAX_RANGE_DAYS = 180;
@@ -801,12 +802,13 @@ function setPeriod(p) {
 
 // feedHTML groups a newest-first list by day; the first `open` days start expanded,
 // and a day the user opened or closed keeps that choice (state.dayOpen) across re-renders.
-function feedHTML(list, open = Infinity) {
+// rowOpts goes to each row (acct: sign amounts as that account sees them).
+function feedHTML(list, open = Infinity, rowOpts = {}) {
   const days = [];
   list.forEach((t) => { const day = txnDay(t), last = days[days.length - 1]; if (last && last.date === day) last.items.push(t); else days.push({ date: day, items: [t] }); });
   return days.map((d, i) => {
     const byDefault = i < open, isOpen = d.date in state.dayOpen ? state.dayOpen[d.date] : byDefault;
-    return `<details class="fday" data-day="${esc(d.date)}" data-default="${byDefault ? 1 : 0}" ${isOpen ? "open" : ""}><summary><span class="fdate">${esc(dayLabel(d.date))}</span><span class="fcount">${esc(__("{n} transaction(s)", { n: d.items.length }))}</span><span class="fnet">${d.items.length > 1 ? esc(dayNet(d.items)) : ""}</span></summary><ul class="feed">${d.items.map((t) => feedRow(t)).join("")}</ul></details>`;
+    return `<details class="fday" data-day="${esc(d.date)}" data-default="${byDefault ? 1 : 0}" ${isOpen ? "open" : ""}><summary><span class="fdate">${esc(dayLabel(d.date))}</span><span class="fcount">${esc(__("{n} transaction(s)", { n: d.items.length }))}</span><span class="fnet">${d.items.length > 1 ? esc(dayNet(d.items)) : ""}</span></summary><ul class="feed">${d.items.map((t) => feedRow(t, rowOpts)).join("")}</ul></details>`;
   }).join("");
 }
 function bindDays(root) {
@@ -1047,7 +1049,7 @@ const acctURL = (id, mode, at) => `#acct?${new URLSearchParams({ id, range: mode
 const touches = (t, id) => t.fromAccountId === id || t.toAccountId === id;
 function screenAcct(v) {
   const { params } = hashParts(), a = state.data.accounts.find((x) => x.id === params.get("id"));
-  if (!a) { location.hash = "#accounts"; return; }
+  if (!a) { leaveTo("#accounts"); return; }
   const { mode, p } = pagePeriod(params);
   $("#pageTitle").textContent = a.name;
   const txns = state.data.transactions.filter((t) => touches(t, a.id));
@@ -1058,7 +1060,7 @@ function screenAcct(v) {
   v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#accounts">‹ ${esc(__("Accounts"))}</a><button type="button" class="smallbtn" id="acctEdit">${esc(__("Edit"))}</button></div>
     <div class="acctpage${sched.length ? " withsched" : ""}"><div class="tgrid">${accountCard(a, { page: true })}</div>${schedHTML}</div>
     <section class="tsection">${periodBar(mode, p)}
-    ${posted.length ? `<section class="panel feedpanel">${feedHTML(posted)}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
+    ${posted.length ? `<section class="panel feedpanel">${feedHTML(posted, Infinity, { acct: a.id })}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
   bindPeriodBar(v, mode, p, (m, at) => acctURL(a.id, m, at));
   $("#acctEdit").addEventListener("click", () => openAccountDialog(a.id));
   bindActions(v);
@@ -1166,7 +1168,7 @@ const plainDay = (iso) => { try { return new Intl.DateTimeFormat(LANG, { year: "
 // One category (or budget): all-time figures, then its transactions in a period to page through.
 function screenTag(v) {
   const { params } = hashParts(), t = state.data.tags.find((x) => x.id === params.get("id"));
-  if (!t) { location.hash = "#tags"; return; }
+  if (!t) { leaveTo("#tags"); return; }
   const { mode, p } = pagePeriod(params);
   $("#pageTitle").textContent = t.name;
   const all = tagTxns(t.id), sums = tagTotals(all), inP = tagTxns(t.id, p);
@@ -1281,7 +1283,7 @@ function allocRow(a) {
 // One reserve: where its money is, what to do with it, and its allocations in a period to page through.
 function screenReserve(v) {
   const { params } = hashParts(), r = resById(params.get("id"));
-  if (!r) { location.hash = "#reserves"; return; }
+  if (!r) { leaveTo("#reserves"); return; }
   const { mode, p } = pagePeriod(params);
   $("#pageTitle").textContent = r.name;
   const all = resAllocs(r.id), inP = resAllocs(r.id, p), sums = allocTotals(all), holds = (r.split || []).some((s) => s.amountMinor > 0);
@@ -2458,6 +2460,8 @@ async function drawServer() {
 }
 
 /* ---------- routing ---------- */
+// leaveTo replaces a bad URL (an unknown id) instead of adding to history, so Back does not return to it
+function leaveTo(hash) { history.replaceState(null, "", hash); render(); }
 const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], tag: [N_("Category"), screenTag], reserves: [N_("Reserves"), screenReserves], reserve: [N_("Reserve"), screenReserve], acct: [N_("Account"), screenAcct], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
 // the hash is "#screen", optionally with a query ("#transactions?q=rent")
 function hashParts() {

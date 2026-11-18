@@ -280,7 +280,8 @@ topmost popup only.
 
 - **Scheduled is blue.** A posted transaction dated after today (ADR 0014)
   uses the `--sched` tokens wherever it shows: the blue segment and dot,
-  the `.chip.sched` ("Posts 11/20"), the account page's `.feedpanel.sched`
+  the `.chip.sched` ("Posts 11/20", on its own `.fpost` line under the row
+  so a narrow phone never cuts the date short), the account page's `.feedpanel.sched`
   list (left border, like the amber Expected section, but needs no action),
   the Transactions page's `.schedsum` line (a `button` with `aria-expanded`
   that shows the rows in place), and the drawer's `.formnote.sched` note with
