@@ -1010,8 +1010,9 @@ function accountCard(a) {
   } else if (a.reservedMinor > 0 || held > 0) {
     // reserving or scheduling more than the balance is allowed (spending never touches a reserve), but it shows
     const over = a.freeMinor < 0, base = Math.max(0, a.balanceMinor);
-    const e = a.reservedMinor <= 0 ? 0 : base ? Math.min(100, a.reservedMinor / base * 100) : 100;
-    const h = !held ? 0 : base ? Math.min(100 - e, held / base * 100) : 100 - e;
+    // when both do not fit, they share the bar in proportion, so the held segment never disappears
+    const res = Math.max(0, a.reservedMinor), scale = 100 / Math.max(base, res + held, 1);
+    const e = res * scale, h = held * scale;
     const overText = held ? __("Reserved and scheduled more than its balance") : __("Reserved more than its balance");
     detail = `<span class="splitbar">${seg("earmarked" + (over && !held ? " over" : ""), e)}${seg("sched", h)}</span>
       <span class="tfoot">${over ? `<small class="neg">${esc(overText)}</small>` : `<small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.freeMinor, a.currency) }))}</small>`}${a.reservedMinor ? `<small><b class="dot earmarked"></b>${esc(__("Reserved {amount}", { amount: fmt(a.reservedMinor, a.currency) }))}</small>` : ""}${heldLine}${inLine}</span>`;

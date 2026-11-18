@@ -747,11 +747,15 @@ func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, e
 			return nil, fmt.Errorf("unknown tag %q: call list_tags for ids", id)
 		}
 	}
+	today := b.today() // once per call, so a call across midnight sees one date
+	if t.Date == "" {
+		t.Date = today
+	}
 	saved, err := b.addTransaction(t)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"transaction": b.data.txnView(*b.data.transactionByID(saved.ID), b.data.tagsByTransaction(), b.today())}, nil
+	return map[string]interface{}{"transaction": b.data.txnView(*b.data.transactionByID(saved.ID), b.data.tagsByTransaction(), today)}, nil
 }
 
 func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
@@ -768,7 +772,7 @@ func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 	if old == nil {
 		return nil, fmt.Errorf("transaction %q not found", in.ID)
 	}
-	t := *old
+	t, today := *old, b.today() // once per call, so a call across midnight sees one date
 	if in.Amount != nil {
 		if t.AmountMinor, err = parseAmount(*in.Amount, t.Currency); err != nil {
 			return nil, err
@@ -782,8 +786,8 @@ func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 	if in.TagIDs != nil {
 		t.TagIDs = *in.TagIDs
 	}
-	if in.State != nil && *in.State == "posted" && in.Date == nil && Scheduled(t, b.today()) {
-		t.Date = b.today() // post a scheduled transaction now (ADR 0014)
+	if in.State != nil && *in.State == "posted" && in.Date == nil && t.Date > today {
+		t.Date = today // posting a future-dated transaction posts it now, as the HTTP post endpoint does (ADR 0014)
 	}
 	set(&t.Date, in.Date)
 	set(&t.Time, in.Time)
@@ -800,7 +804,7 @@ func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 	if err := b.updateTransaction(t); err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"transaction": b.data.txnView(*b.data.transactionByID(t.ID), b.data.tagsByTransaction(), b.today())}, nil
+	return map[string]interface{}{"transaction": b.data.txnView(*b.data.transactionByID(t.ID), b.data.tagsByTransaction(), today)}, nil
 }
 
 func toolDeleteTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, error) {

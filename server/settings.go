@@ -458,7 +458,7 @@ func handleExport(w http.ResponseWriter, r *http.Request, b *Book) {
 		writeErr(w, 405, "GET only")
 		return
 	}
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kisiauthong-export-%s.json"`, time.Now().Format("2006-01-02")))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kisiauthong-export-%s.json"`, b.today()))
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, b.data)
 }

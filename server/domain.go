@@ -66,7 +66,11 @@ func (d *Data) Balance(accountID, today string) int64 {
 }
 
 // Projected is the balance once every scheduled transaction has posted.
+// External accounts have no balance, so none is projected.
 func (d *Data) Projected(accountID string) int64 {
+	if a := d.accountByID(accountID); a == nil || a.IsExternal() {
+		return 0
+	}
 	return d.balanceWhere(accountID, func(t Transaction) bool { return t.State == "posted" })
 }
 

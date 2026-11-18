@@ -290,6 +290,9 @@ topmost popup only.
   against the gap and the track (`--sched` 5.4:1 on white, 4.6:1 on
   `--accentsoft`; `--accent2` 7.6:1 and 6.4:1). New segments follow the same
   rule and take their colours from variables so a theme can override them.
+  When the segments together exceed the balance they share the full bar in
+  proportion, so none of them disappears, and the over-balance warning
+  replaces the Free line.
 - Labels sit above their field (`label > span + control`).
 - Disabled controls use `disabled` (shown at .35 opacity), not hiding, when
   the user should know the action exists.

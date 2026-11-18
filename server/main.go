@@ -47,7 +47,10 @@ func stateView(d *Data, today string) map[string]interface{} {
 			"id": a.ID, "name": a.Name, "kind": a.Kind, "icon": a.Icon, "currency": a.Currency, "openingBalanceMinor": a.OpeningBalanceMinor,
 			"balanceMinor": bal, "reservedMinor": reserved, "freeMinor": bal - reserved - held,
 			// scheduled transactions (ADR 0014): held leaves free now, incoming is only shown
-			"heldMinor": held, "incomingMinor": d.Incoming(a.ID, today), "projectedMinor": d.Projected(a.ID),
+			"heldMinor": held, "incomingMinor": d.Incoming(a.ID, today),
+		}
+		if !a.IsExternal() { // an external account has no balance, so nothing to project
+			m["projectedMinor"] = d.Projected(a.ID)
 		}
 		if next := d.NextScheduled(a.ID, today, true); next != "" {
 			m["nextHeldDate"] = next
@@ -631,12 +634,16 @@ func handleCreateTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
 	if !decode(w, r, &body) {
 		return
 	}
+	today := b.today() // once per request, so a request across midnight sees one date
+	if body.Date == "" {
+		body.Date = today
+	}
 	t, err := b.addTransaction(body)
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	t.State = ServedState(t, b.today())
+	t.State = ServedState(t, today)
 	writeJSON(w, 201, t)
 }
 

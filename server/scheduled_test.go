@@ -174,7 +174,7 @@ func TestScheduledIncomeAndExternalSource(t *testing.T) {
 	if d.Balance("a", today) != 8520000 || d.Projected("a") != 8520000+5000000 {
 		t.Fatalf("income is not in the balance before its date")
 	}
-	if d.Held("emp", today) != 0 || d.Held(ExternalAccountID, today) != 0 || d.Incoming("emp", today) != 0 {
+	if d.Held("emp", today) != 0 || d.Held(ExternalAccountID, today) != 0 || d.Incoming("emp", today) != 0 || d.Projected("emp") != 0 {
 		t.Fatalf("external accounts hold nothing")
 	}
 	if d.Incoming("c", today) != 1000 {
@@ -289,6 +289,15 @@ func TestScheduledOverAPI(t *testing.T) {
 	if find(st.Accounts, "acc-c").HeldMinor != 0 {
 		t.Fatalf("delete did not release the hold")
 	}
+
+	// an external account has no balance, so nothing is projected for it
+	var raw struct{ Accounts []map[string]interface{} }
+	c.do("GET", "/api/state", nil, &raw)
+	for _, m := range raw.Accounts {
+		if _, ok := m["projectedMinor"]; ok && m["kind"] == "external" {
+			t.Fatalf("projected on an external account: %+v", m)
+		}
+	}
 }
 
 func TestScheduledOverMCP(t *testing.T) {
@@ -339,6 +348,16 @@ func TestScheduledOverMCP(t *testing.T) {
 	}
 	if n := tool("list_transactions", map[string]interface{}{"state": "scheduled"})["total"].(float64); n != 0 {
 		t.Fatalf("still scheduled: %v", n)
+	}
+
+	// a future-dated planned row posts now too, as over HTTP: it is not left scheduled
+	planned := tool("add_transaction", map[string]interface{}{"kind": "spending", "amount": "80", "accountId": "acc-b", "date": next, "state": "planned"})["transaction"].(map[string]interface{})
+	if planned["state"] != "planned" {
+		t.Fatalf("planned: %+v", planned)
+	}
+	upd = tool("update_transaction", map[string]interface{}{"id": planned["id"], "state": "posted"})["transaction"].(map[string]interface{})
+	if upd["state"] != "posted" || upd["date"] != today {
+		t.Fatalf("posting a future planned transaction now: %+v", upd)
 	}
 }
 
