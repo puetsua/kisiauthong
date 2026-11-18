@@ -44,7 +44,7 @@ a.smallbtn{text-decoration:none;display:inline-block}
 .panel a{color:var(--accent)}
 .content{flex:1;min-width:0}
 .topbar{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:3}
-.topbar h1{font-family:Georgia,"Noto Serif TC",serif;font-size:1.45rem;margin:0}
+.topbar h1{font-family:Georgia,"Noto Serif TC",serif;font-size:1.45rem;margin:0;min-width:0;overflow-wrap:anywhere}
 .topactions{margin-left:auto;display:flex;gap:10px;align-items:center}
 .primarybtn{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:10px 18px;font-weight:600;cursor:pointer}
 .fab{position:fixed;right:24px;bottom:24px;z-index:7;background:var(--accent);color:#fff;border:0;border-radius:50%;width:60px;height:60px;padding:0;display:grid;place-items:center;cursor:pointer;box-shadow:0 8px 22px rgba(60,30,90,.35)}
@@ -399,7 +399,7 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .tagbudget{margin-bottom:14px}.tagbudget .bcard{cursor:default}
 .psum{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;margin:0 0 10px;font-weight:600}
 
-/* Accounts page: totals, then accounts as cards grouped by kind */
+/* figures as tiles (a record's page), and accounts as cards */
 .totals{display:flex;gap:14px;flex-wrap:wrap;flex:1;min-width:0}
 .totcard{display:flex;flex-direction:column;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px;min-width:220px}
 .totcard .lab,.totcard small{color:var(--muted);font-size:.82rem}
@@ -407,8 +407,10 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .aicon{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:var(--accentsoft);color:var(--accent)}
 .aicon.ext{background:var(--track);color:var(--muted)}
 .acard .thead{align-items:center;justify-content:flex-start}
-/* a budget's name comes first; its period goes on the line below, so the name is never squeezed out */
-.bcard .thead{flex-direction:column;align-items:stretch;gap:2px}.bcard .thead small{text-align:left}
+/* a budget's or a reserve's name comes first; its period or target date goes on the line below, so the name is never squeezed out */
+.bcard .thead,.gcard .thead{flex-direction:column;align-items:stretch;gap:2px}.bcard .thead small,.gcard .thead small{text-align:left}
+/* a reserve's name is shown in full: it wraps, even a long word */
+.gcard .thead b{white-space:normal;overflow-wrap:anywhere}
 .acard .aname{flex:1;min-width:0;display:flex;flex-direction:column}
 .acard .aname b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .acard .aname small{font-size:.78rem;text-align:left}
