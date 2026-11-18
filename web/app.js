@@ -61,9 +61,87 @@ function writeInt(n) {
 function fmt(minor, currency, calc = false) {
   const c = currency || defCur(), e = expOf(c), d = shownDigits(minor, c, calc);
   const m = Math.round(minor || 0), abs = Math.abs(m), unit = Math.pow(10, e);
-  return (currency || "") + " " + (m < 0 ? "-" : "") + writeInt(Math.floor(abs / unit)) + (d ? "." + String(abs % unit).padStart(e, "0") : "");
+  return (currency || "") + " " + (m < 0 ? "-" : "") + AMT_OPEN + writeInt(Math.floor(abs / unit)) + (d ? "." + String(abs % unit).padStart(e, "0") : "") + AMT_CLOSE;
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// Hide amounts (header eye, per device): fmt() marks the digits of every amount with two
+// private-use characters, and an observer turns each marked run that reaches the page into an
+// .amtmask span, so one switch covers views, drawers, the bell and toasts alike. While hidden a span
+// reads "••••" (currency and sign stay outside it) and is a small button that shows its value
+// for a few seconds; attributes and <option>s cannot hold a span and just get "••••".
+const AMT_OPEN = "\uE000", AMT_CLOSE = "\uE001", AMT_RE = /\uE000([^\uE001]*)\uE001/g, DOTS = "••••", PEEK_MS = 5000;
+const HIDE_KEY = "kisiauthong.hideAmounts";
+let amountsHidden = false;
+try { amountsHidden = localStorage.getItem(HIDE_KEY) === "1"; } catch (e) { /* storage unavailable: shown */ }
+const plainAmounts = (s) => String(s).replace(AMT_RE, "$1");
+const amtInfo = new WeakMap(); // .amtmask span → { v: its digits, t: the timer that masks it again }
+function dressAmount(el, peek = false) {
+  const info = amtInfo.get(el);
+  clearTimeout(info.t);
+  el.classList.toggle("peek", peek);
+  el.textContent = amountsHidden && !peek ? DOTS : info.v;
+  if (!amountsHidden) { ["role", "tabindex", "aria-label", "aria-live"].forEach((a) => el.removeAttribute(a)); return; }
+  el.setAttribute("role", "button"); el.tabIndex = 0; el.setAttribute("aria-live", "polite");
+  if (peek) { el.removeAttribute("aria-label"); info.t = setTimeout(() => dressAmount(el), PEEK_MS); }
+  else el.setAttribute("aria-label", __("Hidden amount"));
+}
+function markAmounts(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const s = node.data, p = node.parentElement;
+    if (!s.includes(AMT_OPEN) || !p) return;
+    if (p.closest("option, optgroup, select, textarea, title")) { node.data = s.replace(AMT_RE, (m, v) => (amountsHidden ? DOTS : v)); return; }
+    const frag = document.createDocumentFragment();
+    let at = 0;
+    for (const m of s.matchAll(AMT_RE)) {
+      const el = document.createElement("span");
+      el.className = "amtmask";
+      amtInfo.set(el, { v: m[1], t: 0 });
+      dressAmount(el);
+      frag.append(s.slice(at, m.index), el);
+      at = m.index + m[0].length;
+    }
+    frag.append(s.slice(at));
+    p.replaceChild(frag, node);
+    return;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+  for (const el of [node, ...node.querySelectorAll("*")]) {
+    for (const a of el.attributes) if (a.value.includes(AMT_OPEN)) a.value = a.value.replace(AMT_RE, (m, v) => (amountsHidden ? DOTS : v));
+  }
+  const walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT), texts = [];
+  while (walk.nextNode()) if (walk.currentNode.data.includes(AMT_OPEN)) texts.push(walk.currentNode);
+  texts.forEach(markAmounts);
+}
+new MutationObserver((recs) => recs.forEach((r) => {
+  if (r.type === "childList") r.addedNodes.forEach(markAmounts);
+  else if (r.type === "characterData") markAmounts(r.target);
+  else { const v = r.target.getAttribute(r.attributeName); if (v && v.includes(AMT_OPEN)) r.target.setAttribute(r.attributeName, v.replace(AMT_RE, (m, d) => (amountsHidden ? DOTS : d))); }
+})).observe(document.body, { childList: true, characterData: true, attributes: true, subtree: true });
+// a tap on a hidden amount shows (or masks) just that one, and never reaches the row or card around it
+function peekAmount(e) {
+  const el = amountsHidden && e.target.closest && e.target.closest(".amtmask");
+  if (!el || !amtInfo.has(el)) return false;
+  e.preventDefault(); e.stopPropagation();
+  dressAmount(el, !el.classList.contains("peek"));
+  return true;
+}
+window.addEventListener("click", peekAmount, true);
+window.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.classList && e.target.classList.contains("amtmask")) peekAmount(e); }, true);
+function drawHideBtn() {
+  const b = $("#hideBtn");
+  document.documentElement.classList.toggle("hideamts", amountsHidden);
+  b.setAttribute("aria-pressed", String(amountsHidden));
+  b.setAttribute("aria-label", __("Hide amounts"));
+  b.title = amountsHidden ? __("Show amounts") : __("Hide amounts");
+}
+function setAmountsHidden(on) {
+  amountsHidden = on;
+  try { localStorage.setItem(HIDE_KEY, on ? "1" : "0"); } catch (e) { /* per-browser convenience only */ }
+  drawHideBtn();
+  document.querySelectorAll(".amtmask").forEach((el) => { if (amtInfo.has(el)) dressAmount(el); });
+  if (state.data) render(); // attributes, <option>s and the search are refreshed by redrawing
+}
+$("#hideBtn").addEventListener("click", () => setAmountsHidden(!amountsHidden));
 // msg shows a short toast at the bottom of the page; errors stay longer and can be clicked away.
 let toastTimer = 0;
 function msg(t, kind) {
@@ -719,7 +797,8 @@ async function deleteTxn(id) {
 function filteredTxns() {
   const f = state.filter, q = f.q.trim().toLowerCase();
   let list = [...state.data.transactions].sort(byNewest);
-  if (q) list = list.filter((t) => [t.note, t.memo, lbl(TYPE_L, flow(t)), txnSubtitle(t), fmt(t.amountMinor, t.currency)].join(" ").toLowerCase().includes(q));
+  // while amounts are hidden the search does not match them, so typing a guess reveals nothing
+  if (q) list = list.filter((t) => [t.note, t.memo, lbl(TYPE_L, flow(t)), txnSubtitle(t), amountsHidden ? "" : plainAmounts(fmt(t.amountMinor, t.currency))].join(" ").toLowerCase().includes(q));
   if (f.account) list = list.filter((t) => t.fromAccountId === f.account || t.toAccountId === f.account);
   if (f.type) list = list.filter((t) => flow(t) === f.type);
   // "none": spending and income without a category
@@ -2294,6 +2373,7 @@ function render() {
   $("#tabMore").classList.toggle("on", !["dashboard", "transactions", "accounts"].includes(navKey));
   $("#moreAdmin").hidden = !(state.me && state.me.isAdmin);
   drawSideAdmin();
+  drawHideBtn();
   renderBell();
   $("#addBtn").hidden = admin || (key === "dashboard" && state.customizing); // nothing to add there; it would cover widgets being edited
   $("#tabAdd").disabled = admin;
