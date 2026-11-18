@@ -112,7 +112,7 @@ type GeneralSettings struct {
 	OpenDays int `json:"openDays"`
 	// TimeZone shows transaction times in this IANA zone; "" follows the device (for travelling).
 	TimeZone string `json:"timeZone"`
-	// NumberFormat writes amounts as "grouped" (1,074,958), "four" (107,4958) or "plain" (1074958).
+	// NumberFormat writes amounts as "grouped" (1,074,958), "four" (107 4958, split by a no-break space in the web UI) or "plain" (1074958).
 	NumberFormat string `json:"numberFormat"`
 }
 

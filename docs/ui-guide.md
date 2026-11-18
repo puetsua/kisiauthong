@@ -309,6 +309,10 @@ topmost popup only.
   seconds and never reaches the row or card around it. Text built for anything
   but the page (search, clipboard) must use `plainAmounts()` or skip amounts.
   Form inputs use `decimal()` and are never masked.
+- Number format (Settings): groups of three `1,074,958`, groups of four
+  `107 4958` split by `FOUR_SEP` (a no-break space, so an amount never wraps
+  inside its digits), or plain. Never parse displayed amounts back; a search
+  that matches them treats any white space as a plain space.
 - Negative is shown with a minus; income in `--pos` where direction matters.
 - Dates the user thinks in: `dayLabel(iso)`; periods: `periodLabel()`.
 
