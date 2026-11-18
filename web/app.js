@@ -2362,6 +2362,7 @@ function currentScreen() {
   return SCREENS[h] ? h : "dashboard";
 }
 function render() {
+  if (!state.data) return; // signed out or still loading: the sign-in screen is up, and load() renders once data arrives
   const key = currentScreen();
   $("#pageTitle").textContent = __(SCREENS[key][0]);
   const admin = isAdminScreen(key);
