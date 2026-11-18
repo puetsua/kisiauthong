@@ -11,6 +11,10 @@ same change. Styles live in `web/style.css`, markup in `web/index.html` and
 - **Let the layout explain.** No secondary labels or descriptions that repeat
   what the layout already says. A short hint is fine only where an action
   would otherwise be undiscoverable (e.g. an empty state).
+- **Do not nudge** (ADR 0015). Similar items may be kept on purpose: no
+  suggested merges, "did you mean", highlighted duplicates or pre-selected
+  groups. Offer tools the user starts and controls (a multi-select merge);
+  a plain sort order with nothing highlighted or pre-selected is fine.
 - **One way per job.** Reuse an existing component before adding a new one;
   a new pattern needs an entry here.
 - **Phone and desktop are both first class.** Every screen works from 360px
@@ -315,6 +319,8 @@ topmost popup only.
   that matches them treats any white space as a plain space.
 - Negative is shown with a minus; income in `--pos` where direction matters.
 - Dates the user thinks in: `dayLabel(iso)`; periods: `periodLabel()`.
+- Versions have no `v` prefix: `0.2.0`, `0.2.0-1118-c22ff51`, as in the
+  release tags (ADR 0009).
 
 ## Text
 

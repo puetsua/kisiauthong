@@ -139,7 +139,7 @@ All ids are UUIDs generated on the client so offline creation never needs the se
 - Local SQLite is the client's source of truth for rendering; the network layer only syncs.
 - Desktop (Tauri): target Windows 10+, macOS 12+ (Apple Silicon + Intel), and mainstream Linux (`.AppImage`/`.deb`). No platform-specific forks of business logic — platform differences live in the Tauri shell layer only.
 - Mobile: Android 10+ (API 29+). Respect Android back behaviour, scoped storage for exports/attachments, and no hardcoded sizes — support small phones and tablets.
-- Web: evergreen browsers, responsive down to phone widths (the web UI may be the only UI a self-hoster's family uses on mobile browsers). Follow `docs/ui-guide.md` for layout, navigation, popups, toasts and controls, and update it when adding a pattern.
+- Web: evergreen browsers, responsive down to phone widths (the web UI may be the only UI a self-hoster's family uses on mobile browsers). Follow `docs/ui-guide.md` for layout, navigation, popups, toasts and controls, and update it when adding a pattern. Its Principles bind every design, including no nudging (ADR 0015): offer tools the user starts, never suggestions, "did you mean", highlighted duplicates or pre-selected groups.
 - Accessibility and i18n from the start: all user-visible strings go through the i18n layer (English source strings; Traditional Chinese as used in Taiwan, `zh-TW`, is a first-class target — the project name 記數通 is Taiwanese Hokkien; web: `__()`/`N_()` from `web/i18n.js`, coverage checked by `node scripts/check-i18n.js`), no hardcoded currency/date formats.
 
 ## 7. Sync protocol
@@ -201,6 +201,7 @@ docker compose -f deploy/docker-compose.yml up --build
 
 - Start by reading this file, `README.md`, and any ADR touching your area. Check `git status` / open changes before editing; do not overwrite uncommitted user work.
 - Keep changes scoped to the platform(s) the task names. A fix in shared logic belongs in `packages/core` (with tests), not copied into each app.
+- Before proposing UI, read the Principles in `docs/ui-guide.md`; the app does not nudge or second-guess the user (ADR 0015). Version strings have no `v` prefix (`0.2.0`, ADR 0009).
 - Prefer the existing stack and layout in §2. Creating a new app, swapping a framework, or changing the sync/conflict model requires an ADR and explicit user approval.
 - Never invent a second money representation, date format, or DTO shape — reuse `packages/core` and the OpenAPI contract.
 - Verify before reporting done: run the touched package's build + tests and quote the result. If you cannot run a platform (e.g. no Android SDK here), say which platforms are unverified instead of claiming full verification.
