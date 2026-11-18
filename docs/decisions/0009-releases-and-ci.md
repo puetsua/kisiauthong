@@ -21,7 +21,8 @@ platform from one Linux runner.
   Targets: Linux amd64/arm64/armv7, Windows amd64/arm64, macOS amd64/arm64,
   each archived (`.tar.gz`, `.zip` for Windows) with `LICENSE` and
   `README.md`, plus `SHA256SUMS`. The version is stamped with
-  `-X main.appVersion`; `kisiauthong version` prints it.
+  `-X main.appVersion`; `kisiauthong version` prints it. Like the tags, a
+  version shown by the app or the docs has no `v` prefix (`0.2.0`).
 - **Docker image** `ghcr.io/puetsua/kisiauthong` for linux/amd64, arm64 and
   arm/v7, built by `deploy/Dockerfile`: Go cross-compiles in the build
   stage (no emulation), and the final stage is distroless `static` running
