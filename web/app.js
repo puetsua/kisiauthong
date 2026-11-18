@@ -1257,7 +1257,7 @@ function screenReserve(v) {
     + (Object.keys(sums.in).length ? tile(__("Put in"), money(sums.in)) : "") + (Object.keys(sums.out).length ? tile(__("Taken out"), money(sums.out)) : "");
   v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#reserves">‹ ${esc(__("Reserves"))}</a><button type="button" class="smallbtn" id="resEdit">${esc(__("Edit"))}</button></div>
     <div class="tgrid tagbudget">${reserveCard(r)}</div>
-    <div class="resactions"><button type="button" class="primarybtn" id="resIn">${esc(__("Put in"))}</button><button type="button" class="smallbtn" id="resOut" ${holds ? "" : "disabled"}>${esc(__("Take out"))}</button><button type="button" class="smallbtn" id="resUse" ${holds ? "" : "disabled"}>${esc(__("Use"))}</button><button type="button" class="smallbtn" id="resDone" ${holds ? "" : "disabled"}>${esc(__("Complete"))}</button></div>
+    <div class="resactions"><button type="button" class="primarybtn" id="resIn">${esc(__("Put in"))}</button><button type="button" class="smallbtn" id="resOut" ${holds ? "" : "disabled"}>${esc(__("Take out"))}</button></div>
     <div class="totals">${tiles}</div>
     <section class="tsection">${periodBar(mode, p)}
     ${inP.length ? `<div class="psum"><span>${esc(__("{n} allocation(s)", { n: inP.length }))}</span><span class="amts">${[...sumParts(allocTotals(inP).in, "+", "move"), ...sumParts(allocTotals(inP).out, "−", "move")].join(" ")}</span></div>
@@ -1266,8 +1266,6 @@ function screenReserve(v) {
   $("#resEdit").addEventListener("click", () => openReserveDialog(r.id));
   $("#resIn").addEventListener("click", () => openAllocDialog(r.id, "in"));
   $("#resOut").addEventListener("click", () => openAllocDialog(r.id, "out"));
-  $("#resUse").addEventListener("click", () => openAllocDialog(r.id, "use"));
-  $("#resDone").addEventListener("click", () => completeReserve(r));
   bindDetails(v);
 }
 function openReserveDialog(editId) {
@@ -1299,12 +1297,8 @@ async function deleteReserve(r) {
   if (!confirm(__("Delete {name}? Its {n} allocation(s) and {m} template(s) are deleted too. Your accounts and transactions stay as they are.", { name: r.name, n, m }))) return;
   try { await api("/api/reserves/" + r.id, { method: "DELETE" }); msg(__("Deleted.")); location.hash = "#reserves"; await load(); } catch (e) { errMsg(e); }
 }
-async function completeReserve(r) {
-  if (!confirm(__("Take everything out of {name}? The money stays in its accounts, free to spend.", { name: r.name }))) return;
-  try { await post("/api/reserves/" + r.id + "/complete", { date: state.data.today }); msg(__("{name} completed.", { name: r.name })); await load(); } catch (e) { errMsg(e); }
-}
-// dir: "in" puts money in, "out" takes it out, "use" takes it out and then records the spending
-// (two separate records: spending never changes a reserve). editId: an allocation to fix.
+// dir: "in" puts money in, "out" takes it out (with a button that fills in all the reserve
+// holds in the chosen account). editId: an allocation to fix.
 function openAllocDialog(reserveId, dir, editId) {
   const a = editId ? state.data.allocations.find((x) => x.id === editId) : null;
   const r = resById(a ? a.reserveId : reserveId);
@@ -1314,23 +1308,36 @@ function openAllocDialog(reserveId, dir, editId) {
   const accs = d === "in" || a ? accountsByUse() : accountsByUse().filter((x) => heldIn(r, x.id) > 0);
   const opt = (x) => `<option value="${esc(x.id)}" ${a && a.accountId === x.id ? "selected" : ""}>${esc(d === "in" || a ? __("{account} · {amount} free", { account: x.name, amount: fmt(x.freeMinor, x.currency) }) : __("{account} · holds {amount}", { account: x.name, amount: fmt(heldIn(r, x.id), x.currency) }))}</option>`;
   const DIR_L = { in: N_("Put in"), out: N_("Take out") };
-  const title = a ? __("Edit allocation") : d === "use" ? __("Use from {name}", { name: r.name }) : d === "in" ? __("Put in {name}", { name: r.name }) : __("Take out of {name}", { name: r.name });
+  const title = a ? __("Edit allocation") : d === "in" ? __("Put in {name}", { name: r.name }) : __("Take out of {name}", { name: r.name });
+  const amount = field("Amount", `<input name="amount" type="number" step="any" min="0.01" required inputmode="decimal" value="${a ? decimal(Math.abs(a.amountMinor), a.currency) : ""}">`);
+  const fill = !a && d === "out";
   openDialog(title, dialogForm(
     (a ? field("Type", `<select name="dir">${enumOptions(DIR_L, ["in", "out"], d)}</select>`) : "") +
     field("Account", `<select name="accountId" required>${accs.map(opt).join("")}</select>`) +
-    field("Amount", `<input name="amount" type="number" step="any" min="0.01" required inputmode="decimal" value="${a ? decimal(Math.abs(a.amountMinor), a.currency) : ""}">`) +
+    (fill ? `<div class="amtfill">${amount}<button type="button" class="smallbtn" id="dlgFill">${esc(__("Fill remaining"))}</button></div>` : amount) +
     field("Date", `<input name="date" type="date" required value="${a ? esc(a.date) : state.data.today}">`) +
     field("Title", `<input name="note" maxlength="200" value="${a ? esc(a.note || "") : ""}">`, "wide"),
-    a ? __("Save changes") : d === "use" ? __("Take out and add the spending") : __(DIR_L[d]),
+    a ? __("Save changes") : __(DIR_L[d]),
     a ? `<button type="button" class="smallbtn danger" id="dlgDelAlloc">${esc(__("Delete"))}</button>` : ""));
   onDlg("dlgDelAlloc", async () => {
     if (!confirm(__("Delete this allocation? To undo a decision, add a new one instead."))) return;
     try { await api("/api/allocations/" + a.id, { method: "DELETE" }); msg(__("Deleted.")); await load(); } catch (e) { errMsg(e); }
   });
+  if (fill) {
+    // fills in what the chosen account holds, only when pressed: changing the account leaves the amount alone
+    const sel = $("#dialogForm [name=accountId]"), btn = $("#dlgFill");
+    const label = () => {
+      const n = heldIn(r, sel.value), l = __("Fill remaining: {amount}", { amount: fmt(n, accCur(sel.value)) });
+      btn.disabled = n <= 0; btn.setAttribute("aria-label", l); btn.title = l;
+    };
+    label();
+    sel.addEventListener("change", label);
+    btn.addEventListener("click", () => { $("#dialogForm [name=amount]").value = decimal(heldIn(r, sel.value), accCur(sel.value)); });
+  }
   $("#dialogForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = accCur(f.accountId), minor = toMinor(f.amount, cur);
-    const takeOut = a ? f.dir === "out" : d !== "in";
+    const takeOut = a ? f.dir === "out" : d === "out";
     if (!a && takeOut && minor > heldIn(r, f.accountId)) { // the server refuses this too; say it with the amount first
       msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: r.name, amount: fmt(heldIn(r, f.accountId), cur), account: accName(f.accountId) }), "error"); return;
     }
@@ -1340,7 +1347,6 @@ function openAllocDialog(reserveId, dir, editId) {
       if (a) { await put("/api/allocations/" + a.id, body); msg(__("Allocation updated.")); }
       else { await post("/api/reserves/" + r.id + "/allocations", body); msg(__("Saved.")); }
       $("#dialog").close(); await load();
-      if (d === "use") openDrawer("expense", "", { accountId: f.accountId, amountMinor: minor, currency: cur, note: f.note || r.name });
     } catch (err) { errMsg(err); }
   });
 }
@@ -1542,8 +1548,7 @@ $("#fSaveTpl").addEventListener("click", () => {
   const { body } = formBody();
   openTemplateDialog(null, { name: body.note, template: body, schedule: { frequency: "never" } });
 });
-// fill: { accountId, amountMinor, currency, note } to start from (Use on a reserve's page)
-function openDrawer(type, tag, fill) {
+function openDrawer(type, tag) {
   state.editingTxn = null;
   $("#fDelete").hidden = true;
   fillSelects();
@@ -1554,9 +1559,8 @@ function openDrawer(type, tag, fill) {
   el.date.value = now.date; el.time.value = now.time; $("#fTz").innerHTML = zoneOptions(deviceTZ());
   syncTz();
   setTxnType(type || "expense", tag ? [tag] : []);
-  state.quickOn = !tag && !fill;
+  state.quickOn = !tag;
   drawQuick(state.quickOn ? quickPicks(state.txnType) : []);
-  if (fill) { setSel(el.accountId, fill.accountId); el.amount.value = decimal(fill.amountMinor, fill.currency); el.note.value = fill.note || ""; }
   $("#fPlannedNote").hidden = true;
   syncSchedNote();
   $("#drawerTitle").textContent = __("Add transaction");
