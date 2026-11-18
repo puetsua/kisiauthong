@@ -25,7 +25,7 @@ func sample() Data {
 
 func TestBalanceIgnoresPlannedAndAllocations(t *testing.T) {
 	d := sample()
-	if got := d.Balance("a"); got != 65000000 {
+	if got := d.Balance("a", "2026-11-18"); got != 65000000 {
 		t.Fatalf("balance = %d, want 65000000", got)
 	}
 	if got := d.Reserved("a"); got != 35000000 {
@@ -60,10 +60,10 @@ func TestOccurrencesClampMonthEnd(t *testing.T) {
 func TestBudgetSpentCurrentMonthOnly(t *testing.T) {
 	d := sample()
 	d.TransactionTags = []TransactionTag{{TransactionID: "2", TagID: "food"}, {TransactionID: "3", TagID: "food"}}
-	if got := d.BudgetSpent("food", "2026-10-01", "2026-10-31"); got != 3000000 {
+	if got := d.BudgetSpent("food", "2026-10-01", "2026-10-31", "2026-11-18"); got != 3000000 {
 		t.Fatalf("spent = %d, want 3000000 (planned excluded)", got)
 	}
-	if got := d.BudgetSpent("food", "2026-11-01", "2026-11-30"); got != 0 {
+	if got := d.BudgetSpent("food", "2026-11-01", "2026-11-30", "2026-11-18"); got != 0 {
 		t.Fatalf("spent Nov = %d, want 0", got)
 	}
 }
@@ -162,7 +162,7 @@ func TestSpendingByCategoryPerCurrencyAndMonth(t *testing.T) {
 			{TransactionID: "8", TagID: "fun"}, {TransactionID: "8", TagID: "trip"}, {TransactionID: "9", TagID: "food"},
 		},
 	}
-	got := d.SpendingByCategory("2026-11-15")
+	got := d.SpendingByCategory("2026-11-15", "2026-11-30")
 	want := []TagSpend{
 		{TagID: "food", Currency: "JPY", AmountMinor: 1000},
 		{TagID: "food", Currency: "TWD", AmountMinor: 800},
@@ -216,7 +216,7 @@ func TestTagCountsItsOwnCurrencyOnly(t *testing.T) {
 	)
 	d.Allocations = append(d.Allocations, Allocation{ID: "7", ReserveID: "goal", AccountID: "j", Currency: "JPY", AmountMinor: 50000, Date: "2026-10-11"})
 	d.TransactionTags = []TransactionTag{{TransactionID: "2", TagID: "food"}, {TransactionID: "6", TagID: "food"}}
-	if got := d.BudgetSpent("food", "2026-10-01", "2026-10-31"); got != 3000000 {
+	if got := d.BudgetSpent("food", "2026-10-01", "2026-10-31", "2026-11-18"); got != 3000000 {
 		t.Fatalf("spent = %d, want 3000000 (the JPY expense only carries the label)", got)
 	}
 	if got := d.ReserveSaved("goal"); got != 35000000 {

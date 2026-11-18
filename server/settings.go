@@ -34,7 +34,7 @@ type WidgetOptions struct {
 var widgetColumns = map[string][]string{
 	"budgets":  {"name", "spent", "progress", "used", "limit", "remaining", "period"},
 	"spending": {"name", "share", "pct", "spent"},
-	"accounts": {"name", "currency", "balance", "earmarked", "free", "limit", "owed"},
+	"accounts": {"name", "currency", "balance", "earmarked", "scheduled", "free", "limit", "owed"},
 }
 
 // retiredColumns were once offered; saved layouts that still list them are cleaned.

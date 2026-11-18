@@ -100,7 +100,7 @@ func TestSeedRespectsBalanceInvariants(t *testing.T) {
 		if a.IsExternal() {
 			continue // outside the books: no balance of its own
 		}
-		bal, reserved := d.Balance(a.ID), d.Reserved(a.ID)
+		bal, reserved := d.Balance(a.ID, "2026-11-18"), d.Reserved(a.ID)
 		if a.LimitMinor == nil && bal < 0 {
 			t.Errorf("%s balance %d < 0", a.ID, bal)
 		}

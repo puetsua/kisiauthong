@@ -22,7 +22,7 @@ func TestSeveralCategories(t *testing.T) {
 	}
 	// each category's budget counts the whole amount
 	for _, id := range []string{"tag-food", "tag-fun"} {
-		if n := b.data.BudgetSpent(id, today, today); n != 900 {
+		if n := b.data.BudgetSpent(id, today, today, today); n != 900 {
 			t.Fatalf("%s spent %d", id, n)
 		}
 	}
@@ -41,7 +41,7 @@ func TestSeveralCategories(t *testing.T) {
 	if got := b.data.transactionByID(saved.ID); !slices.Equal(got.TagIDs, []string{"tag-transport", "tag-food"}) {
 		t.Fatalf("after edit: %+v", got.TagIDs)
 	}
-	if n := b.data.BudgetSpent("tag-fun", today, today); n != 0 {
+	if n := b.data.BudgetSpent("tag-fun", today, today, today); n != 0 {
 		t.Fatalf("removed category still counts: %d", n)
 	}
 	// none left: uncategorised
