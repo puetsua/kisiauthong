@@ -79,11 +79,12 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 	if utf8.RuneCountInString(t.Memo) > maxMemoRunes {
 		return fmt.Errorf("note longer than %d characters", maxMemoRunes)
 	}
-	if t.State == "" {
+	if t.State == "" || t.State == "scheduled" {
+		// scheduled is derived from the date and only served (ADR 0014); written back, it is posted
 		t.State = "posted"
 	}
 	if t.State != "posted" && t.State != "planned" {
-		return fmt.Errorf("state must be posted or planned")
+		return fmt.Errorf("state must be posted or planned (a posted transaction dated after today is scheduled)")
 	}
 	switch t.Type {
 	case "expense", "income":

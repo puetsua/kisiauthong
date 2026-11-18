@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 )
 
 // MCP (ADR 0008): an AI agent reaches the user's books through the Model
@@ -271,7 +270,7 @@ func init() {
 			"accountId": str("Only transactions touching this account"),
 			"tagId":     str("Only transactions with this category"),
 			"kind":      enum("Only this kind", "spending", "income", "transfer"),
-			"state":     enum("posted = happened; planned = expected, waiting to be confirmed", "posted", "planned"),
+			"state":     enum("posted = happened; planned = expected, waiting to be confirmed; scheduled = posted but dated after today, so not in balances yet and its amount is held in the paying account until the date", "posted", "planned", "scheduled"),
 			"search":    str("Text to find in the title or note"),
 			"limit":     integer("At most this many (default 50, up to 500)"),
 			"offset":    integer("Skip this many first, for paging"),
@@ -289,7 +288,7 @@ func init() {
 				"fromAccountId": str("Where the money comes from (transfer; optional external payer for income)"),
 				"toAccountId":   str("Where the money goes (transfer; optional external payee for spending)"),
 				"tagIds":        strs("Categories of spending, income or a transfer; a transaction can have several"),
-				"date":          str("YYYY-MM-DD, local; today when left out"),
+				"date":          str("YYYY-MM-DD, local; today when left out. A date after today schedules it: it is held in the paying account and posts by itself on that date"),
 				"time":          str("HH:MM, local, optional"),
 				"tz":            str("IANA time zone of date and time, e.g. Asia/Taipei; needed with time"),
 				"title":         str("Short title shown in lists, e.g. the shop or what was bought"),
@@ -305,7 +304,7 @@ func init() {
 			"tz":     str("IANA time zone"),
 			"title":  str("Short title"),
 			"note":   str("Longer note"),
-			"state":  enum("posted confirms a planned transaction", "posted", "planned"),
+			"state":  enum("posted confirms a planned transaction, or posts a scheduled one now (its date becomes today unless a date is given)", "posted", "planned"),
 		}, "id"), toolUpdateTransaction},
 		{"delete_transaction", "Delete a transaction for good.", ScopeTransactions, obj(map[string]interface{}{"id": str("Transaction id")}, "id"), toolDeleteTransaction},
 		{"create_account", "Create an own account (cash, bank, card, loan…) or, with external, a named place outside the books such as an employer or shop.", ScopeAccounts, obj(map[string]interface{}{
@@ -361,41 +360,44 @@ func args[T any](raw json.RawMessage) (T, error) {
 	return v, nil
 }
 
-func today() string { return time.Now().Format("2006-01-02") }
-
 func toolListAccounts(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
+	today := b.today()
 	own, ext := []map[string]interface{}{}, []map[string]interface{}{}
 	for _, a := range b.data.Accounts {
 		if a.IsExternal() {
 			ext = append(ext, map[string]interface{}{"id": a.ID, "name": a.Name})
 			continue
 		}
-		bal, reserved := b.data.Balance(a.ID), b.data.Reserved(a.ID)
+		bal, reserved, held := b.data.Balance(a.ID, today), b.data.Reserved(a.ID), b.data.Held(a.ID, today)
 		m := map[string]interface{}{"id": a.ID, "name": a.Name, "currency": a.Currency, "icon": a.Icon,
-			"balance": money(bal, a.Currency), "reserved": money(reserved, a.Currency), "free": money(bal-reserved, a.Currency)}
+			"balance": money(bal, a.Currency), "reserved": money(reserved, a.Currency), "free": money(bal-reserved-held, a.Currency),
+			// scheduled transactions (ADR 0014): held is taken from free until they post; incoming is not free yet
+			"held": money(held, a.Currency), "incoming": money(b.data.Incoming(a.ID, today), a.Currency),
+			"projected": money(b.data.Projected(a.ID), a.Currency)}
 		if a.LimitMinor != nil {
 			owed := max(-bal, 0)
 			m["limit"], m["owed"] = money(*a.LimitMinor, a.Currency), money(owed, a.Currency)
 		}
 		own = append(own, m)
 	}
-	return map[string]interface{}{"today": today(), "accounts": own, "externalAccounts": ext}, nil
+	return map[string]interface{}{"today": today, "accounts": own, "externalAccounts": ext}, nil
 }
 
 func toolListTags(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
+	today := b.today()
 	cats := []map[string]interface{}{}
 	for _, t := range b.data.Tags {
 		m := map[string]interface{}{"id": t.ID, "name": t.Name}
 		if t.LimitMinor != nil {
-			start, end := BudgetPeriod(t, today())
-			spent := b.data.BudgetSpent(t.ID, start, end)
+			start, end := BudgetPeriod(t, today)
+			spent := b.data.BudgetSpent(t.ID, start, end, today)
 			m["budget"] = map[string]interface{}{"limit": money(*t.LimitMinor, t.Currency), "spent": money(spent, t.Currency),
 				"remaining": money(*t.LimitMinor-spent, t.Currency), "period": t.Cycle, "periodEvery": max(t.CycleEvery, 1),
 				"periodStart": start, "periodEnd": end}
 		}
 		cats = append(cats, m)
 	}
-	return map[string]interface{}{"today": today(), "categories": cats}, nil
+	return map[string]interface{}{"today": today, "categories": cats}, nil
 }
 
 func toolListReserves(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
@@ -420,7 +422,7 @@ func toolListReserves(b *Book, _ json.RawMessage) (map[string]interface{}, error
 		m["accounts"] = held
 		out = append(out, m)
 	}
-	return map[string]interface{}{"today": today(), "reserves": out}, nil
+	return map[string]interface{}{"today": b.today(), "reserves": out}, nil
 }
 
 func (d *Data) allocationView(a Allocation) map[string]interface{} {
@@ -561,7 +563,7 @@ func (d *Data) txnKind(t Transaction) string {
 	return "transfer"
 }
 
-func (d *Data) txnView(t Transaction, tagsOf map[string][]string) map[string]interface{} {
+func (d *Data) txnView(t Transaction, tagsOf map[string][]string, today string) map[string]interface{} {
 	name := func(id string) string {
 		if a := d.accountByID(id); a != nil {
 			return a.Name
@@ -574,7 +576,7 @@ func (d *Data) txnView(t Transaction, tagsOf map[string][]string) map[string]int
 		}
 		return ""
 	}
-	m := map[string]interface{}{"id": t.ID, "kind": d.txnKind(t), "date": t.Date, "state": t.State, "title": t.Note}
+	m := map[string]interface{}{"id": t.ID, "kind": d.txnKind(t), "date": t.Date, "state": ServedState(t, today), "title": t.Note}
 	for k, v := range money(t.AmountMinor, t.Currency) {
 		m[k] = v
 	}
@@ -621,12 +623,12 @@ func toolListTransactions(b *Book, raw json.RawMessage) (map[string]interface{},
 		q.Limit = 50
 	}
 	q.Limit = min(q.Limit, 500)
-	d := b.data
+	d, today := b.data, b.today()
 	tagsOf := d.tagsByTransaction()
 	search := strings.ToLower(strings.TrimSpace(q.Search))
 	hits := []Transaction{}
 	for _, t := range d.Transactions {
-		if (q.From != "" && t.Date < q.From) || (q.To != "" && t.Date > q.To) || (q.State != "" && t.State != q.State) ||
+		if (q.From != "" && t.Date < q.From) || (q.To != "" && t.Date > q.To) || (q.State != "" && ServedState(t, today) != q.State) ||
 			(q.Kind != "" && d.txnKind(t) != q.Kind) {
 			continue
 		}
@@ -658,7 +660,7 @@ func toolListTransactions(b *Book, raw json.RawMessage) (map[string]interface{},
 	end := min(start+q.Limit, total)
 	out := []map[string]interface{}{}
 	for _, t := range hits[start:end] {
-		out = append(out, d.txnView(t, tagsOf))
+		out = append(out, d.txnView(t, tagsOf, today))
 	}
 	return map[string]interface{}{"total": total, "offset": start, "transactions": out}, nil
 }
@@ -668,7 +670,8 @@ func toolSpending(b *Book, raw json.RawMessage) (map[string]interface{}, error) 
 	if err != nil {
 		return nil, err
 	}
-	ref := today()
+	today := b.today()
+	ref := today
 	if q.Month != "" {
 		if !validDate(q.Month + "-01") {
 			return nil, fmt.Errorf("month must be YYYY-MM")
@@ -676,7 +679,7 @@ func toolSpending(b *Book, raw json.RawMessage) (map[string]interface{}, error) 
 		ref = q.Month + "-01"
 	}
 	rows := []map[string]interface{}{}
-	for _, s := range b.data.SpendingByCategory(ref) {
+	for _, s := range b.data.SpendingByCategory(ref, today) {
 		m := money(s.AmountMinor, s.Currency)
 		m["categoryId"] = s.TagID
 		if t := b.data.tagByID(s.TagID); t != nil {
@@ -690,10 +693,11 @@ func toolSpending(b *Book, raw json.RawMessage) (map[string]interface{}, error) 
 }
 
 func toolListTemplates(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
+	today := b.today()
 	out := []map[string]interface{}{}
 	for _, tp := range b.data.TransactionTemplates {
 		next := ""
-		for _, occ := range Occurrences(tp, today(), "2099-12-31") {
+		for _, occ := range Occurrences(tp, today, "2099-12-31") {
 			next = occ
 			break
 		}
@@ -702,7 +706,7 @@ func toolListTemplates(b *Book, _ json.RawMessage) (map[string]interface{}, erro
 			"amount": money(tp.Template.AmountMinor, cur), "frequency": tp.Schedule.Frequency, "every": max(tp.Schedule.Interval, 1)}
 		out = append(out, m)
 	}
-	return map[string]interface{}{"today": today(), "templates": out}, nil
+	return map[string]interface{}{"today": today, "templates": out}, nil
 }
 
 func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
@@ -743,11 +747,15 @@ func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, e
 			return nil, fmt.Errorf("unknown tag %q: call list_tags for ids", id)
 		}
 	}
+	today := b.today() // once per call, so a call across midnight sees one date
+	if t.Date == "" {
+		t.Date = today
+	}
 	saved, err := b.addTransaction(t)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"transaction": b.data.txnView(*b.data.transactionByID(saved.ID), b.data.tagsByTransaction())}, nil
+	return map[string]interface{}{"transaction": b.data.txnView(*b.data.transactionByID(saved.ID), b.data.tagsByTransaction(), today)}, nil
 }
 
 func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
@@ -764,7 +772,7 @@ func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 	if old == nil {
 		return nil, fmt.Errorf("transaction %q not found", in.ID)
 	}
-	t := *old
+	t, today := *old, b.today() // once per call, so a call across midnight sees one date
 	if in.Amount != nil {
 		if t.AmountMinor, err = parseAmount(*in.Amount, t.Currency); err != nil {
 			return nil, err
@@ -777,6 +785,9 @@ func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 	}
 	if in.TagIDs != nil {
 		t.TagIDs = *in.TagIDs
+	}
+	if in.State != nil && *in.State == "posted" && in.Date == nil && t.Date > today {
+		t.Date = today // posting a future-dated transaction posts it now, as the HTTP post endpoint does (ADR 0014)
 	}
 	set(&t.Date, in.Date)
 	set(&t.Time, in.Time)
@@ -793,7 +804,7 @@ func toolUpdateTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 	if err := b.updateTransaction(t); err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"transaction": b.data.txnView(*b.data.transactionByID(t.ID), b.data.tagsByTransaction())}, nil
+	return map[string]interface{}{"transaction": b.data.txnView(*b.data.transactionByID(t.ID), b.data.tagsByTransaction(), today)}, nil
 }
 
 func toolDeleteTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
@@ -887,7 +898,7 @@ func toolCreateTag(b *Book, raw json.RawMessage) (map[string]interface{}, error)
 }
 
 func toolGenerateDue(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
-	n, err := b.GenerateDue(today())
+	n, err := b.GenerateDue(b.today())
 	if err != nil {
 		return nil, err
 	}

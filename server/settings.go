@@ -34,7 +34,7 @@ type WidgetOptions struct {
 var widgetColumns = map[string][]string{
 	"budgets":  {"name", "spent", "progress", "used", "limit", "remaining", "period"},
 	"spending": {"name", "share", "pct", "spent"},
-	"accounts": {"name", "currency", "balance", "earmarked", "free", "limit", "owed"},
+	"accounts": {"name", "currency", "balance", "earmarked", "scheduled", "free", "limit", "owed"},
 }
 
 // retiredColumns were once offered; saved layouts that still list them are cleaned.
@@ -458,7 +458,7 @@ func handleExport(w http.ResponseWriter, r *http.Request, b *Book) {
 		writeErr(w, 405, "GET only")
 		return
 	}
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kisiauthong-export-%s.json"`, time.Now().Format("2006-01-02")))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kisiauthong-export-%s.json"`, b.today()))
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, b.data)
 }

@@ -21,16 +21,30 @@ func (d *Data) accountByID(id string) *Account {
 	return nil
 }
 
-// Balance ignores planned transactions. Every money movement is a transfer;
-// spending and income are transfers to / from an external account.
-// Allocations move no money and never touch it (ADR 0013).
-func (d *Data) Balance(accountID string) int64 {
+// Scheduled reports whether a posted transaction is dated after today: it has
+// not happened yet (ADR 0014). Nothing marks it in storage; the date decides,
+// so it posts by itself when its date comes.
+func Scheduled(t Transaction, today string) bool { return t.State == "posted" && t.Date > today }
+
+// happened reports whether a transaction counts in balances, budgets and reports on today.
+func happened(t Transaction, today string) bool { return t.State == "posted" && t.Date <= today }
+
+// ServedState is the state clients see: "scheduled" for a posted transaction dated after today.
+func ServedState(t Transaction, today string) string {
+	if Scheduled(t, today) {
+		return "scheduled"
+	}
+	return t.State
+}
+
+// balanceWhere sums an account's opening balance and the transfers keep picks.
+func (d *Data) balanceWhere(accountID string, keep func(Transaction) bool) int64 {
 	var bal int64
 	if a := d.accountByID(accountID); a != nil {
 		bal = a.OpeningBalanceMinor
 	}
 	for _, t := range d.Transactions {
-		if t.State != "posted" || t.Type != "transfer" {
+		if t.Type != "transfer" || !keep(t) {
 			continue
 		}
 		if t.FromAccountID == accountID {
@@ -41,6 +55,74 @@ func (d *Data) Balance(accountID string) int64 {
 		}
 	}
 	return bal
+}
+
+// Balance is an account's balance on today: posted transfers dated today or
+// earlier. Planned and scheduled transactions are left out. Every money
+// movement is a transfer; spending and income are transfers to / from an
+// external account. Allocations move no money and never touch it (ADR 0013).
+func (d *Data) Balance(accountID, today string) int64 {
+	return d.balanceWhere(accountID, func(t Transaction) bool { return happened(t, today) })
+}
+
+// Projected is the balance once every scheduled transaction has posted.
+// External accounts have no balance, so none is projected.
+func (d *Data) Projected(accountID string) int64 {
+	if a := d.accountByID(accountID); a == nil || a.IsExternal() {
+		return 0
+	}
+	return d.balanceWhere(accountID, func(t Transaction) bool { return t.State == "posted" })
+}
+
+// Held is what scheduled transactions will take out of an own account: spending
+// and transfers to other own accounts, on their source. It lowers the free
+// amount until they post, and is not an allocation (ADR 0014). External
+// accounts hold nothing.
+func (d *Data) Held(accountID, today string) int64 {
+	if a := d.accountByID(accountID); a == nil || a.IsExternal() {
+		return 0
+	}
+	var total int64
+	for _, t := range d.Transactions {
+		if t.Type == "transfer" && t.FromAccountID == accountID && Scheduled(t, today) {
+			total += t.AmountMinor
+		}
+	}
+	return total
+}
+
+// Incoming is what scheduled transactions will bring into an own account: income
+// and transfers from other own accounts. It is shown, never added to free.
+func (d *Data) Incoming(accountID, today string) int64 {
+	if a := d.accountByID(accountID); a == nil || a.IsExternal() {
+		return 0
+	}
+	var total int64
+	for _, t := range d.Transactions {
+		if t.Type == "transfer" && t.ToAccountID == accountID && Scheduled(t, today) {
+			total += t.AmountMinor
+		}
+	}
+	return total
+}
+
+// NextScheduled is the earliest date of a scheduled transaction leaving (out)
+// or entering (!out) an account, "" when there is none.
+func (d *Data) NextScheduled(accountID, today string, out bool) string {
+	next := ""
+	if a := d.accountByID(accountID); a == nil || a.IsExternal() {
+		return next
+	}
+	for _, t := range d.Transactions {
+		side := t.ToAccountID
+		if out {
+			side = t.FromAccountID
+		}
+		if side == accountID && Scheduled(t, today) && (next == "" || t.Date < next) {
+			next = t.Date
+		}
+	}
+	return next
 }
 
 func (d *Data) reserveByID(id string) *Reserve {
@@ -125,8 +207,12 @@ func (d *Data) countsToward(tagID, cur string) bool {
 
 // BudgetSpent sums posted spending (own account -> external) in the tag's
 // currency linked to the tag, with a date in [start, end] (inclusive
-// YYYY-MM-DD; see BudgetPeriod).
-func (d *Data) BudgetSpent(tagID, start, end string) int64 {
+// YYYY-MM-DD; see BudgetPeriod). Scheduled spending (dated after today)
+// counts once it posts.
+func (d *Data) BudgetSpent(tagID, start, end, today string) int64 {
+	if today < end {
+		end = today
+	}
 	linked := map[string]bool{}
 	for _, tt := range d.TransactionTags {
 		if tt.TagID == tagID {
@@ -153,7 +239,8 @@ type TagSpend struct {
 // SpendingByCategory sums posted expenses in ref's calendar month per
 // (category tag, currency), largest first. Currencies are never mixed. An
 // expense linked to two category tags counts toward both, as in BudgetSpent.
-func (d *Data) SpendingByCategory(ref string) []TagSpend {
+// Scheduled expenses (dated after today) count once they post.
+func (d *Data) SpendingByCategory(ref, today string) []TagSpend {
 	month := ref[:7]
 	cats := map[string][]string{}
 	for _, tt := range d.TransactionTags {
@@ -162,7 +249,7 @@ func (d *Data) SpendingByCategory(ref string) []TagSpend {
 	type key struct{ tag, cur string }
 	sums := map[key]int64{}
 	for _, t := range d.Transactions {
-		if t.State != "posted" || !d.IsSpending(t) || len(t.Date) < 7 || t.Date[:7] != month {
+		if !happened(t, today) || !d.IsSpending(t) || len(t.Date) < 7 || t.Date[:7] != month {
 			continue
 		}
 		tags := cats[t.ID]

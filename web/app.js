@@ -281,6 +281,7 @@ const WIDGET_COLS = {
     { key: "currency", label: N_("Currency"), v: (a) => esc(a.currency) },
     { key: "balance", label: N_("Balance"), on: 1, num: 1, v: (a) => fmt(a.balanceMinor, a.currency) },
     { key: "earmarked", label: N_("Reserved"), on: 1, num: 1, v: (a) => fmt(a.reservedMinor, a.currency) },
+    { key: "scheduled", label: N_("Scheduled"), on: 1, num: 1, v: (a) => fmt(a.heldMinor || 0, a.currency) },
     { key: "free", label: N_("Free"), on: 1, num: 1, v: (a) => fmt(a.freeMinor, a.currency) },
     { key: "limit", label: N_("Limit"), num: 1, v: (a) => (a.limitMinor ? fmt(a.limitMinor, a.currency) : "—") },
     { key: "owed", label: N_("Owed"), num: 1, v: (a) => (a.limitMinor ? fmt(a.owedMinor, a.currency) : "—") },
@@ -300,9 +301,14 @@ function widgetBody(type, o) {
   const inc = (x) => !(o.include && o.include.length) || o.include.includes(x);
   switch (type) {
     case "balances": {
-      const perCur = {};
-      d.accounts.forEach((a) => { if (inc(a.currency)) perCur[a.currency] = (perCur[a.currency] || 0) + a.balanceMinor; });
-      return `<div class="cards">${Object.entries(perCur).map(([c, val]) => `<div class="card"><span class="lab">${esc(__("Balance"))}</span><b>${fmt(val, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span></div>`).join("")}</div>`;
+      // per currency: the balance, and when reserves or scheduled transactions take part of it, what is free
+      const perCur = {}, keys = ["balanceMinor", "freeMinor", "reservedMinor", "heldMinor"];
+      d.accounts.forEach((a) => { if (inc(a.currency)) { const x = perCur[a.currency] || (perCur[a.currency] = {}); keys.forEach((k) => { x[k] = (x[k] || 0) + (a[k] || 0); }); } });
+      const split = (x, c) => (x.reservedMinor || x.heldMinor ? `<ul class="balsplit">
+          <li class="free"><span>${esc(__("Free"))}</span><span>${fmt(x.freeMinor, c)}</span></li>
+          <li><span><span class="dot earmarked"></span>${esc(__("Reserved"))}</span><span>${fmt(x.reservedMinor, c)}</span></li>
+          <li><span><span class="dot sched"></span>${esc(__("Scheduled (not posted)"))}</span><span>${fmt(x.heldMinor, c)}</span></li></ul>` : "");
+      return `<div class="cards">${Object.entries(perCur).map(([c, x]) => `<div class="card"><span class="lab">${esc(__("Balance"))}</span><b>${fmt(x.balanceMinor, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span>${split(x, c)}</div>`).join("")}</div>`;
     }
     case "budgets": {
       const list = d.tags.filter((t) => t.limitMinor !== undefined && inc(t.id)).map((t) => ({ ...t, pct: t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0 }));
@@ -691,6 +697,17 @@ function dayLabel(iso) {
   if (isoDay(new Date(y, m - 1, d + 1)) === state.data.today) return __("Yesterday");
   try { return new Intl.DateTimeFormat(LANG, { weekday: "short", year: "numeric", month: "short", day: "numeric" }).format(day); } catch (e) { return iso; }
 }
+// Scheduled transactions (ADR 0014): the server serves a posted transaction dated after today as
+// "scheduled". It is not in balances yet; what it takes from an own account is held (blue).
+const isSched = (t) => t.state === "scheduled";
+// "11/20", with the year when it is not this year's
+function shortDay(iso) {
+  if (!iso) return "";
+  const y = state.data && iso.slice(0, 4) !== state.data.today.slice(0, 4);
+  try { return new Intl.DateTimeFormat(LANG, y ? { year: "numeric", month: "numeric", day: "numeric" } : { month: "numeric", day: "numeric" }).format(parseDay(iso)); } catch (e) { return iso; }
+}
+// the date that decides scheduled on save: the server's today, or this device's if it is earlier
+const schedToday = () => { const d = state.data; return d.serverToday && d.serverToday < d.today ? d.serverToday : d.today; };
 // dayNet: income minus spending per currency for one day (transfers and money-box decisions net to zero)
 function dayNet(list) {
   const net = {};
@@ -699,7 +716,8 @@ function dayNet(list) {
 }
 function feedRow(t, opts = {}) {
   // withDate: rows outside day sections (search results, expected) lead with their date
-  const sub = txnSubtitle(t), when = opts.withDate ? `<span class="fwhen">${esc(dayLabel(txnDay(t)))}</span>` : "";
+  const sub = txnSubtitle(t), when = opts.sched ? `<span class="chip sched">${esc(__("Posts {date}", { date: shortDay(t.date) }))}</span> `
+    : opts.withDate ? `<span class="fwhen">${esc(dayLabel(txnDay(t)))}</span>` : "";
   return `<li><button type="button" class="feedrow" ${opts.edit ? "data-edit-txn" : "data-detail-txn"}="${esc(t.id)}">
       <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span>
       <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub">${when}${txnClock(t)}<span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
@@ -872,7 +890,9 @@ function screenTransactions(v) {
     const expected = all.filter((t) => t.state === "planned").reverse();
     // a search looks through all of history; otherwise the period on screen
     const searching = !!state.filter.q.trim();
-    const list = all.filter((t) => { const d = txnDay(t); return t.state !== "planned" && (searching || (d >= p.start && d <= p.end)); });
+    // scheduled ones too, soonest first, whatever their date: the period cannot page past today
+    const sched = all.filter(isSched).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")) || a.id.localeCompare(b.id));
+    const list = all.filter((t) => { const d = txnDay(t); return t.state !== "planned" && !isSched(t) && (searching || (d >= p.start && d <= p.end)); });
     const modes = Object.keys(PERIOD_L).map((m) => `<button type="button" data-mode="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(PERIOD_L[m]))}</button>`).join("");
     const custom = p.mode === "custom" ? `<span class="prange"><input type="date" id="pStart" value="${esc(p.start)}" aria-label="${esc(__("Start date"))}"> – <input type="date" id="pEnd" value="${esc(p.end)}" aria-label="${esc(__("End date"))}"></span>` : "";
     let shown = list, head;
@@ -888,11 +908,12 @@ function screenTransactions(v) {
         <button class="smallbtn" data-page="1" ${state.searchPage >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button>
         <select id="pgSize" aria-label="${esc(__("Per page"))}">${sizes}</select></nav></div>` : "";
     } else head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
+    const schedHTML = sched.length ? `<section class="panel feedpanel sched" id="schedSec"><h3>${esc(__("Scheduled · posts on its date"))}</h3><ul class="feed">${sched.map((t) => feedRow(t, { sched: true })).join("")}</ul></section>` : "";
     const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, edit: true })).join("")}</ul></section>` : "";
     // search results: one flat list, each row carrying its date
     const postedHTML = list.length ? `<section class="panel feedpanel">${searching ? `<ul class="feed">${shown.map((t) => feedRow(t, { withDate: true })).join("")}</ul>` : feedHTML(list, openDays())}</section>`
-      : `<div class="empty">${esc(searching ? __("No transactions match your search.") : __("No transactions in this period."))}</div>`;
-    $("#txnResults").innerHTML = expectedHTML + head + postedHTML;
+      : searching && sched.length ? "" : `<div class="empty">${esc(searching ? __("No transactions match your search.") : __("No transactions in this period."))}</div>`;
+    $("#txnResults").innerHTML = expectedHTML + schedHTML + head + postedHTML;
     const box = $("#txnResults");
     box.querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => {
       state.searchPage += parseInt(b.dataset.page, 10);
@@ -975,16 +996,27 @@ function accountActivity(id) {
 }
 function accountCard(a) {
   const act = accountActivity(a.id), neg = a.balanceMinor < 0;
+  // scheduled transactions (ADR 0014): what they take is held (a blue segment), what they bring is only shown
+  const held = a.heldMinor || 0, incoming = a.incomingMinor || 0;
+  const nHeld = state.data.transactions.filter((t) => isSched(t) && t.fromAccountId === a.id).length;
+  const heldLine = held ? `<small><b class="dot sched"></b>${esc(__(nHeld > 1 ? N_("Scheduled {amount} · first posts {date}") : N_("Scheduled {amount} · posts {date}"), { amount: fmt(held, a.currency), date: shortDay(a.nextHeldDate) }))}</small>` : "";
+  const inLine = incoming ? `<small><b class="dot incoming"></b>${esc(__("Scheduled in +{amount} · {date}", { amount: fmt(incoming, a.currency), date: shortDay(a.nextIncomingDate) }))}</small>` : "";
+  const seg = (cls, w) => (w > 0 ? `<i class="${cls}" style="width:${w}%"></i>` : "");
   let detail = "";
   if (a.limitMinor) {
-    const u = (a.utilisation || 0) * 100;
-    detail = `<span class="bar"><i class="${barCls(u)}" style="width:${Math.min(100, u)}%"></i></span><span class="tfoot"><small>${esc(owedText(a))}</small></span>`;
-  } else if (a.reservedMinor > 0) {
-    // reserving more than the balance is allowed (spending never touches a reserve), but it shows
-    const over = a.freeMinor < 0, e = a.balanceMinor > 0 ? Math.min(100, a.reservedMinor / a.balanceMinor * 100) : 100;
-    detail = `<span class="splitbar"><i class="earmarked${over ? " over" : ""}" style="width:${e}%"></i></span>
-      <span class="tfoot">${over ? `<small class="neg">${esc(__("Reserved more than its balance"))}</small>` : `<small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.freeMinor, a.currency) }))}</small>`}<small><b class="dot earmarked"></b>${esc(__("Reserved {amount}", { amount: fmt(a.reservedMinor, a.currency) }))}</small></span>`;
-  }
+    // spending from a card holds against its limit
+    const u = Math.min(100, (a.utilisation || 0) * 100), h = Math.min(100 - u, held / a.limitMinor * 100);
+    detail = `<span class="bar${held ? " split" : ""}">${held ? seg(barCls(u), u) + seg("sched", h) : `<i class="${barCls(u)}" style="width:${u}%"></i>`}</span><span class="tfoot"><small>${esc(owedText(a))}</small>${heldLine}${inLine}</span>`;
+  } else if (a.reservedMinor > 0 || held > 0) {
+    // reserving or scheduling more than the balance is allowed (spending never touches a reserve), but it shows
+    const over = a.freeMinor < 0, base = Math.max(0, a.balanceMinor);
+    // when both do not fit, they share the bar in proportion, so the held segment never disappears
+    const res = Math.max(0, a.reservedMinor), scale = 100 / Math.max(base, res + held, 1);
+    const e = res * scale, h = held * scale;
+    const overText = held ? __("Reserved and scheduled more than its balance") : __("Reserved more than its balance");
+    detail = `<span class="splitbar">${seg("earmarked" + (over && !held ? " over" : ""), e)}${seg("sched", h)}</span>
+      <span class="tfoot">${over ? `<small class="neg">${esc(overText)}</small>` : `<small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.freeMinor, a.currency) }))}</small>`}${a.reservedMinor ? `<small><b class="dot earmarked"></b>${esc(__("Reserved {amount}", { amount: fmt(a.reservedMinor, a.currency) }))}</small>` : ""}${heldLine}${inLine}</span>`;
+  } else if (incoming) detail = `<span class="tfoot">${inLine}</span>`;
   return `<button type="button" class="tcard acard" data-detail-account="${esc(a.id)}">
     <span class="thead">${accIcon(a)}<span class="aname"><b>${esc(a.name)}</b></span></span>
     <span class="bamount${neg ? " neg" : ""}"><b>${fmt(a.balanceMinor, a.currency)}</b></span>
@@ -1000,7 +1032,7 @@ function screenAccounts(v) {
   const totals = curs.map((c) => {
     const xs = accs.filter((a) => a.currency === c), sum = (k) => xs.reduce((n, a) => n + (a[k] || 0), 0);
     return `<div class="totcard"><span class="lab">${esc(__("Total"))}</span><b>${fmt(sum("balanceMinor"), c)}</b>
-      <small>${esc(__("{n} account(s)", { n: xs.length }))}${sum("reservedMinor") ? " · " + esc(__("Reserved {amount}", { amount: fmt(sum("reservedMinor"), c) })) : ""}</small></div>`;
+      <small>${esc(__("{n} account(s)", { n: xs.length }))}${sum("reservedMinor") ? " · " + esc(__("Reserved {amount}", { amount: fmt(sum("reservedMinor"), c) })) : ""}${sum("heldMinor") ? " · " + esc(__("Scheduled {amount}", { amount: fmt(sum("heldMinor"), c) })) : ""}</small></div>`;
   }).join("");
   const ordered = accs; // by name, as the server lists them
   const exts = state.data.externals.map((a) => {
@@ -1071,7 +1103,7 @@ function setTagRange(m) { state.tagRange = m; try { localStorage.setItem(TAG_RAN
 // (the same day rule budgets use, ADR 0006, so a month here matches the budget card)
 function tagTxns(id, p) {
   const when = (t) => t.date + (t.time || "");
-  return state.data.transactions.filter((t) => t.state !== "planned" && txnCats(t).includes(id) && (!p || (t.date >= p.start && t.date <= p.end)))
+  return state.data.transactions.filter((t) => t.state !== "planned" && !isSched(t) && txnCats(t).includes(id) && (!p || (t.date >= p.start && t.date <= p.end)))
     .sort((a, b) => when(b).localeCompare(when(a)) || b.id.localeCompare(a.id));
 }
 // money out and in, per currency in minor units (never converted)
@@ -1519,6 +1551,7 @@ function openDrawer(type, tag, fill) {
   drawQuick(state.quickOn ? quickPicks(state.txnType) : []);
   if (fill) { setSel(el.accountId, fill.accountId); el.amount.value = decimal(fill.amountMinor, fill.currency); el.note.value = fill.note || ""; }
   $("#fPlannedNote").hidden = true;
+  syncSchedNote();
   $("#drawerTitle").textContent = __("Add transaction");
   $("#drawer").hidden = false; $("#drawerBackdrop").hidden = false;
 }
@@ -1547,7 +1580,8 @@ function openEditTxn(id) {
   $("#fPlannedNote").hidden = t.state !== "planned";
   $("#fPlannedNote").textContent = t.state !== "planned" ? "" : __("Expected on {date}, not confirmed yet. Check the amount and save to confirm it.", { date: dayLabel(t.date) })
     + (range ? " " + __("Expected range {min} – {max}.", { min: fmt(range.min, t.currency), max: fmt(range.max, t.currency) }) : "");
-  $("#drawerTitle").textContent = t.state === "planned" ? __("Confirm expected transaction") : __("Edit transaction");
+  $("#drawerTitle").textContent = t.state === "planned" ? __("Confirm expected transaction") : isSched(t) ? __("Scheduled transaction") : __("Edit transaction");
+  syncSchedNote();
   $("#fDelete").hidden = false;
   state.quickOn = false;
   drawQuick([]);
@@ -1570,7 +1604,27 @@ $("#fNowBtn").addEventListener("click", () => {
   if (!hit) sel.add(new Option(dz.replace(/_/g, " "), dz), 0);
   sel.value = hit ? hit.value : dz;
   syncTz();
+  syncSchedNote();
 });
+// A date after today schedules the transaction (ADR 0014): the blue note says what that means, live while
+// the form changes; on a scheduled one, Post now moves its date to today and saves.
+function syncSchedNote() {
+  const el = $("#txnForm").elements, date = el.date.value, today = schedToday();
+  const t = state.editingTxn && state.data.transactions.find((x) => x.id === state.editingTxn);
+  const future = !!date && date > today && !(t && t.state === "planned"), wasSched = !!t && isSched(t);
+  $("#fSchedNote").hidden = !(future || wasSched);
+  $("#fPostNow").hidden = !(wasSched && future);
+  if (!future && !wasSched) return;
+  if (!future) { $("#fSchedHead").textContent = __("Posts when saved"); $("#fSchedText").textContent = __("Dated today or earlier: saving posts it now."); return; }
+  const { body, type } = formBody(), when = dayLabel(date);
+  $("#fSchedHead").textContent = __("Scheduled · posts {date}", { date: when });
+  $("#fSchedText").textContent = type === "income"
+    ? __("Until then it is not in the balance of {account}, and not free to use.", { account: accName(body.toAccountId) })
+    : body.amountMinor > 0 ? __("Until then it is not in the balance; {amount} is held in {account} so it cannot be reserved or spent. Moving the date to today or earlier posts it.", { amount: fmt(body.amountMinor, body.currency), account: accName(body.fromAccountId) })
+      : __("Until then it is not in the balance; the amount is held in {account} so it cannot be reserved or spent. Moving the date to today or earlier posts it.", { account: accName(body.fromAccountId) });
+}
+["input", "change"].forEach((ev) => $("#txnForm").addEventListener(ev, syncSchedNote));
+$("#fPostNow").addEventListener("click", () => { $("#txnForm").elements.date.value = schedToday(); $("#txnForm").requestSubmit(); });
 $("#fDelete").addEventListener("click", async () => { showActions(false); if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
 $("#drawerBackdrop").addEventListener("click", closeDrawer);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden && !$("#dialog").open) closeDrawer(); });
@@ -1578,6 +1632,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#dra
 document.querySelectorAll("#typeSeg button").forEach((b) => b.addEventListener("click", () => {
   setTxnType(b.dataset.type);
   if (state.quickOn) drawQuick(quickPicks(b.dataset.type));
+  syncSchedNote();
 }));
 $("#fAccount").addEventListener("change", () => refreshToAccounts($("#fToAccount").value));
 $("#addBtn").addEventListener("click", () => openDrawer("expense"));
@@ -1611,8 +1666,10 @@ $("#txnForm").addEventListener("submit", async (e) => {
   if (type === "transfer" && !f.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to."), "error"); return; }
   if (toMinor(f.amount, cur) === 0) { msg(__("Enter an amount other than zero."), "error"); return; }
   try {
-    if (state.editingTxn) { await put("/api/transactions/" + state.editingTxn, body); msg(__("Transaction updated.")); }
-    else { await post("/api/transactions", body); msg(__("Saved.")); }
+    const was = state.editingTxn && state.data.transactions.find((x) => x.id === state.editingTxn);
+    const done = body.date > schedToday() ? __("Scheduled for {date}.", { date: dayLabel(body.date) }) : was && isSched(was) ? __("Posted.") : "";
+    if (state.editingTxn) { await put("/api/transactions/" + state.editingTxn, body); msg(done || __("Transaction updated.")); }
+    else { await post("/api/transactions", body); msg(done || __("Saved.")); }
     state.editingTxn = null; closeDrawer(); await load();
   } catch (err) { errMsg(err); }
 });
@@ -2407,6 +2464,7 @@ async function load() {
   } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
+  state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render();
 }

@@ -32,6 +32,7 @@ Colours are CSS custom properties on `:root`; use them, not literal colours.
 | `--side`, `--side2`, `--sidehover`, `--sidetext`, `--sidemuted` | the dark sidebar |
 | `--accent`, `--accent2`, `--accentsoft` | primary actions, selected state, selected fill |
 | `--pos`/`--posbg`, `--amber`/`--amberbg`, `--red`/`--redbg` | good, warning, bad/over |
+| `--sched`, `--schedbg`, `--schedink`, `--schedline` | scheduled (dated after today, ADR 0014): bar segment and dot, section/note fill, text on that fill, its border |
 | `--page-max` | content width (Settings → Page width) |
 
 - Type: body in the system sans stack (Segoe UI, Microsoft JhengHei, PingFang
@@ -223,6 +224,12 @@ topmost popup only.
   fixed breakpoint is used): when the row does not fit, Time and the button
   (`.timenow`) wrap together below the date. Below 480px the inputs get
   less padding.
+- A date after today makes the saved row scheduled: a blue `#fSchedNote`
+  above the form says so live while the date, accounts or amount change
+  (and, for a scheduled row moved to today or earlier, that saving posts it);
+  on a scheduled row it carries Post now (`#fPostNow`), which sets the date to
+  today and saves. Amounts in it go through `fmt()`, so hiding amounts masks
+  them.
 - Order: title row, type selector (`.seg`), quick picks (add only, for the
   chosen type), fields, then the save row.
 - **Save row** (`.saverow`): the primary button (full width on phones,
@@ -265,7 +272,27 @@ topmost popup only.
 | Toggle chips | `.tagpick` buttons with `aria-pressed` | many-of-many (categories) |
 | Status chip | `.chip` (`.due`, `.cur`) | a small state or value inside a row |
 | Bar | `.bar` + `i` fill | progress; purple normal, amber `warn`, red `over` |
+| Split bar | `.splitbar` (`.bar.split` on cards with a limit) + one `i` per segment | how an account's balance divides: reserved (`.earmarked`, `--accent2`), scheduled (`.sched`, `--sched`), the rest is free (the track) |
+| Legend dot | `.dot` (`.free`, `.earmarked`, `.sched`, `.incoming`) before a text label | names a bar segment; always with text and the amount |
 
+- **Scheduled is blue.** A posted transaction dated after today (ADR 0014)
+  uses the `--sched` tokens wherever it shows: the blue segment and dot,
+  the `.chip.sched` ("Posts 11/20"), the `.feedpanel.sched` section above the
+  period feed (left border, like the amber Expected section, but needs no
+  action), and the drawer's `.formnote.sched` note with Post now. Never reuse
+  amber (expected, needs confirming) or purple (reserved) for it.
+- **Bar segments and legend.** Each segment of a split bar has a legend line
+  under it: a `.dot` plus a text label with the amount (Free, Reserved,
+  Scheduled · posts date, and an outlined dot for Scheduled in), so the
+  segments never rely on colour alone. A segment after another one gets a
+  2px `--panel` gap (`i + .sched`): blue and purple are too close in
+  lightness (1.4:1) to meet the 3:1 non-text contrast, while each meets it
+  against the gap and the track (`--sched` 5.4:1 on white, 4.6:1 on
+  `--accentsoft`; `--accent2` 7.6:1 and 6.4:1). New segments follow the same
+  rule and take their colours from variables so a theme can override them.
+  When the segments together exceed the balance they share the full bar in
+  proportion, so none of them disappears, and the over-balance warning
+  replaces the Free line.
 - Labels sit above their field (`label > span + control`).
 - Disabled controls use `disabled` (shown at .35 opacity), not hiding, when
   the user should know the action exists.

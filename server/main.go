@@ -37,15 +37,26 @@ func newID(prefix string) string {
 	return fmt.Sprintf("%s-%d-%s", prefix, time.Now().UnixNano(), hex.EncodeToString(b))
 }
 
-func stateView(d *Data) map[string]interface{} {
-	today := time.Now().Format("2006-01-02")
+// stateView is everything the web client shows, as of today (the user's date, see Book.today).
+func stateView(d *Data, today string) map[string]interface{} {
 	accounts := []map[string]interface{}{}
 	for _, a := range d.Accounts {
-		bal := d.Balance(a.ID)
-		reserved := d.Reserved(a.ID)
+		bal := d.Balance(a.ID, today)
+		reserved, held := d.Reserved(a.ID), d.Held(a.ID, today)
 		m := map[string]interface{}{
 			"id": a.ID, "name": a.Name, "kind": a.Kind, "icon": a.Icon, "currency": a.Currency, "openingBalanceMinor": a.OpeningBalanceMinor,
-			"balanceMinor": bal, "reservedMinor": reserved, "freeMinor": bal - reserved,
+			"balanceMinor": bal, "reservedMinor": reserved, "freeMinor": bal - reserved - held,
+			// scheduled transactions (ADR 0014): held leaves free now, incoming is only shown
+			"heldMinor": held, "incomingMinor": d.Incoming(a.ID, today),
+		}
+		if !a.IsExternal() { // an external account has no balance, so nothing to project
+			m["projectedMinor"] = d.Projected(a.ID)
+		}
+		if next := d.NextScheduled(a.ID, today, true); next != "" {
+			m["nextHeldDate"] = next
+		}
+		if next := d.NextScheduled(a.ID, today, false); next != "" {
+			m["nextIncomingDate"] = next
 		}
 		if a.LimitMinor != nil {
 			owed := -bal
@@ -65,7 +76,7 @@ func stateView(d *Data) map[string]interface{} {
 		m := map[string]interface{}{"id": t.ID, "name": t.Name, "currency": t.Currency}
 		if t.LimitMinor != nil {
 			start, end := BudgetPeriod(t, today)
-			spent := d.BudgetSpent(t.ID, start, end)
+			spent := d.BudgetSpent(t.ID, start, end, today)
 			m["limitMinor"] = *t.LimitMinor
 			m["cycle"] = t.Cycle
 			m["cycleEvery"] = max(t.CycleEvery, 1)
@@ -104,9 +115,10 @@ func stateView(d *Data) map[string]interface{} {
 			"id": tp.ID, "name": tp.Name, "enabled": tp.Enabled, "template": tp.Template, "schedule": tp.Schedule, "nextDue": next,
 		})
 	}
-	txns := d.Transactions
-	if txns == nil {
-		txns = []Transaction{}
+	txns := make([]Transaction, len(d.Transactions))
+	for i, t := range d.Transactions {
+		t.State = ServedState(t, today)
+		txns[i] = t
 	}
 	links := d.TransactionTags
 	if links == nil {
@@ -116,7 +128,7 @@ func stateView(d *Data) map[string]interface{} {
 		"accounts": accounts, "transactions": txns, "tags": tags,
 		"reserves": reserves, "allocations": allocs,
 		"transactionTags": links, "transactionTemplates": templates, "today": today,
-		"spendingThisMonth": d.SpendingByCategory(today),
+		"spendingThisMonth": d.SpendingByCategory(today, today),
 	}
 }
 
@@ -283,7 +295,7 @@ func newMux(webDir string) *http.ServeMux {
 	mux.HandleFunc("/api/settings", apiRW(ScopeSettings, handleSettings))
 	mux.HandleFunc("/api/export", api(ScopeRead, handleExport))
 	mux.HandleFunc("/api/state", api(ScopeRead, func(w http.ResponseWriter, r *http.Request, b *Book) {
-		writeJSON(w, 200, stateView(b.data))
+		writeJSON(w, 200, stateView(b.data, b.today()))
 	}))
 	mux.HandleFunc("/api/accounts", api(ScopeAccounts, handleCreateAccount))
 	mux.HandleFunc("/api/accounts/", api(ScopeAccounts, handleUpdateAccount))
@@ -521,7 +533,7 @@ func handleReserve(w http.ResponseWriter, r *http.Request, b *Book) {
 // addAllocation validates and stores one allocation.
 func (b *Book) addAllocation(a Allocation) (Allocation, error) {
 	if a.Date == "" {
-		a.Date = time.Now().Format("2006-01-02")
+		a.Date = b.today()
 	}
 	a.ID, a.CreatedAt = newID("alc"), createdStamp()
 	a.TransactionTemplateID, a.OccurrenceDate = "", ""
@@ -538,7 +550,7 @@ func (b *Book) addAllocation(a Allocation) (Allocation, error) {
 // all or nothing.
 func (b *Book) completeReserve(id, date, note string) ([]Allocation, error) {
 	if date == "" {
-		date = time.Now().Format("2006-01-02")
+		date = b.today()
 	}
 	var out []Allocation
 	for _, s := range b.data.ReserveSplit(id) {
@@ -622,18 +634,24 @@ func handleCreateTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
 	if !decode(w, r, &body) {
 		return
 	}
+	today := b.today() // once per request, so a request across midnight sees one date
+	if body.Date == "" {
+		body.Date = today
+	}
 	t, err := b.addTransaction(body)
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
+	t.State = ServedState(t, today)
 	writeJSON(w, 201, t)
 }
 
 // addTransaction validates and stores a new transaction with its category links.
+// A posted transaction dated after today is scheduled (ADR 0014).
 func (b *Book) addTransaction(t Transaction) (Transaction, error) {
 	if t.Date == "" {
-		t.Date = time.Now().Format("2006-01-02")
+		t.Date = b.today()
 	}
 	if t.State == "" {
 		t.State = "posted"
@@ -689,6 +707,7 @@ func handleTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
 			writeErr(w, 500, err.Error())
 			return
 		}
+		t.State = ServedState(t, b.today())
 		writeJSON(w, 200, t)
 	case r.Method == http.MethodDelete && action == "":
 		found, err := b.deleteTransaction(id)
@@ -702,7 +721,8 @@ func handleTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
 		}
 		writeJSON(w, 200, map[string]string{"deleted": id})
 	case r.Method == http.MethodPost && action == "post":
-		// confirm an expected transaction, optionally with the actual amount
+		// confirm an expected transaction, optionally with the actual amount; a scheduled
+		// one posts now: its date becomes today (ADR 0014)
 		var body struct {
 			AmountMinor *int64 `json:"amountMinor"`
 		}
@@ -717,6 +737,9 @@ func handleTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
 			t.AmountMinor = *body.AmountMinor
 		}
 		t.State = "posted"
+		if today := b.today(); t.Date > today {
+			t.Date, t.At = today, instant(today, t.Time, t.TZ)
+		}
 		if err := b.updateTransaction(t); err != nil {
 			writeErr(w, 500, err.Error())
 			return
@@ -819,7 +842,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request, b *Book) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if body.Date == "" {
-		body.Date = time.Now().Format("2006-01-02")
+		body.Date = b.today()
 	}
 	n, err := b.GenerateDue(body.Date)
 	if err != nil {

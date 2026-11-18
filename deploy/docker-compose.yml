@@ -15,6 +15,8 @@ services:
     environment:
       # the public address when served behind a reverse proxy (needed for passkeys)
       # KISIAUTHONG_ORIGIN: https://books.example.com
+      # "today" for users whose time zone setting is Auto (what is scheduled, budgets, due templates)
+      KISIAUTHONG_TZ: Asia/Taipei
       TZ: Asia/Taipei
 
 volumes:

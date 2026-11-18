@@ -148,6 +148,16 @@ const I18N = {
     // errors
     "Error: {message}": "錯誤：{message}", "Failed to load: {message}": "載入失敗：{message}",
     "Settings unavailable, using defaults: {message}": "無法讀取設定，改用預設值：{message}",
+    // scheduled transactions (ADR 0014)
+    "Scheduled": "已排程", "Scheduled (not posted)": "已排程（未入帳）", "Posts {date}": "{date} 入帳", "Scheduled · posts on its date": "已排程 · 到期自動入帳",
+    "Scheduled {amount} · posts {date}": "已排程 {amount} · {date} 入帳", "Scheduled {amount} · first posts {date}": "已排程 {amount} · 最早 {date} 入帳",
+    "Scheduled in +{amount} · {date}": "已排程轉入 +{amount} · {date}", "Reserved and scheduled more than its balance": "已預留與排程超過餘額",
+    "Scheduled {amount}": "已排程 {amount}", "Scheduled transaction": "排程交易", "Posts when saved": "儲存後立即入帳",
+    "Dated today or earlier: saving posts it now.": "日期是今天或更早：儲存後會立即入帳。", "Scheduled · posts {date}": "已排程 · {date} 自動入帳",
+    "Until then it is not in the balance of {account}, and not free to use.": "在那之前不計入「{account}」的餘額，也不算可用。",
+    "Until then it is not in the balance; {amount} is held in {account} so it cannot be reserved or spent. Moving the date to today or earlier posts it.": "在那之前不計入餘額；{amount} 先從「{account}」保留，不能再分配或花用。把日期改成今天或更早會立即入帳。",
+    "Until then it is not in the balance; the amount is held in {account} so it cannot be reserved or spent. Moving the date to today or earlier posts it.": "在那之前不計入餘額；金額先從「{account}」保留，不能再分配或花用。把日期改成今天或更早會立即入帳。",
+    "Scheduled for {date}.": "已排程在 {date}。", "Posted.": "已入帳。", "Post now": "立即入帳",
     "Reserve": "預留款", "Reserves": "預留款", "Put in reserve": "存入預留款", "Reserved": "已預留", "No reserves yet.": "還沒有預留款。", "Reserved more than its balance": "預留超過餘額", "Reserved {amount}": "已預留 {amount}", "New reserve": "新增預留款", "Put in": "存入", "Take out": "取出", "Taken out": "已取出", "Use": "動用", "Complete": "結清", "Allocations": "分配", "{n} allocation(s)": "{n} 筆分配", "No allocations in this period.": "這段期間沒有分配。", "Edit reserve": "編輯預留款", "Add reserve": "新增預留款", "Reserve updated.": "預留款已更新。", "Reserve added.": "已新增預留款。", "Delete {name}? Its {n} allocation(s) and {m} template(s) are deleted too. Your accounts and transactions stay as they are.": "要刪除「{name}」嗎？它的 {n} 筆分配和 {m} 個範本也會一併刪除。帳戶和交易不受影響。", "Take everything out of {name}? The money stays in its accounts, free to spend.": "要把「{name}」全部取出嗎？錢仍留在原帳戶，可以自由使用。", "{name} completed.": "「{name}」已結清。", "{account} · {amount} free": "{account} · 可用 {amount}", "{account} · holds {amount}": "{account} · 預留 {amount}", "Edit allocation": "編輯分配", "Use from {name}": "動用「{name}」", "Put in {name}": "存入「{name}」", "Take out of {name}": "從「{name}」取出", "Take out and add the spending": "取出並記一筆支出", "Delete this allocation? To undo a decision, add a new one instead.": "要刪除這筆分配嗎？若要撤回決定，請改為新增一筆分配。", "Allocation updated.": "分配已更新。", "Add and edit categories and budgets": "新增與編輯分類和預算", "Add and edit reserves and their allocations": "新增與編輯預留款和分配",
   },
 };
