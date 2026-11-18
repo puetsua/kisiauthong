@@ -166,7 +166,11 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   `history.replaceState` so typing does not fill the history; a bare
   `#screen` keeps what is on screen.
 - **Cards** (`.tcard`, `.acard` …) are for things scanned at a glance (budgets,
-  reserves, accounts); each card is a button that opens its details.
+  reserves, accounts); each card is a button that opens its details. A
+  budget's or reserve's name comes first and its period or target date goes
+  on the line below; a reserve's name wraps rather than being cut off. The
+  Accounts and Reserves pages start with their cards, with no summed total
+  above them.
 - **Record pages** (a category: `#tag?id=…&range=month&at=2026-10-01`, a
   reserve: `#reserve?id=…`): the
   top bar shows the record's name and the nav keeps its parent page `.on`.

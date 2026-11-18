@@ -1033,21 +1033,13 @@ function accountCard(a) {
 // the "add" tile that ends a card grid
 const addTile = (id, label, cls = "") => `<button type="button" class="addtile ${cls}" id="${id}"><span aria-hidden="true">+</span>${esc(label)}</button>`;
 function screenAccounts(v) {
-  const accs = state.data.accounts;
-  // totals per currency: what you have, and how much of it reserves hold
-  const curs = [...new Set(accs.map((a) => a.currency))];
-  const totals = curs.map((c) => {
-    const xs = accs.filter((a) => a.currency === c), sum = (k) => xs.reduce((n, a) => n + (a[k] || 0), 0);
-    return `<div class="totcard"><span class="lab">${esc(__("Total"))}</span><b>${fmt(sum("balanceMinor"), c)}</b>
-      <small>${esc(__("{n} account(s)", { n: xs.length }))}${sum("reservedMinor") ? " · " + esc(__("Reserved {amount}", { amount: fmt(sum("reservedMinor"), c) })) : ""}${sum("heldMinor") ? " · " + esc(__("Scheduled {amount}", { amount: fmt(sum("heldMinor"), c) })) : ""}</small></div>`;
-  }).join("");
-  const ordered = accs; // by name, as the server lists them
+  // no summed total: it would add bank accounts and credit cards together
+  const ordered = state.data.accounts; // by name, as the server lists them
   const exts = state.data.externals.map((a) => {
     const act = accountActivity(a.id);
     return `<button type="button" class="xcard" data-detail-account="${esc(a.id)}">${accIcon(a)}<span><b>${esc(accName(a.id))}</b><small>${esc(__("{n} transaction(s)", { n: act.n }))}</small></span></button>`;
   }).join("");
-  v.innerHTML = `<div class="totals">${totals}</div>
-    <section class="tsection"><div class="tgrid">${ordered.map(accountCard).join("")}${addTile("newAccount", __("New account"), "")}</div></section>
+  v.innerHTML = `<section class="tsection"><div class="tgrid">${ordered.map(accountCard).join("")}${addTile("newAccount", __("New account"), "")}</div></section>
     <section class="tsection"><div class="tsechead"><h3>${esc(__("External accounts"))}</h3></div>
       <div class="xgrid">${exts}${addTile("newExternal", __("New external account"), "small")}</div></section>`;
   $("#newAccount").addEventListener("click", () => openAccountDialog());
@@ -1207,22 +1199,15 @@ function reserveCard(r) {
   const segs = own.map((s, i) => `<i style="width:${s.amountMinor / scale * 100}%;background:${BOX_COLORS[i % BOX_COLORS.length]}"></i>`).join("");
   const legend = held.map((s) => { const i = own.indexOf(s); return `<small>${i >= 0 ? `<b class="dot" style="background:${BOX_COLORS[i % BOX_COLORS.length]}"></b>` : ""}${esc(accName(s.accountId))} ${fmt(s.amountMinor, s.currency)}</small>`; }).join("");
   return `<button type="button" class="tcard gcard" data-detail-reserve="${esc(r.id)}">
-    <span class="thead"><b>${esc(r.name)}</b><small>${esc(r.targetDate ? __("by {date}", { date: dayLabel(r.targetDate) }) : "")}</small></span>
+    <span class="thead"><b>${esc(r.name)}</b>${r.targetDate ? `<small>${esc(__("by {date}", { date: dayLabel(r.targetDate) }))}</small>` : ""}</span>
     <span class="bamount"><b>${fmt(r.savedMinor, r.currency)}</b>${target ? ` <small>${esc(__("of {limit}", { limit: fmt(r.targetMinor, r.currency) }))}</small>` : ""}</span>
     <span class="stack">${segs}</span>
     ${target ? `<span class="tfoot"><span>${esc(toGo(r))}</span></span>` : ""}
     <span class="boxlegend">${legend || `<small>${esc(__("No allocations yet"))}</small>`}</span></button>`;
 }
 function screenReserves(v) {
-  const rs = state.data.reserves, accs = state.data.accounts;
-  // per currency: how much is set aside, and what the accounts have left over
-  const curs = [...new Set(rs.map((r) => r.currency))];
-  const totals = curs.map((c) => {
-    const saved = rs.filter((r) => r.currency === c).reduce((n, r) => n + r.savedMinor, 0), free = accs.filter((a) => a.currency === c).reduce((n, a) => n + a.freeMinor, 0);
-    return `<div class="totcard"><span class="lab">${esc(__("Reserved"))}</span><b>${fmt(saved, c)}</b><small>${esc(__("Free {amount}", { amount: fmt(free, c) }))}</small></div>`;
-  }).join("");
-  v.innerHTML = `${totals ? `<div class="totals">${totals}</div>` : ""}
-    <section class="tsection"><div class="tgrid">${rs.map(reserveCard).join("")}${addTile("newReserve", __("New reserve"))}</div></section>`;
+  const rs = state.data.reserves;
+  v.innerHTML = `<section class="tsection"><div class="tgrid">${rs.map(reserveCard).join("")}${addTile("newReserve", __("New reserve"))}</div></section>`;
   $("#newReserve").addEventListener("click", () => openReserveDialog());
   bindDetails(v);
 }
