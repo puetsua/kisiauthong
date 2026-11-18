@@ -447,7 +447,17 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .iconpick input:focus-visible+.aicon{outline:3px solid var(--accent2);outline-offset:2px}
 
 /* transaction date + time side by side; time shown before a feed row's subtitle */
-.daterow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px}
+/* each field is at least as wide as its own value (that width depends on locale and 12/24-hour clock, so no breakpoint
+   can guess it); when date, time and ⟲ do not fit on one line, time and ⟲ wrap below the date instead of being cut off */
+.daterow{display:flex;flex-wrap:wrap;align-items:flex-end;gap:0 10px}
+.daterow>label{flex:1.3 0 auto}
+.timenow{flex:1 0 auto;display:flex;align-items:flex-end;gap:inherit}.timenow>label{flex:1 0 auto}
+.daterow label>span{display:block}
+.daterow input{height:44px}
+/* ⟲ now: a bordered square level with the inputs */
+.nowbtn{flex:none;display:grid;place-items:center;width:44px;height:44px;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--accent)}
+.nowbtn:hover{background:var(--hover2)}.nowbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:480px){.daterow{column-gap:6px}.daterow input{padding:10px 6px}.nowbtn{width:42px}}
 .ftime{font-variant-numeric:tabular-nums;margin-right:6px;color:var(--ink);opacity:.8}
 .fwhen{margin-right:6px;color:var(--ink);font-weight:600}
 .ftime[title]{cursor:help}

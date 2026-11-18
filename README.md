@@ -44,7 +44,7 @@ claude mcp add --transport http kisiauthong http://localhost:8080/mcp --header "
 
 See `docs/decisions/0008-api-keys-and-mcp.md`.
 
-Every money movement is a transfer between accounts. Spending is a transfer to an *external* account and income a transfer from one: the built-in "External" account by default, or one you add (an employer, a shop) under Accounts → External accounts. The add-transaction form keeps simple Expense / Income tabs for this (see `docs/decisions/0002-external-accounts.md`).
+Every money movement is a transfer between accounts. Spending is a transfer to an *external* account and income a transfer from one: the built-in "External" account by default, or one you add (an employer, a shop) under Accounts → External accounts. The add-transaction form keeps simple Expense / Income tabs for this (see `docs/decisions/0002-external-accounts.md`). In the form, the button next to Time (an arrow around clock hands) fills in the current date, time and time zone of your device, for a new or an existing transaction; it does not save.
 
 Tags are categories. Give a category a limit to make it a budget; the Tags page shows budgets and categories as cards, the categories with what came in and went out today, this week, month or year (see `docs/decisions/0004-tag-kinds-and-budget-periods.md`). Each category or budget has its own page: all-time totals and its transactions by day, week, month or year. A transaction can have several categories, and counts in full toward each of their budgets (see `docs/decisions/0010-several-categories-per-transaction.md`).
 
