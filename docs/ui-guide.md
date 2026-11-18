@@ -179,9 +179,8 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   through reuses the Transactions `.periodbar` (mode `.seg`, ‹ Previous /
   Next ›, Back to today); unlike typing, each step is a new history entry, so
   Back steps back (`periodBar` / `bindPeriodBar`). Actions on the record
-  (a reserve's Put in, Take out, Use, Complete) sit in a row under its
-  card, the main one as `.primarybtn`. An unknown id returns to the parent
-  page.
+  (a reserve's Put in, Take out) sit in a row under its card, the main one
+  as `.primarybtn`. An unknown id returns to the parent page.
 - **Empty states**: `.empty`, one short sentence; add how to create the first
   item only when it is not obvious.
 - **Settings-style pages** (Settings, My account, Server): `.settings` with a
@@ -254,6 +253,13 @@ topmost popup only.
   (`.formactions`) above the full-width submit button.
 - Groups of toggles (category chips) use a `div.drawerfield` with a heading
   span, not a `label`, so clicking the heading toggles nothing.
+- A button that fills a field sits beside it in a flex row and wraps below
+  it when the row is too narrow: Take out's **Fill remaining**
+  (`.amtfill`, `#dlgFill`, a `.smallbtn` as tall as the input) sets Amount
+  to `decimal()` of what the reserve holds in the chosen account and saves
+  nothing. Its `aria-label`/`title` carries the amount through `fmt()`, so
+  hiding amounts masks it; changing the account updates the label, never
+  the field.
 
 ## Toast
 
