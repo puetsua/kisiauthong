@@ -46,13 +46,18 @@ function currencyOptions(selected) {
 }
 const toMinor = (a, c) => Math.round(parseFloat(a || 0) * Math.pow(10, expOf(c)));
 // How amounts are written (Settings → Number format): grouped by thousands "1,074,958",
-// by ten-thousands as East Asian numbers are read "107,4958", or plain "1074958".
-const NUMFMT_L = { grouped: N_("Groups of three (1,074,958)"), four: N_("Groups of four (107,4958)"), plain: N_("Plain (1074958)") };
+// by ten-thousands as East Asian numbers are read "107 4958", or plain "1074958".
+// Groups of four are split by a no-break space, not a comma, so "3 5000" is not misread as a
+// decimal comma. NO-BREAK SPACE (U+00A0) rather than NARROW NO-BREAK SPACE (U+202F): every font has
+// it at the width of a space, while U+202F is a sliver in bold system-ui and Helvetica Neue (1-2px),
+// so 3 5000 would read as 35000, and older fonts may lack it.
+const FOUR_SEP = "\u00A0";
+const NUMFMT_L = { grouped: N_("Groups of three (1,074,958)"), four: N_("Groups of four (107\u00A04958)"), plain: N_("Plain (1074958)") };
 const numberFormat = () => (state.general && state.general.numberFormat) || "grouped";
 function writeInt(n) {
   switch (numberFormat()) {
     case "plain": return String(n);
-    case "four": return String(n).replace(/\B(?=(\d{4})+(?!\d))/g, ",");
+    case "four": return String(n).replace(/\B(?=(\d{4})+(?!\d))/g, FOUR_SEP);
     default: return n.toLocaleString(LANG);
   }
 }
@@ -813,10 +818,12 @@ async function deleteTxn(id) {
   catch (e) { errMsg(e); return false; }
 }
 function filteredTxns() {
-  const f = state.filter, q = f.q.trim().toLowerCase();
+  // any white space counts as a plain space, so a typed "3 5000" matches the no-break FOUR_SEP
+  const spaces = (s) => s.replace(/\s/g, " ");
+  const f = state.filter, q = spaces(f.q.trim().toLowerCase());
   let list = [...state.data.transactions].sort(byNewest);
   // while amounts are hidden the search does not match them, so typing a guess reveals nothing
-  if (q) list = list.filter((t) => [t.note, t.memo, lbl(TYPE_L, flow(t)), txnSubtitle(t), amountsHidden ? "" : plainAmounts(fmt(t.amountMinor, t.currency))].join(" ").toLowerCase().includes(q));
+  if (q) list = list.filter((t) => spaces([t.note, t.memo, lbl(TYPE_L, flow(t)), txnSubtitle(t), amountsHidden ? "" : plainAmounts(fmt(t.amountMinor, t.currency))].join(" ").toLowerCase()).includes(q));
   if (f.account) list = list.filter((t) => t.fromAccountId === f.account || t.toAccountId === f.account);
   if (f.type) list = list.filter((t) => flow(t) === f.type);
   // "none": spending and income without a category
