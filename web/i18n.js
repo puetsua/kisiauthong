@@ -62,7 +62,7 @@ const I18N = {
     "Language & region": "語言與地區", "Money": "金額", "Display": "顯示", "Export all data": "匯出所有資料",
     "Number format": "數字格式", "Groups of three (1,074,958)": "三位一組（1,074,958）", "Groups of four (107,4958)": "四位一組（107,4958）",
     "Plain (1074958)": "不分位（1074958）", "Number format saved.": "已儲存數字格式。",
-    "Time": "時間", "Time zone": "時區", "Fill in current date and time": "填入現在的日期與時間","Auto (this device · {zone})": "自動（這台裝置 · {zone}）", "Time zone saved.": "已儲存時區。",
+    "Time": "時間", "Time zone": "時區", "Fill in current date and time": "填入現在的日期與時間", "Auto (this device · {zone})": "自動（這台裝置 · {zone}）", "Time zone saved.": "已儲存時區。",
     "{time} in {zone}": "{zone}當地 {time}", "Total": "總額", "Frequently used": "常用",
     "Owed": "欠款", "Card": "卡片", "Wallet": "錢包", "Phone": "手機", "Coins": "零錢", "Home": "住家", "Car": "汽車", "Travel": "旅行",
     "Gift": "禮物", "Work": "工作", "Shop": "商店", "Globe": "地球", "Icon": "圖示", "Optional": "選填",

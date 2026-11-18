@@ -217,9 +217,12 @@ topmost popup only.
   (`#fNowBtn.nowbtn`, ⟲ around clock hands, `aria-label`/`title` "Fill in
   current date and time"): it sets Date, Time and Time zone to this moment in
   the device's zone, for a new or an existing transaction, and saves
-  nothing. Below 480px the date and time inputs get less padding so the
-  time is not cut off; below 380px the date takes its own line and time
-  shares the next with the button.
+  nothing. If the device zone is missing from the list it is added, so the
+  zone always matches the date and time. Each input is at least as wide as
+  its value (that width depends on the locale and 12/24-hour clock, so no
+  fixed breakpoint is used): when the row does not fit, Time and the button
+  (`.timenow`) wrap together below the date. Below 480px the inputs get
+  less padding.
 - Order: title row, type selector (`.seg`), quick picks (add only, for the
   chosen type), fields, then the save row.
 - **Save row** (`.saverow`): the primary button (full width on phones,

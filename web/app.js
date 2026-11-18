@@ -1563,10 +1563,12 @@ $("#txnForm").elements.time.addEventListener("input", syncTz);
 $("#fNowBtn").addEventListener("click", () => {
   const dz = deviceTZ(), now = zoneParts(new Date(), dz), el = $("#txnForm").elements, sel = $("#fTz");
   el.date.value = now.date; el.time.value = now.time;
-  // the device zone is normally listed; an alias (Asia/Calcutta) matches the option it resolves to, else the zone stays as it was
+  // the device zone is normally listed; an alias (Asia/Calcutta) matches the option it resolves to; a zone the list
+  // lacks (the device zone changed while the page was open) is added, so the zone always matches the date and time
   const canon = (z) => { try { return new Intl.DateTimeFormat("en", { timeZone: z }).resolvedOptions().timeZone; } catch (e) { return z; } };
   const opts = [...sel.options], hit = opts.find((o) => o.value === dz) || opts.find((o) => canon(o.value) === canon(dz));
-  if (hit) sel.value = hit.value;
+  if (!hit) sel.add(new Option(dz.replace(/_/g, " "), dz), 0);
+  sel.value = hit ? hit.value : dz;
   syncTz();
 });
 $("#fDelete").addEventListener("click", async () => { showActions(false); if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
