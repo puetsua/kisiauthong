@@ -333,7 +333,7 @@ function widgetBody(type, o) {
     }
     case "accounts": {
       const list = d.accounts.filter((a) => inc(a.id));
-      return phoneSwap(colTable(widgetCols(type, o), list), `<div class="tgrid">${list.map(accountCard).join("")}</div>`);
+      return phoneSwap(colTable(widgetCols(type, o), list), `<div class="tgrid">${list.map((a) => accountCard(a)).join("")}</div>`);
     }
     case "recent": {
       const list = d.transactions.filter((t) => t.state === "posted").sort(byNewest).slice(0, rows);
@@ -622,7 +622,11 @@ function bindActions(root) {
 function bindDetails(root) {
   // a title opens its edit form straight away; there is no read-only pane in between
   root.querySelectorAll("[data-detail-txn]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.detailTxn)));
-  root.querySelectorAll("[data-detail-account]").forEach((b) => b.addEventListener("click", () => openAccountDialog(b.dataset.detailAccount)));
+  // an own account opens its page; an external one has no balance to show, so it opens its edit form
+  root.querySelectorAll("[data-detail-account]").forEach((b) => b.addEventListener("click", () => {
+    const id = b.dataset.detailAccount;
+    if (state.data.accounts.some((a) => a.id === id)) location.hash = acctURL(id, tagRange(), ""); else openAccountDialog(id);
+  }));
   root.querySelectorAll("[data-detail-tag]").forEach((b) => b.addEventListener("click", () => { location.hash = tagURL(b.dataset.detailTag, tagRange(), ""); }));
   root.querySelectorAll("[data-detail-reserve]").forEach((b) => b.addEventListener("click", () => { location.hash = reserveURL(b.dataset.detailReserve, tagRange(), ""); }));
   root.querySelectorAll("[data-edit-alloc]").forEach((b) => b.addEventListener("click", () => openAllocDialog(null, "", b.dataset.editAlloc)));
@@ -700,6 +704,7 @@ function dayLabel(iso) {
 // Scheduled transactions (ADR 0014): the server serves a posted transaction dated after today as
 // "scheduled". It is not in balances yet; what it takes from an own account is held (blue).
 const isSched = (t) => t.state === "scheduled";
+const bySoonest = (a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")) || a.id.localeCompare(b.id);
 // "11/20", with the year when it is not this year's
 function shortDay(iso) {
   if (!iso) return "";
@@ -716,12 +721,15 @@ function dayNet(list) {
 }
 function feedRow(t, opts = {}) {
   // withDate: rows outside day sections (search results, expected) lead with their date
+  // acct: the amount is signed as that account sees it (− leaving it, + arriving), transfers included
+  const out = opts.acct && t.fromAccountId === opts.acct;
+  const amt = opts.acct ? (out ? "−" : "+") + fmt(t.amountMinor, t.currency) : amountText(t), cls = opts.acct ? (out ? "out" : "in") : amountCls(t);
   const sub = txnSubtitle(t), when = opts.sched ? `<span class="chip sched">${esc(__("Posts {date}", { date: shortDay(t.date) }))}</span> `
     : opts.withDate ? `<span class="fwhen">${esc(dayLabel(txnDay(t)))}</span>` : "";
   return `<li><button type="button" class="feedrow" ${opts.edit ? "data-edit-txn" : "data-detail-txn"}="${esc(t.id)}">
       <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span>
       <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub">${when}${txnClock(t)}<span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
-      <span class="famt ${amountCls(t)}">${esc(amountText(t))}</span></button></li>`;
+      <span class="famt ${cls}">${esc(amt)}</span></button></li>`;
 }
 /* ---------- transaction periods (the list pages by calendar period, not by entry count) ---------- */
 const MAX_RANGE_DAYS = 180;
@@ -891,7 +899,7 @@ function screenTransactions(v) {
     // a search looks through all of history; otherwise the period on screen
     const searching = !!state.filter.q.trim();
     // scheduled ones too, soonest first, whatever their date: the period cannot page past today
-    const sched = all.filter(isSched).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")) || a.id.localeCompare(b.id));
+    const sched = all.filter(isSched).sort(bySoonest);
     const list = all.filter((t) => { const d = txnDay(t); return t.state !== "planned" && !isSched(t) && (searching || (d >= p.start && d <= p.end)); });
     const modes = Object.keys(PERIOD_L).map((m) => `<button type="button" data-mode="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(PERIOD_L[m]))}</button>`).join("");
     const custom = p.mode === "custom" ? `<span class="prange"><input type="date" id="pStart" value="${esc(p.start)}" aria-label="${esc(__("Start date"))}"> – <input type="date" id="pEnd" value="${esc(p.end)}" aria-label="${esc(__("End date"))}"></span>` : "";
@@ -908,13 +916,22 @@ function screenTransactions(v) {
         <button class="smallbtn" data-page="1" ${state.searchPage >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button>
         <select id="pgSize" aria-label="${esc(__("Per page"))}">${sizes}</select></nav></div>` : "";
     } else head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
-    const schedHTML = sched.length ? `<section class="panel feedpanel sched" id="schedSec"><h3>${esc(__("Scheduled · posts on its date"))}</h3><ul class="feed">${sched.map((t) => feedRow(t, { sched: true })).join("")}</ul></section>` : "";
+    // one line that opens in place; each account's page lists its own (ADR 0015)
+    const schedHTML = sched.length ? `<section class="schedsum${state.schedOpen ? " open" : ""}" id="schedSec"><button type="button" class="schedtoggle" id="schedToggle" aria-expanded="${!!state.schedOpen}" aria-controls="schedList">
+        <b class="dot sched" aria-hidden="true"></b><span class="schedn">${esc(__("{n} scheduled", { n: sched.length }))}</span><span class="schedhint">${esc(__("Open an account for details"))}</span></button>
+        <ul class="feed" id="schedList"${state.schedOpen ? "" : " hidden"}>${sched.map((t) => feedRow(t, { sched: true })).join("")}</ul></section>` : "";
     const expectedHTML = expected.length ? `<section class="panel feedpanel expected" id="expectedSec"><h3>${esc(__("Expected to confirm"))}</h3><ul class="feed">${expected.map((t) => feedRow(t, { withDate: true, edit: true })).join("")}</ul></section>` : "";
     // search results: one flat list, each row carrying its date
     const postedHTML = list.length ? `<section class="panel feedpanel">${searching ? `<ul class="feed">${shown.map((t) => feedRow(t, { withDate: true })).join("")}</ul>` : feedHTML(list, openDays())}</section>`
       : searching && sched.length ? "" : `<div class="empty">${esc(searching ? __("No transactions match your search.") : __("No transactions in this period."))}</div>`;
     $("#txnResults").innerHTML = expectedHTML + schedHTML + head + postedHTML;
     const box = $("#txnResults");
+    if ($("#schedToggle")) $("#schedToggle").addEventListener("click", () => {
+      state.schedOpen = !state.schedOpen;
+      $("#schedSec").classList.toggle("open", state.schedOpen);
+      $("#schedToggle").setAttribute("aria-expanded", state.schedOpen);
+      $("#schedList").hidden = !state.schedOpen;
+    });
     box.querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => {
       state.searchPage += parseInt(b.dataset.page, 10);
       drawResults();
@@ -994,19 +1011,19 @@ function accountActivity(id) {
   const last = list.filter((t) => t.state === "posted").reduce((m, t) => (t.date > m ? t.date : m), "");
   return { n: list.length, last };
 }
-function accountCard(a) {
+// The card shows amounts only. Scheduled transactions (ADR 0014, 0015): what they take is held (a blue
+// segment and one total); their dates, and what they bring, are listed on the account's page.
+// page: the card heading that page, which opens nothing
+function accountCard(a, opts = {}) {
   const act = accountActivity(a.id), neg = a.balanceMinor < 0;
-  // scheduled transactions (ADR 0014): what they take is held (a blue segment), what they bring is only shown
-  const held = a.heldMinor || 0, incoming = a.incomingMinor || 0;
-  const nHeld = state.data.transactions.filter((t) => isSched(t) && t.fromAccountId === a.id).length;
-  const heldLine = held ? `<small><b class="dot sched"></b>${esc(__(nHeld > 1 ? N_("Scheduled {amount} · first posts {date}") : N_("Scheduled {amount} · posts {date}"), { amount: fmt(held, a.currency), date: shortDay(a.nextHeldDate) }))}</small>` : "";
-  const inLine = incoming ? `<small><b class="dot incoming"></b>${esc(__("Scheduled in +{amount} · {date}", { amount: fmt(incoming, a.currency), date: shortDay(a.nextIncomingDate) }))}</small>` : "";
+  const held = a.heldMinor || 0;
+  const heldLine = held ? `<small><b class="dot sched"></b>${esc(__("Scheduled {amount}", { amount: fmt(held, a.currency) }))}</small>` : "";
   const seg = (cls, w) => (w > 0 ? `<i class="${cls}" style="width:${w}%"></i>` : "");
   let detail = "";
   if (a.limitMinor) {
     // spending from a card holds against its limit
     const u = Math.min(100, (a.utilisation || 0) * 100), h = Math.min(100 - u, held / a.limitMinor * 100);
-    detail = `<span class="bar${held ? " split" : ""}">${held ? seg(barCls(u), u) + seg("sched", h) : `<i class="${barCls(u)}" style="width:${u}%"></i>`}</span><span class="tfoot"><small>${esc(owedText(a))}</small>${heldLine}${inLine}</span>`;
+    detail = `<span class="bar${held ? " split" : ""}">${held ? seg(barCls(u), u) + seg("sched", h) : `<i class="${barCls(u)}" style="width:${u}%"></i>`}</span><span class="tfoot"><small>${esc(owedText(a))}</small>${heldLine}</span>`;
   } else if (a.reservedMinor > 0 || held > 0) {
     // reserving or scheduling more than the balance is allowed (spending never touches a reserve), but it shows
     const over = a.freeMinor < 0, base = Math.max(0, a.balanceMinor);
@@ -1015,13 +1032,37 @@ function accountCard(a) {
     const e = res * scale, h = held * scale;
     const overText = held ? __("Reserved and scheduled more than its balance") : __("Reserved more than its balance");
     detail = `<span class="splitbar">${seg("earmarked" + (over && !held ? " over" : ""), e)}${seg("sched", h)}</span>
-      <span class="tfoot">${over ? `<small class="neg">${esc(overText)}</small>` : `<small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.freeMinor, a.currency) }))}</small>`}${a.reservedMinor ? `<small><b class="dot earmarked"></b>${esc(__("Reserved {amount}", { amount: fmt(a.reservedMinor, a.currency) }))}</small>` : ""}${heldLine}${inLine}</span>`;
-  } else if (incoming) detail = `<span class="tfoot">${inLine}</span>`;
-  return `<button type="button" class="tcard acard" data-detail-account="${esc(a.id)}">
+      <span class="tfoot">${over ? `<small class="neg">${esc(overText)}</small>` : `<small><b class="dot free"></b>${esc(__("Free {amount}", { amount: fmt(a.freeMinor, a.currency) }))}</small>`}${a.reservedMinor ? `<small><b class="dot earmarked"></b>${esc(__("Reserved {amount}", { amount: fmt(a.reservedMinor, a.currency) }))}</small>` : ""}${heldLine}</span>`;
+  }
+  const tag = opts.page ? "div" : "button";
+  return `<${tag} ${opts.page ? `class="tcard acard static"` : `type="button" class="tcard acard" data-detail-account="${esc(a.id)}"`}>
     <span class="thead">${accIcon(a)}<span class="aname"><b>${esc(a.name)}</b></span></span>
     <span class="bamount${neg ? " neg" : ""}"><b>${fmt(a.balanceMinor, a.currency)}</b></span>
     ${detail}
-    <small class="last">${esc(act.last ? __("Last activity {date}", { date: dayLabel(act.last) }) : __("No transactions yet"))}</small></button>`;
+    <small class="last">${esc(act.last ? __("Last activity {date}", { date: dayLabel(act.last) }) : __("No transactions yet"))}</small></${tag}>`;
+}
+// One own account (#acct?id=…): its card, the scheduled transactions touching it (soonest first, the only
+// place their dates are listed), then its posted transactions in a period to page through.
+const acctURL = (id, mode, at) => `#acct?${new URLSearchParams({ id, range: mode, ...(at ? { at } : {}) })}`;
+const touches = (t, id) => t.fromAccountId === id || t.toAccountId === id;
+function screenAcct(v) {
+  const { params } = hashParts(), a = state.data.accounts.find((x) => x.id === params.get("id"));
+  if (!a) { location.hash = "#accounts"; return; }
+  const { mode, p } = pagePeriod(params);
+  $("#pageTitle").textContent = a.name;
+  const txns = state.data.transactions.filter((t) => touches(t, a.id));
+  const sched = txns.filter(isSched).sort(bySoonest);
+  // the stored date decides the period, as balances count it (ADR 0006)
+  const posted = txns.filter((t) => t.state === "posted" && t.date >= p.start && t.date <= p.end).sort(byNewest);
+  const schedHTML = sched.length ? `<section class="panel feedpanel sched" aria-labelledby="acctSchedH"><h3 id="acctSchedH">${esc(__("Scheduled"))}</h3><ul class="feed">${sched.map((t) => feedRow(t, { sched: true, acct: a.id })).join("")}</ul></section>` : "";
+  v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#accounts">‹ ${esc(__("Accounts"))}</a><button type="button" class="smallbtn" id="acctEdit">${esc(__("Edit"))}</button></div>
+    <div class="acctpage${sched.length ? " withsched" : ""}"><div class="tgrid">${accountCard(a, { page: true })}</div>${schedHTML}</div>
+    <section class="tsection">${periodBar(mode, p)}
+    ${posted.length ? `<section class="panel feedpanel">${feedHTML(posted)}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
+  bindPeriodBar(v, mode, p, (m, at) => acctURL(a.id, m, at));
+  $("#acctEdit").addEventListener("click", () => openAccountDialog(a.id));
+  bindActions(v);
+  bindDays(v);
 }
 // the "add" tile that ends a card grid
 const addTile = (id, label, cls = "") => `<button type="button" class="addtile ${cls}" id="${id}"><span aria-hidden="true">+</span>${esc(label)}</button>`;
@@ -1040,7 +1081,7 @@ function screenAccounts(v) {
     return `<button type="button" class="xcard" data-detail-account="${esc(a.id)}">${accIcon(a)}<span><b>${esc(accName(a.id))}</b><small>${esc(__("{n} transaction(s)", { n: act.n }))}</small></span></button>`;
   }).join("");
   v.innerHTML = `<div class="totals">${totals}</div>
-    <section class="tsection"><div class="tgrid">${ordered.map(accountCard).join("")}${addTile("newAccount", __("New account"), "")}</div></section>
+    <section class="tsection"><div class="tgrid">${ordered.map((a) => accountCard(a)).join("")}${addTile("newAccount", __("New account"), "")}</div></section>
     <section class="tsection"><div class="tsechead"><h3>${esc(__("External accounts"))}</h3></div>
       <div class="xgrid">${exts}${addTile("newExternal", __("New external account"), "small")}</div></section>`;
   $("#newAccount").addEventListener("click", () => openAccountDialog());
@@ -2417,7 +2458,7 @@ async function drawServer() {
 }
 
 /* ---------- routing ---------- */
-const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], tag: [N_("Category"), screenTag], reserves: [N_("Reserves"), screenReserves], reserve: [N_("Reserve"), screenReserve], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
+const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], tag: [N_("Category"), screenTag], reserves: [N_("Reserves"), screenReserves], reserve: [N_("Reserve"), screenReserve], acct: [N_("Account"), screenAcct], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
 // the hash is "#screen", optionally with a query ("#transactions?q=rent")
 function hashParts() {
   const h = location.hash.replace(/^#/, ""), i = h.indexOf("?");
@@ -2437,7 +2478,7 @@ function render() {
   const admin = isAdminScreen(key);
   if (!admin) state.lastBookScreen = key;
   $("#nav").hidden = admin; $("#adminNav").hidden = !admin;
-  const navKey = key === "tag" ? "tags" : key === "reserve" ? "reserves" : key; // one category's or reserve's page belongs to its list
+  const navKey = { tag: "tags", reserve: "reserves", acct: "accounts" }[key] || key; // one category's, reserve's or account's page belongs to its list
   document.querySelectorAll("#nav a, #adminNav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === navKey));
   document.querySelectorAll("#tabbar a, #moreSheet a").forEach((a) => a.classList.toggle("on", a.dataset.tab === navKey));
   $("#tabMore").classList.toggle("on", !["dashboard", "transactions", "accounts"].includes(navKey));

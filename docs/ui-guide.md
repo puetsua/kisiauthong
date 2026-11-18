@@ -168,7 +168,7 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
 - **Cards** (`.tcard`, `.acard` …) are for things scanned at a glance (budgets,
   reserves, accounts); each card is a button that opens its details.
 - **Record pages** (a category: `#tag?id=…&range=month&at=2026-10-01`, a
-  reserve: `#reserve?id=…`): the
+  reserve: `#reserve?id=…`, an own account: `#acct?id=…`): the
   top bar shows the record's name and the nav keeps its parent page `.on`.
   The page starts with `.pagebar` (‹ parent link left, Edit right), then
   figures as `.totcard` tiles, then panels of transactions. A period to page
@@ -177,7 +177,10 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   Back steps back (`periodBar` / `bindPeriodBar`). Actions on the record
   (a reserve's Put in, Take out, Use, Complete) sit in a row under its
   card, the main one as `.primarybtn`. An unknown id returns to the parent
-  page.
+  page. A record page that opens with the record's card shows the same card
+  as its list (not a button there: `.acard.static`), never a longer one;
+  details go in the panels under it. An account's page puts its blue
+  Scheduled panel beside the card on wide screens (`.acctpage.withsched`).
 - **Empty states**: `.empty`, one short sentence; add how to create the first
   item only when it is not obvious.
 - **Settings-style pages** (Settings, My account, Server): `.settings` with a
@@ -273,17 +276,22 @@ topmost popup only.
 | Status chip | `.chip` (`.due`, `.cur`) | a small state or value inside a row |
 | Bar | `.bar` + `i` fill | progress; purple normal, amber `warn`, red `over` |
 | Split bar | `.splitbar` (`.bar.split` on cards with a limit) + one `i` per segment | how an account's balance divides: reserved (`.earmarked`, `--accent2`), scheduled (`.sched`, `--sched`), the rest is free (the track) |
-| Legend dot | `.dot` (`.free`, `.earmarked`, `.sched`, `.incoming`) before a text label | names a bar segment; always with text and the amount |
+| Legend dot | `.dot` (`.free`, `.earmarked`, `.sched`) before a text label | names a bar segment; always with text and the amount |
 
 - **Scheduled is blue.** A posted transaction dated after today (ADR 0014)
   uses the `--sched` tokens wherever it shows: the blue segment and dot,
-  the `.chip.sched` ("Posts 11/20"), the `.feedpanel.sched` section above the
-  period feed (left border, like the amber Expected section, but needs no
-  action), and the drawer's `.formnote.sched` note with Post now. Never reuse
-  amber (expected, needs confirming) or purple (reserved) for it.
+  the `.chip.sched` ("Posts 11/20"), the account page's `.feedpanel.sched`
+  list (left border, like the amber Expected section, but needs no action),
+  the Transactions page's `.schedsum` line (a `button` with `aria-expanded`
+  that shows the rows in place), and the drawer's `.formnote.sched` note with
+  Post now. Never reuse amber (expected, needs confirming) or purple
+  (reserved) for it.
+- **Scheduled details live on the account page** (ADR 0015). Cards and other
+  top-level views show the scheduled *amount* only; post dates, incoming
+  items and the rows themselves are listed on `#acct?id=…`.
 - **Bar segments and legend.** Each segment of a split bar has a legend line
   under it: a `.dot` plus a text label with the amount (Free, Reserved,
-  Scheduled · posts date, and an outlined dot for Scheduled in), so the
+  Scheduled), so the
   segments never rely on colour alone. A segment after another one gets a
   2px `--panel` gap (`i + .sched`): blue and purple are too close in
   lightness (1.4:1) to meet the 3:1 non-text contrast, while each meets it
