@@ -447,7 +447,14 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .iconpick input:focus-visible+.aicon{outline:3px solid var(--accent2);outline-offset:2px}
 
 /* transaction date + time side by side; time shown before a feed row's subtitle */
-.daterow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px}
+.daterow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:10px}
+.daterow input{height:44px}
+/* ⟲ now: a bordered square level with the inputs */
+.nowbtn{align-self:end;display:grid;place-items:center;width:44px;height:44px;padding:0;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--accent)}
+.nowbtn:hover{background:var(--hover2)}.nowbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* narrow phones: tighter inputs so date and time are never cut off; the narrowest put the date on its own line */
+@media (max-width:480px){.daterow{grid-template-columns:minmax(0,1.12fr) minmax(0,1fr) 42px;gap:6px}.daterow input{padding:10px 6px}.nowbtn{width:42px}}
+@media (max-width:379px){.daterow{grid-template-columns:minmax(0,1fr) 42px}.daterow>label:first-child{grid-column:1/-1}}
 .ftime{font-variant-numeric:tabular-nums;margin-right:6px;color:var(--ink);opacity:.8}
 .fwhen{margin-right:6px;color:var(--ink);font-weight:600}
 .ftime[title]{cursor:help}

@@ -213,6 +213,13 @@ topmost popup only.
   zone; title), while notes, quick picks, the type selector, categories and
   the note field span both. The order is set in CSS (`order`), so fields
   that a type hides leave no gaps. On phones it is one column.
+- Date and time share `.daterow` with an icon-only now button
+  (`#fNowBtn.nowbtn`, ⟲ around clock hands, `aria-label`/`title` "Fill in
+  current date and time"): it sets Date, Time and Time zone to this moment in
+  the device's zone, for a new or an existing transaction, and saves
+  nothing. Below 480px the date and time inputs get less padding so the
+  time is not cut off; below 380px the date takes its own line and time
+  shares the next with the button.
 - Order: title row, type selector (`.seg`), quick picks (add only, for the
   chosen type), fields, then the save row.
 - **Save row** (`.saverow`): the primary button (full width on phones,

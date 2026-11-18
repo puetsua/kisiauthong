@@ -1559,6 +1559,16 @@ $("#drawerClose").addEventListener("click", closeDrawer);
 // the zone only matters with a time, so it is shown only while a time is entered
 function syncTz() { const el = $("#txnForm").elements; $("#fTzWrap").hidden = !el.time.value; }
 $("#txnForm").elements.time.addEventListener("input", syncTz);
+// ⟲ next to Time: date, time and zone become now on this device; nothing is saved until Save
+$("#fNowBtn").addEventListener("click", () => {
+  const dz = deviceTZ(), now = zoneParts(new Date(), dz), el = $("#txnForm").elements, sel = $("#fTz");
+  el.date.value = now.date; el.time.value = now.time;
+  // the device zone is normally listed; an alias (Asia/Calcutta) matches the option it resolves to, else the zone stays as it was
+  const canon = (z) => { try { return new Intl.DateTimeFormat("en", { timeZone: z }).resolvedOptions().timeZone; } catch (e) { return z; } };
+  const opts = [...sel.options], hit = opts.find((o) => o.value === dz) || opts.find((o) => canon(o.value) === canon(dz));
+  if (hit) sel.value = hit.value;
+  syncTz();
+});
 $("#fDelete").addEventListener("click", async () => { showActions(false); if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
 $("#drawerBackdrop").addEventListener("click", closeDrawer);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden && !$("#dialog").open) closeDrawer(); });
