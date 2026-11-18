@@ -69,8 +69,8 @@ desktop                                  phone (≤ 800px)
 ### Top bar
 
 - `.topbar`, sticky, white: page title (`#pageTitle`, serif) on the left,
-  notifications bell and the user avatar menu on the right. Nothing else;
-  page actions belong in the page.
+  the hide-amounts eye (`#hideBtn`), the notifications bell and the user
+  avatar menu on the right. Nothing else; page actions belong in the page.
 
 ### Phone navigation
 
@@ -265,6 +265,13 @@ topmost popup only.
 
 - Amounts: `fmt(minor, currency)` for display, `decimal(minor, currency)` for
   form values, `toMinor(text, currency)` back. Never floats for money.
+- Every displayed amount goes through `fmt()`: it marks the digits so that,
+  while amounts are hidden (the header eye, kept per device in
+  `localStorage`), they show as a `••••` pill (`.amtmask`) with the currency
+  and sign beside it. A tap or Enter shows that one value for about five
+  seconds and never reaches the row or card around it. Text built for anything
+  but the page (search, clipboard) must use `plainAmounts()` or skip amounts.
+  Form inputs use `decimal()` and are never masked.
 - Negative is shown with a minus; income in `--pos` where direction matters.
 - Dates the user thinks in: `dayLabel(iso)`; periods: `periodLabel()`.
 

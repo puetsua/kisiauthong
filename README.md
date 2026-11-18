@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 # 記數通 KiSiauThong
 
-Self-hosted personal bookkeeping: budgets (monthly by default, or daily, weekly, every N weeks or months, yearly, or a fixed date range), billing cycles for memberships and bills, bank and wallet balances, multi-currency wallets (e.g. JPY beside TWD), credit card usage, reserves that set money aside for future plans such as travel, and shortcuts that fill in everyday entries such as breakfast in one tap.
+Self-hosted personal bookkeeping: budgets (monthly by default, or daily, weekly, every N weeks or months, yearly, or a fixed date range), billing cycles for memberships and bills, bank and wallet balances, multi-currency wallets (e.g. JPY beside TWD), credit card usage, reserves that set money aside for future plans such as travel, and shortcuts that fill in everyday entries such as breakfast in one tap. The eye in the header hides every amount on screen for privacy in public places; tap a hidden amount to peek at it.
 
 Platforms: web server (self-hosted), desktop (Windows, Linux, macOS), and Android.
 
