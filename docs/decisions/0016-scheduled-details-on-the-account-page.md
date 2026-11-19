@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-# 0015 — Scheduled details live on the account's page
+# 0016 — Scheduled details live on the account's page
 
 Date: 2026-11-18
 Status: accepted (issue #10; amends the UI part of ADR 0014)

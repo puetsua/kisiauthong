@@ -57,6 +57,8 @@ jobs:
         run: node scripts/check-i18n.js
       - name: Rendering smoke tests
         run: node scripts/test-web.js
+      - name: Number formats
+        run: node scripts/check-numfmt.js
 
   release-build:
     name: Release builds compile

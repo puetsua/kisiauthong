@@ -11,6 +11,10 @@ same change. Styles live in `web/style.css`, markup in `web/index.html` and
 - **Let the layout explain.** No secondary labels or descriptions that repeat
   what the layout already says. A short hint is fine only where an action
   would otherwise be undiscoverable (e.g. an empty state).
+- **Do not nudge** (ADR 0015). Similar items may be kept on purpose: no
+  suggested merges, "did you mean", highlighted duplicates or pre-selected
+  groups. Offer tools the user starts and controls (a multi-select merge);
+  a plain sort order with nothing highlighted or pre-selected is fine.
 - **One way per job.** Reuse an existing component before adding a new one;
   a new pattern needs an entry here.
 - **Phone and desktop are both first class.** Every screen works from 360px
@@ -166,7 +170,11 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   `history.replaceState` so typing does not fill the history; a bare
   `#screen` keeps what is on screen.
 - **Cards** (`.tcard`, `.acard` …) are for things scanned at a glance (budgets,
-  reserves, accounts); each card is a button that opens its details.
+  reserves, accounts); each card is a button that opens its details. A
+  budget's or reserve's name comes first and its period or target date goes
+  on the line below; a reserve's name wraps rather than being cut off. The
+  Accounts and Reserves pages start with their cards, with no summed total
+  above them.
 - **Record pages** (a category: `#tag?id=…&range=month&at=2026-10-01`, a
   reserve: `#reserve?id=…`, an own account: `#acct?id=…`): the
   top bar shows the record's name and the nav keeps its parent page `.on`.
@@ -175,10 +183,10 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   through reuses the Transactions `.periodbar` (mode `.seg`, ‹ Previous /
   Next ›, Back to today); unlike typing, each step is a new history entry, so
   Back steps back (`periodBar` / `bindPeriodBar`). Actions on the record
-  (a reserve's Put in, Take out, Use, Complete) sit in a row under its
-  card, the main one as `.primarybtn`. An unknown id returns to the parent
-  page. A record page that opens with the record's card shows the same card
-  as its list (not a button there: `.acard.static`), never a longer one;
+  (a reserve's Put in, Take out) sit in a row under its card, the main one
+  as `.primarybtn`. An unknown id returns to the parent page. A record
+  page that opens with the record's card shows the same card as its list
+  (not a button there: `.acard.static`), never a longer one;
   details go in the panels under it. An account's page puts its blue
   Scheduled panel beside the card on wide screens (`.acctpage.withsched`).
 - **Empty states**: `.empty`, one short sentence; add how to create the first
@@ -253,6 +261,13 @@ topmost popup only.
   (`.formactions`) above the full-width submit button.
 - Groups of toggles (category chips) use a `div.drawerfield` with a heading
   span, not a `label`, so clicking the heading toggles nothing.
+- A button that fills a field sits beside it in a flex row and wraps below
+  it when the row is too narrow: Take out's **Fill remaining**
+  (`.amtfill`, `#dlgFill`, a `.smallbtn` as tall as the input) sets Amount
+  to `decimal()` of what the reserve holds in the chosen account and saves
+  nothing. Its `aria-label`/`title` carries the amount through `fmt()`, so
+  hiding amounts masks it; changing the account updates the label, never
+  the field.
 
 ## Toast
 
@@ -287,7 +302,7 @@ topmost popup only.
   that shows the rows in place), and the drawer's `.formnote.sched` note with
   Post now. Never reuse amber (expected, needs confirming) or purple
   (reserved) for it.
-- **Scheduled details live on the account page** (ADR 0015). Cards and other
+- **Scheduled details live on the account page** (ADR 0016). Cards and other
   top-level views show the scheduled *amount* only; post dates, incoming
   items and the rows themselves are listed on `#acct?id=…`.
 - **Bar segments and legend.** Each segment of a split bar has a legend line
@@ -318,8 +333,14 @@ topmost popup only.
   seconds and never reaches the row or card around it. Text built for anything
   but the page (search, clipboard) must use `plainAmounts()` or skip amounts.
   Form inputs use `decimal()` and are never masked.
+- Number format (Settings): groups of three `1,074,958`, groups of four
+  `107 4958` split by `FOUR_SEP` (a no-break space, so an amount never wraps
+  inside its digits), or plain. Never parse displayed amounts back; a search
+  that matches them treats any white space as a plain space.
 - Negative is shown with a minus; income in `--pos` where direction matters.
 - Dates the user thinks in: `dayLabel(iso)`; periods: `periodLabel()`.
+- Versions have no `v` prefix: `0.2.0`, `0.2.0-1118-c22ff51`, as in the
+  release tags (ADR 0009).
 
 ## Text
 

@@ -46,13 +46,18 @@ function currencyOptions(selected) {
 }
 const toMinor = (a, c) => Math.round(parseFloat(a || 0) * Math.pow(10, expOf(c)));
 // How amounts are written (Settings → Number format): grouped by thousands "1,074,958",
-// by ten-thousands as East Asian numbers are read "107,4958", or plain "1074958".
-const NUMFMT_L = { grouped: N_("Groups of three (1,074,958)"), four: N_("Groups of four (107,4958)"), plain: N_("Plain (1074958)") };
+// by ten-thousands as East Asian numbers are read "107 4958", or plain "1074958".
+// Groups of four are split by a no-break space, not a comma, so "3 5000" is not misread as a
+// decimal comma. NO-BREAK SPACE (U+00A0) rather than NARROW NO-BREAK SPACE (U+202F): every font has
+// it at the width of a space, while U+202F is a sliver in bold system-ui and Helvetica Neue (1-2px),
+// so 3 5000 would read as 35000, and older fonts may lack it.
+const FOUR_SEP = "\u00A0";
+const NUMFMT_L = { grouped: N_("Groups of three (1,074,958)"), four: N_("Groups of four (107\u00A04958)"), plain: N_("Plain (1074958)") };
 const numberFormat = () => (state.general && state.general.numberFormat) || "grouped";
 function writeInt(n) {
   switch (numberFormat()) {
     case "plain": return String(n);
-    case "four": return String(n).replace(/\B(?=(\d{4})+(?!\d))/g, ",");
+    case "four": return String(n).replace(/\B(?=(\d{4})+(?!\d))/g, FOUR_SEP);
     default: return n.toLocaleString(LANG);
   }
 }
@@ -823,10 +828,12 @@ async function deleteTxn(id) {
   catch (e) { errMsg(e); return false; }
 }
 function filteredTxns() {
-  const f = state.filter, q = f.q.trim().toLowerCase();
+  // any white space counts as a plain space, so a typed "3 5000" matches the no-break FOUR_SEP
+  const spaces = (s) => s.replace(/\s/g, " ");
+  const f = state.filter, q = spaces(f.q.trim().toLowerCase());
   let list = [...state.data.transactions].sort(byNewest);
   // while amounts are hidden the search does not match them, so typing a guess reveals nothing
-  if (q) list = list.filter((t) => [t.note, t.memo, lbl(TYPE_L, flow(t)), txnSubtitle(t), amountsHidden ? "" : plainAmounts(fmt(t.amountMinor, t.currency))].join(" ").toLowerCase().includes(q));
+  if (q) list = list.filter((t) => spaces([t.note, t.memo, lbl(TYPE_L, flow(t)), txnSubtitle(t), amountsHidden ? "" : plainAmounts(fmt(t.amountMinor, t.currency))].join(" ").toLowerCase()).includes(q));
   if (f.account) list = list.filter((t) => t.fromAccountId === f.account || t.toAccountId === f.account);
   if (f.type) list = list.filter((t) => flow(t) === f.type);
   // "none": spending and income without a category
@@ -918,7 +925,7 @@ function screenTransactions(v) {
         <button class="smallbtn" data-page="1" ${state.searchPage >= pages - 1 ? "disabled" : ""}>${esc(__("Next ›"))}</button>
         <select id="pgSize" aria-label="${esc(__("Per page"))}">${sizes}</select></nav></div>` : "";
     } else head = `<div class="periodbar"><div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${modes}</div>${custom}${nav(p)}</div>`;
-    // one line that opens in place; each account's page lists its own (ADR 0015)
+    // one line that opens in place; each account's page lists its own (ADR 0016)
     const schedHTML = sched.length ? `<section class="schedsum${state.schedOpen ? " open" : ""}" id="schedSec"><button type="button" class="schedtoggle" id="schedToggle" aria-expanded="${!!state.schedOpen}" aria-controls="schedList">
         <b class="dot sched" aria-hidden="true"></b><span class="schedn">${esc(__("{n} scheduled", { n: sched.length }))}</span><span class="schedhint">${esc(__("Open an account for details"))}</span></button>
         <ul class="feed" id="schedList"${state.schedOpen ? "" : " hidden"}>${sched.map((t) => feedRow(t, { sched: true })).join("")}</ul></section>` : "";
@@ -1013,7 +1020,7 @@ function accountActivity(id) {
   const last = list.filter((t) => t.state === "posted").reduce((m, t) => (t.date > m ? t.date : m), "");
   return { n: list.length, last };
 }
-// The card shows amounts only. Scheduled transactions (ADR 0014, 0015): what they take is held (a blue
+// The card shows amounts only. Scheduled transactions (ADR 0014, 0016): what they take is held (a blue
 // segment and one total); their dates, and what they bring, are listed on the account's page.
 // page: the card heading that page, which opens nothing
 function accountCard(a, opts = {}) {
@@ -1069,21 +1076,13 @@ function screenAcct(v) {
 // the "add" tile that ends a card grid
 const addTile = (id, label, cls = "") => `<button type="button" class="addtile ${cls}" id="${id}"><span aria-hidden="true">+</span>${esc(label)}</button>`;
 function screenAccounts(v) {
-  const accs = state.data.accounts;
-  // totals per currency: what you have, and how much of it reserves hold
-  const curs = [...new Set(accs.map((a) => a.currency))];
-  const totals = curs.map((c) => {
-    const xs = accs.filter((a) => a.currency === c), sum = (k) => xs.reduce((n, a) => n + (a[k] || 0), 0);
-    return `<div class="totcard"><span class="lab">${esc(__("Total"))}</span><b>${fmt(sum("balanceMinor"), c)}</b>
-      <small>${esc(__("{n} account(s)", { n: xs.length }))}${sum("reservedMinor") ? " · " + esc(__("Reserved {amount}", { amount: fmt(sum("reservedMinor"), c) })) : ""}${sum("heldMinor") ? " · " + esc(__("Scheduled {amount}", { amount: fmt(sum("heldMinor"), c) })) : ""}</small></div>`;
-  }).join("");
-  const ordered = accs; // by name, as the server lists them
+  // no summed total: it would add bank accounts and credit cards together
+  const ordered = state.data.accounts; // by name, as the server lists them
   const exts = state.data.externals.map((a) => {
     const act = accountActivity(a.id);
     return `<button type="button" class="xcard" data-detail-account="${esc(a.id)}">${accIcon(a)}<span><b>${esc(accName(a.id))}</b><small>${esc(__("{n} transaction(s)", { n: act.n }))}</small></span></button>`;
   }).join("");
-  v.innerHTML = `<div class="totals">${totals}</div>
-    <section class="tsection"><div class="tgrid">${ordered.map((a) => accountCard(a)).join("")}${addTile("newAccount", __("New account"), "")}</div></section>
+  v.innerHTML = `<section class="tsection"><div class="tgrid">${ordered.map((a) => accountCard(a)).join("")}${addTile("newAccount", __("New account"), "")}</div></section>
     <section class="tsection"><div class="tsechead"><h3>${esc(__("External accounts"))}</h3></div>
       <div class="xgrid">${exts}${addTile("newExternal", __("New external account"), "small")}</div></section>`;
   $("#newAccount").addEventListener("click", () => openAccountDialog());
@@ -1243,22 +1242,15 @@ function reserveCard(r) {
   const segs = own.map((s, i) => `<i style="width:${s.amountMinor / scale * 100}%;background:${BOX_COLORS[i % BOX_COLORS.length]}"></i>`).join("");
   const legend = held.map((s) => { const i = own.indexOf(s); return `<small>${i >= 0 ? `<b class="dot" style="background:${BOX_COLORS[i % BOX_COLORS.length]}"></b>` : ""}${esc(accName(s.accountId))} ${fmt(s.amountMinor, s.currency)}</small>`; }).join("");
   return `<button type="button" class="tcard gcard" data-detail-reserve="${esc(r.id)}">
-    <span class="thead"><b>${esc(r.name)}</b><small>${esc(r.targetDate ? __("by {date}", { date: dayLabel(r.targetDate) }) : "")}</small></span>
+    <span class="thead"><b>${esc(r.name)}</b>${r.targetDate ? `<small>${esc(__("by {date}", { date: dayLabel(r.targetDate) }))}</small>` : ""}</span>
     <span class="bamount"><b>${fmt(r.savedMinor, r.currency)}</b>${target ? ` <small>${esc(__("of {limit}", { limit: fmt(r.targetMinor, r.currency) }))}</small>` : ""}</span>
     <span class="stack">${segs}</span>
     ${target ? `<span class="tfoot"><span>${esc(toGo(r))}</span></span>` : ""}
     <span class="boxlegend">${legend || `<small>${esc(__("No allocations yet"))}</small>`}</span></button>`;
 }
 function screenReserves(v) {
-  const rs = state.data.reserves, accs = state.data.accounts;
-  // per currency: how much is set aside, and what the accounts have left over
-  const curs = [...new Set(rs.map((r) => r.currency))];
-  const totals = curs.map((c) => {
-    const saved = rs.filter((r) => r.currency === c).reduce((n, r) => n + r.savedMinor, 0), free = accs.filter((a) => a.currency === c).reduce((n, a) => n + a.freeMinor, 0);
-    return `<div class="totcard"><span class="lab">${esc(__("Reserved"))}</span><b>${fmt(saved, c)}</b><small>${esc(__("Free {amount}", { amount: fmt(free, c) }))}</small></div>`;
-  }).join("");
-  v.innerHTML = `${totals ? `<div class="totals">${totals}</div>` : ""}
-    <section class="tsection"><div class="tgrid">${rs.map(reserveCard).join("")}${addTile("newReserve", __("New reserve"))}</div></section>`;
+  const rs = state.data.reserves;
+  v.innerHTML = `<section class="tsection"><div class="tgrid">${rs.map(reserveCard).join("")}${addTile("newReserve", __("New reserve"))}</div></section>`;
   $("#newReserve").addEventListener("click", () => openReserveDialog());
   bindDetails(v);
 }
@@ -1293,7 +1285,7 @@ function screenReserve(v) {
     + (Object.keys(sums.in).length ? tile(__("Put in"), money(sums.in)) : "") + (Object.keys(sums.out).length ? tile(__("Taken out"), money(sums.out)) : "");
   v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#reserves">‹ ${esc(__("Reserves"))}</a><button type="button" class="smallbtn" id="resEdit">${esc(__("Edit"))}</button></div>
     <div class="tgrid tagbudget">${reserveCard(r)}</div>
-    <div class="resactions"><button type="button" class="primarybtn" id="resIn">${esc(__("Put in"))}</button><button type="button" class="smallbtn" id="resOut" ${holds ? "" : "disabled"}>${esc(__("Take out"))}</button><button type="button" class="smallbtn" id="resUse" ${holds ? "" : "disabled"}>${esc(__("Use"))}</button><button type="button" class="smallbtn" id="resDone" ${holds ? "" : "disabled"}>${esc(__("Complete"))}</button></div>
+    <div class="resactions"><button type="button" class="primarybtn" id="resIn">${esc(__("Put in"))}</button><button type="button" class="smallbtn" id="resOut" ${holds ? "" : "disabled"}>${esc(__("Take out"))}</button></div>
     <div class="totals">${tiles}</div>
     <section class="tsection">${periodBar(mode, p)}
     ${inP.length ? `<div class="psum"><span>${esc(__("{n} allocation(s)", { n: inP.length }))}</span><span class="amts">${[...sumParts(allocTotals(inP).in, "+", "move"), ...sumParts(allocTotals(inP).out, "−", "move")].join(" ")}</span></div>
@@ -1302,8 +1294,6 @@ function screenReserve(v) {
   $("#resEdit").addEventListener("click", () => openReserveDialog(r.id));
   $("#resIn").addEventListener("click", () => openAllocDialog(r.id, "in"));
   $("#resOut").addEventListener("click", () => openAllocDialog(r.id, "out"));
-  $("#resUse").addEventListener("click", () => openAllocDialog(r.id, "use"));
-  $("#resDone").addEventListener("click", () => completeReserve(r));
   bindDetails(v);
 }
 function openReserveDialog(editId) {
@@ -1335,12 +1325,8 @@ async function deleteReserve(r) {
   if (!confirm(__("Delete {name}? Its {n} allocation(s) and {m} template(s) are deleted too. Your accounts and transactions stay as they are.", { name: r.name, n, m }))) return;
   try { await api("/api/reserves/" + r.id, { method: "DELETE" }); msg(__("Deleted.")); location.hash = "#reserves"; await load(); } catch (e) { errMsg(e); }
 }
-async function completeReserve(r) {
-  if (!confirm(__("Take everything out of {name}? The money stays in its accounts, free to spend.", { name: r.name }))) return;
-  try { await post("/api/reserves/" + r.id + "/complete", { date: state.data.today }); msg(__("{name} completed.", { name: r.name })); await load(); } catch (e) { errMsg(e); }
-}
-// dir: "in" puts money in, "out" takes it out, "use" takes it out and then records the spending
-// (two separate records: spending never changes a reserve). editId: an allocation to fix.
+// dir: "in" puts money in, "out" takes it out (with a button that fills in all the reserve
+// holds in the chosen account). editId: an allocation to fix.
 function openAllocDialog(reserveId, dir, editId) {
   const a = editId ? state.data.allocations.find((x) => x.id === editId) : null;
   const r = resById(a ? a.reserveId : reserveId);
@@ -1350,23 +1336,36 @@ function openAllocDialog(reserveId, dir, editId) {
   const accs = d === "in" || a ? accountsByUse() : accountsByUse().filter((x) => heldIn(r, x.id) > 0);
   const opt = (x) => `<option value="${esc(x.id)}" ${a && a.accountId === x.id ? "selected" : ""}>${esc(d === "in" || a ? __("{account} · {amount} free", { account: x.name, amount: fmt(x.freeMinor, x.currency) }) : __("{account} · holds {amount}", { account: x.name, amount: fmt(heldIn(r, x.id), x.currency) }))}</option>`;
   const DIR_L = { in: N_("Put in"), out: N_("Take out") };
-  const title = a ? __("Edit allocation") : d === "use" ? __("Use from {name}", { name: r.name }) : d === "in" ? __("Put in {name}", { name: r.name }) : __("Take out of {name}", { name: r.name });
+  const title = a ? __("Edit allocation") : d === "in" ? __("Put in {name}", { name: r.name }) : __("Take out of {name}", { name: r.name });
+  const amount = field("Amount", `<input name="amount" type="number" step="any" min="0.01" required inputmode="decimal" value="${a ? decimal(Math.abs(a.amountMinor), a.currency) : ""}">`);
+  const fill = !a && d === "out";
   openDialog(title, dialogForm(
     (a ? field("Type", `<select name="dir">${enumOptions(DIR_L, ["in", "out"], d)}</select>`) : "") +
     field("Account", `<select name="accountId" required>${accs.map(opt).join("")}</select>`) +
-    field("Amount", `<input name="amount" type="number" step="any" min="0.01" required inputmode="decimal" value="${a ? decimal(Math.abs(a.amountMinor), a.currency) : ""}">`) +
+    (fill ? `<div class="amtfill">${amount}<button type="button" class="smallbtn" id="dlgFill">${esc(__("Fill remaining"))}</button></div>` : amount) +
     field("Date", `<input name="date" type="date" required value="${a ? esc(a.date) : state.data.today}">`) +
     field("Title", `<input name="note" maxlength="200" value="${a ? esc(a.note || "") : ""}">`, "wide"),
-    a ? __("Save changes") : d === "use" ? __("Take out and add the spending") : __(DIR_L[d]),
+    a ? __("Save changes") : __(DIR_L[d]),
     a ? `<button type="button" class="smallbtn danger" id="dlgDelAlloc">${esc(__("Delete"))}</button>` : ""));
   onDlg("dlgDelAlloc", async () => {
     if (!confirm(__("Delete this allocation? To undo a decision, add a new one instead."))) return;
     try { await api("/api/allocations/" + a.id, { method: "DELETE" }); msg(__("Deleted.")); await load(); } catch (e) { errMsg(e); }
   });
+  if (fill) {
+    // fills in what the chosen account holds, only when pressed: changing the account leaves the amount alone
+    const sel = $("#dialogForm [name=accountId]"), btn = $("#dlgFill");
+    const label = () => {
+      const n = heldIn(r, sel.value), l = __("Fill remaining: {amount}", { amount: fmt(n, accCur(sel.value)) });
+      btn.disabled = n <= 0; btn.setAttribute("aria-label", l); btn.title = l;
+    };
+    label();
+    sel.addEventListener("change", label);
+    btn.addEventListener("click", () => { $("#dialogForm [name=amount]").value = decimal(heldIn(r, sel.value), accCur(sel.value)); });
+  }
   $("#dialogForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = accCur(f.accountId), minor = toMinor(f.amount, cur);
-    const takeOut = a ? f.dir === "out" : d !== "in";
+    const takeOut = a ? f.dir === "out" : d === "out";
     if (!a && takeOut && minor > heldIn(r, f.accountId)) { // the server refuses this too; say it with the amount first
       msg(__("{box} holds {amount} in {account}; you can take out at most that.", { box: r.name, amount: fmt(heldIn(r, f.accountId), cur), account: accName(f.accountId) }), "error"); return;
     }
@@ -1376,7 +1375,6 @@ function openAllocDialog(reserveId, dir, editId) {
       if (a) { await put("/api/allocations/" + a.id, body); msg(__("Allocation updated.")); }
       else { await post("/api/reserves/" + r.id + "/allocations", body); msg(__("Saved.")); }
       $("#dialog").close(); await load();
-      if (d === "use") openDrawer("expense", "", { accountId: f.accountId, amountMinor: minor, currency: cur, note: f.note || r.name });
     } catch (err) { errMsg(err); }
   });
 }
@@ -1578,8 +1576,7 @@ $("#fSaveTpl").addEventListener("click", () => {
   const { body } = formBody();
   openTemplateDialog(null, { name: body.note, template: body, schedule: { frequency: "never" } });
 });
-// fill: { accountId, amountMinor, currency, note } to start from (Use on a reserve's page)
-function openDrawer(type, tag, fill) {
+function openDrawer(type, tag) {
   state.editingTxn = null;
   $("#fDelete").hidden = true;
   fillSelects();
@@ -1590,9 +1587,8 @@ function openDrawer(type, tag, fill) {
   el.date.value = now.date; el.time.value = now.time; $("#fTz").innerHTML = zoneOptions(deviceTZ());
   syncTz();
   setTxnType(type || "expense", tag ? [tag] : []);
-  state.quickOn = !tag && !fill;
+  state.quickOn = !tag;
   drawQuick(state.quickOn ? quickPicks(state.txnType) : []);
-  if (fill) { setSel(el.accountId, fill.accountId); el.amount.value = decimal(fill.amountMinor, fill.currency); el.note.value = fill.note || ""; }
   $("#fPlannedNote").hidden = true;
   syncSchedNote();
   $("#drawerTitle").textContent = __("Add transaction");

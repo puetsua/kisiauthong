@@ -2,7 +2,7 @@
 # 0013 — Reserves own their allocations; allocations are not transactions
 
 Date: 2026-11-17
-Status: accepted (replaces 0003; amends 0004, 0011 and 0012)
+Status: accepted (replaces 0003; amends 0004, 0011 and 0012; UI amended 2026-11-18, see below)
 
 ## Context
 
@@ -111,3 +111,18 @@ of a real book and checks counts and sums before and after.
   before updating).
 - Code that only existed for allocations-as-transactions is deleted, not
   kept for compatibility.
+
+## Amendment (2026-11-18): Take out fills in what remains
+
+The reserve page keeps only **Put in** and **Take out** (issue #17).
+
+- **Use** is removed: it only took an amount out and then opened the add
+  form, and a transaction can be added from anywhere already.
+- **Complete** is removed as a button: it took everything out (one
+  take-out per account) and set no done or archived state, so nothing
+  else depended on it. The Take out dialog instead has **Fill remaining**,
+  which fills the Amount with what the reserve holds in the chosen account;
+  the user still presses Take out. A reserve held in several accounts is
+  emptied one account at a time.
+- `/api/reserves/{id}/complete` and the MCP tools stay as they are, for
+  other clients.
