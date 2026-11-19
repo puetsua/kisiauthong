@@ -208,6 +208,12 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   with a `.pill.on` *In use* on the active one, the address in mono below,
   Switch / Edit / Remove (`.smallbtn`, Remove `.danger`) on the right, then an
   Add server `.ghostbtn` row. Nothing is suggested or pre-filled.
+- **Server row on the sign-in card** (only inside the Tauri apps, ADR 0019,
+  issue #35): the last row of every signed-out step (sign in, two-step code,
+  setup), `.srvfoot` under a `--rule` hairline. Left, muted "Server" and the
+  host[:port] in mono ink (`.host`); right, a *Change server* `.linkbtn` whose
+  `aria-label` includes the host. On narrow phones it wraps, the link staying
+  on the right.
 - **The apps' server screen** (`apps/tauri/src/`, outside the web UI): the
   brand panel with the large icon beside the form on desktop, a purple header
   above a white sheet on phones; one address field, a hint with an example,

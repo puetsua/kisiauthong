@@ -588,6 +588,10 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 
 /* two-step verification */
 .authback{margin-top:10px;align-self:center}
+/* inside the app only (ADR 0019): the server this sign-in belongs to, and a way back to the app's server screen */
+.srvfoot{margin-top:16px;padding-top:14px;border-top:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;justify-content:space-between;font-size:.86rem;color:var(--muted)}
+.srvfoot .host{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.82rem;color:var(--ink);overflow-wrap:anywhere}
+.srvfoot .linkbtn{margin-left:auto}
 .small{font-size:.84rem}
 .totpsetup{display:flex;gap:22px;align-items:flex-start;padding:18px 20px;flex-wrap:wrap}
 .totpsetup .qr{border:1px solid var(--line);border-radius:10px;image-rendering:pixelated;background:#fff}
