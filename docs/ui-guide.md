@@ -37,6 +37,7 @@ Colours are CSS custom properties on `:root`; use them, not literal colours.
 | `--accent`, `--accent2`, `--accentsoft` | primary actions, selected state, selected fill |
 | `--pos`/`--posbg`, `--amber`/`--amberbg`, `--red`/`--redbg` | good, warning, bad/over |
 | `--sched`, `--schedbg`, `--schedink`, `--schedline` | scheduled (dated after today, ADR 0014): bar segment and dot, section/note fill, text on that fill, its border |
+| `--nightlybg`, `--nightlyline`, `--nightlyink` | the teal `nightly` chip beside the version (ADR 0018); solid `--nightlyline` on the dark sidebar |
 | `--page-max` | content width (Settings → Page width) |
 
 - Type: body in the system sans stack (Segoe UI, Microsoft JhengHei, PingFang
@@ -65,7 +66,9 @@ desktop                                  phone (≤ 800px)
 - `.sidebar`, 218px, dark (`--side`), sticky full height.
 - Top to bottom: brand (記數通 + KiSiauThong), `#nav` with the book pages
   (Dashboard, Transactions, Accounts, Templates, Tags, Settings), then the
-  Administration link (admins only) and the licence footer at the bottom.
+  Administration link (admins only) and the licence footer at the bottom,
+  with the version under it (ADR 0018): muted monospace text, plus the teal
+  `.verchip` for a nightly build, linking to Settings → About.
 - The current page's link has `.on`. On admin pages `#nav` is swapped for
   `#adminNav` (Server, Users) and the foot link becomes "Back to my books".
 - New book pages go into `#nav`, the phone tab bar or More sheet, and
@@ -85,7 +88,7 @@ desktop                                  phone (≤ 800px)
 - **More** opens `#moreSheet`, a bottom sheet with the remaining pages
   (Templates, Tags, Settings; Server and Users for admins). It closes on a
   link, the backdrop, or Esc. The More tab is `.on` while one of its pages
-  is shown.
+  is shown. Its foot (`#moreVer`) shows the version like the sidebar does.
 - Keep the tab bar at five items. A new page goes into the More sheet.
 
 ### Floating add button
@@ -297,6 +300,7 @@ topmost popup only.
 | Segmented choice | `.seg` with `button.on` | one of a few modes (type, period) |
 | Toggle chips | `.tagpick` buttons with `aria-pressed` | many-of-many (categories) |
 | Status chip | `.chip` (`.due`, `.cur`) | a small state or value inside a row |
+| Version chip | `.verchip` after `.vertext` | marks a nightly build; never on a release or dev build |
 | Bar | `.bar` + `i` fill | progress; purple normal, amber `warn`, red `over` |
 | Split bar | `.splitbar` (`.bar.split` on cards with a limit) + one `i` per segment | how an account's balance divides: reserved (`.earmarked`, `--accent2`), scheduled (`.sched`, `--sched`), the rest is free (the track) |
 | Legend dot | `.dot` (`.free`, `.earmarked`, `.sched`) before a text label | names a bar segment; always with text and the amount |

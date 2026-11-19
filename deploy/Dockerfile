@@ -16,9 +16,12 @@ RUN go mod download
 COPY server/ ./
 COPY web/ ./web/
 ARG TARGETOS TARGETARCH TARGETVARIANT
-ARG VERSION=dev
+# version (no "v" prefix), full commit hash and UTC build time, shown in Settings → About (ADR 0018)
+ARG VERSION=dev COMMIT= BUILD_TIME=
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
-    go build -trimpath -tags embedweb -ldflags "-s -w -X main.appVersion=${VERSION}" -o /out/kisiauthong . \
+    go build -trimpath -tags embedweb \
+      -ldflags "-s -w -X main.appVersion=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
+      -o /out/kisiauthong . \
  && mkdir -p /out/data
 
 # no shell, no package manager; runs as an unprivileged user (uid 65532)
