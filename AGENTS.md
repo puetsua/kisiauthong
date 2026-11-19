@@ -32,8 +32,8 @@ It is **single-user-first, multi-user-ready**: the data model always carries an 
 | Platform | Deliverable | Notes |
 |---|---|---|
 | Web server | Self-hosted server + web UI, Docker image | **Current phase (see `docs/decisions/0001-web-first.md`)**; the canonical deployment, other clients will sync against it |
-| Desktop | Windows, Linux, macOS app | **Future plan** — not built yet; will sync with the server |
-| Mobile | Android app (APK + Play Store build) | **Future plan** — not built yet; will sync with the server; iOS is out of scope unless requested |
+| Desktop | macOS and Windows app (Tauri 2, `apps/tauri/`) | **First version (ADR 0019)**: online-only, opens the web UI of the user's own server; Linux later |
+| Mobile | iOS and Android app (the same Tauri 2 project) | **First version scripted (ADR 0019)**, same shell as desktop; builds need Xcode / the Android SDK and are not in CI yet |
 
 ### Non-goals (v1)
 
@@ -45,7 +45,7 @@ It is **single-user-first, multi-user-ready**: the data model always carries an 
 
 ## 2. Architecture
 
-Offline-first, server-authoritative sync. Every client works fully offline against a local database and syncs changes to the server when reachable. Never design a feature that requires a live server on desktop/mobile.
+Target: offline-first, server-authoritative sync. Every client works fully offline against a local database and syncs changes to the server when reachable. **The first app version is not there yet** (ADR 0019): the Tauri apps are online-only and load the web UI from the user's server; offline use and sync come with their own ADR. Do not design new features that would make that later step harder (keep domain rules on the server and in shared code, not in the web UI only).
 
 ```text
                 ┌─────────────┐
@@ -63,14 +63,13 @@ Offline-first, server-authoritative sync. Every client works fully offline again
 | Server | Go (stdlib `net/http` or chi), REST/JSON API | Single static binary, easy self-hosting, cross-compiles everywhere |
 | Server DB | **SQLite first** (single file, pure-Go driver `modernc.org/sqlite`); PostgreSQL is the planned alternative | Keep SQL portable (no SQLite-only features in domain queries, repository-style store) so a Postgres adapter can be added; plain JSON is seed/import/export only, never the live store (JSONC deprecated) |
 | Web UI | React + TypeScript + Vite | Shared components/types with desktop |
-| Desktop | Tauri 2 (Rust shell + React UI) for Windows/Linux/macOS | Small binaries, reuses web UI, no Electron |
-| Mobile | React Native (Expo) for Android, TypeScript | Reuses domain logic/types with web/desktop |
-| Client DB | SQLite (`expo-sqlite` / Tauri SQL / better-sqlite3 as appropriate) | Offline-first local store on every client |
+| Desktop + mobile | Tauri 2, one project (`apps/tauri/`) for macOS, Windows, iOS, Android (Linux later); first version loads the server's web UI (ADR 0019) | Small binaries, one UI (the web UI), cookies/base path/passkey host stay the server's; no Electron |
+| Client DB | SQLite (Tauri SQL), when offline sync arrives — not in the first app version | Offline-first local store on every client |
 | Shared code | TypeScript package `@kisiauthong/core`: domain types, validation, money math, sync protocol | One implementation of the rules that matter (money, budgets) |
 | API contract | OpenAPI spec in `api/openapi.yaml`, generated TS/Go types | Contract-first; clients never hand-write diverging DTOs |
 | Money | Integer minor units (cents) + ISO 4217 currency code, never `float` | No floating-point money anywhere |
 
-Alternatives already considered: Flutter (rejected: splits language from web) and Electron (rejected: size). If you propose changing the stack, write an ADR first — do not silently re-scaffold.
+Alternatives already considered: Flutter (rejected: splits language from web), Electron (rejected: size), and React Native (Expo) for Android (the earlier plan; replaced for the first version by the Tauri project, ADR 0019). If you propose changing the stack, write an ADR first — do not silently re-scaffold.
 
 ### Repository layout (create directories as features land, do not pre-create empty trees)
 
@@ -86,8 +85,7 @@ kisiauthong/
     openapi.yaml             # single source of truth for the HTTP API
   server/                    # Go server (cmd/, internal/, migrations/)
   web/                       # React web UI (also embedded/served by server in release builds)
-  desktop/                   # Tauri app (src-tauri/ + shared React UI)
-  mobile/                    # React Native / Expo Android app
+  apps/tauri/                # Tauri 2 apps for macOS, Windows, iOS, Android (ADR 0019)
   packages/
     core/                    # shared TS: domain types, money, validation, budget math
     api-client/              # generated + hand-written API/sync client
@@ -97,7 +95,7 @@ kisiauthong/
   scripts/                   # build/release helpers
 ```
 
-Keep platform code in its own app folder. Only genuinely platform-independent logic goes in `packages/` — UI components are shared between `web/` and `desktop/` only; mobile UI is separate.
+Keep platform code in its own app folder. Only genuinely platform-independent logic goes in `packages/`. The Tauri apps ship no copy of the web UI: they load it from the server, plus their own small server screen (ADR 0019).
 
 ## 3. Domain model (core entities)
 
@@ -135,10 +133,8 @@ All ids are UUIDs generated on the client so offline creation never needs the se
 
 ## 6. Client rules (desktop, mobile, web)
 
-- **Offline-first**: create/edit/delete works with no network; the UI never blocks on sync. Show a sync state (synced / pending / conflict / error) — never silently drop a failed sync.
-- Local SQLite is the client's source of truth for rendering; the network layer only syncs.
-- Desktop (Tauri): target Windows 10+, macOS 12+ (Apple Silicon + Intel), and mainstream Linux (`.AppImage`/`.deb`). No platform-specific forks of business logic — platform differences live in the Tauri shell layer only.
-- Mobile: Android 10+ (API 29+). Respect Android back behaviour, scoped storage for exports/attachments, and no hardcoded sizes — support small phones and tablets.
+- **Offline-first** (target, after the online-only first version of ADR 0019): create/edit/delete works with no network; the UI never blocks on sync. Show a sync state (synced / pending / conflict / error) — never silently drop a failed sync. Local SQLite will then be the client's source of truth for rendering; the network layer only syncs.
+- Tauri apps (`apps/tauri/`, ADR 0019): the window shows the server's web UI; the shell owns only the server screen, the saved server list (`servers.json`) and the `kisiauthongApp` bridge, reachable from the bundled screen and saved server origins only. Target Windows 10+, macOS 12+ (Apple Silicon + Intel), iOS, Android 10+ (API 29+); Linux later. No platform-specific forks of business logic — platform differences live in the Tauri shell layer only. Unencrypted `http://` only on the local network. Check `apps/tauri/README.md` for what webviews cannot do (passkeys, `window.confirm()` on macOS/iOS, downloads on mobile).
 - Web: evergreen browsers, responsive down to phone widths (the web UI may be the only UI a self-hoster's family uses on mobile browsers). Follow `docs/ui-guide.md` for layout, navigation, popups, toasts and controls, and update it when adding a pattern. Its Principles bind every design, including no nudging (ADR 0015): offer tools the user starts, never suggestions, "did you mean", highlighted duplicates or pre-selected groups.
 - Accessibility and i18n from the start: all user-visible strings go through the i18n layer (English source strings; Traditional Chinese as used in Taiwan, `zh-TW`, is a first-class target — the project name 記數通 is Taiwanese Hokkien; web: `__()`/`N_()` from `web/i18n.js`, coverage checked by `node scripts/check-i18n.js`), no hardcoded currency/date formats.
 
@@ -168,10 +164,9 @@ cd server; go run ./cmd/server        # reads env, see .env.example
 # web / desktop UI
 npm install                            # from repo root (workspaces)
 npm run dev --workspace=web
-# desktop
-npm run tauri dev --workspace=desktop  # requires Rust toolchain
-# mobile
-npm run start --workspace=mobile       # Expo; Android emulator or device
+# desktop and mobile apps (Tauri 2, ADR 0019)
+cd apps/tauri; npm ci; npx tauri dev   # requires Rust; iOS/Android: see apps/tauri/README.md
+node scripts/test-app.js               # the app's server screen rules
 # everything via Docker (server + web + Postgres)
 docker compose -f deploy/docker-compose.yml up --build
 ```
@@ -184,7 +179,7 @@ docker compose -f deploy/docker-compose.yml up --build
 - **Testing** (tests ship with the change, in the same commit):
   - `packages/core`: unit tests for money math, budget progress, recurring-date generation — boundary cases (month-end, leap year, zero/negative) required.
   - Server: handler tests incl. auth-scoping (user A cannot read user B's data), migration-up test, sync idempotency test.
-  - Clients: at least a smoke test that the app renders and can create a transaction offline; sync tests against a local server where the platform allows.
+  - Clients: at least a smoke test that the app renders and can create a transaction offline; sync tests against a local server where the platform allows. The online-only Tauri apps (ADR 0019): `node scripts/test-app.js`, `cargo test` in `apps/tauri/src-tauri`, and a build of each platform you touched.
   - Run the tests for every package you touched before declaring done; if a configured gate (lint/typecheck) exists, run that exact gate.
 - **API changes**: edit `api/openapi.yaml`, regenerate clients, update server handler + clients + tests together. A breaking API change needs a new version path or an ADR.
 - **Docs**: user-visible behaviour changes update `README.md`; architectural changes add an ADR in `docs/decisions/`.

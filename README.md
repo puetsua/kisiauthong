@@ -3,7 +3,7 @@
 
 Self-hosted personal bookkeeping: budgets (monthly by default, or daily, weekly, every N weeks or months, yearly, or a fixed date range), billing cycles for memberships and bills, bank and wallet balances, multi-currency wallets (e.g. JPY beside TWD), credit card usage, reserves that set money aside for future plans such as travel, and shortcuts that fill in everyday entries such as breakfast in one tap. The eye in the header hides every amount on screen for privacy in public places; tap a hidden amount to peek at it.
 
-Platforms: web server (self-hosted), desktop (Windows, Linux, macOS), and Android.
+Platforms: web server (self-hosted), and apps for macOS, Windows, iOS and Android (Tauri 2) that open the web UI of your own server; Linux later.
 
 - Portal: open `.docs/index.html` in a browser (local-only, not committed)
 - Use cases: open `.docs/use-cases.html` in a browser (local-only, not committed)
@@ -32,7 +32,7 @@ go test ./...     # domain tests
 node ../scripts/check-i18n.js   # every UI string translated
 ```
 
-Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. The server listens on `127.0.0.1` only; set `KISIAUTHONG_HOST=0.0.0.0` to reach it from other devices or a container, ideally behind HTTPS. Passkeys need a host name, so open the app as `http://localhost:8080` (not `127.0.0.1`) or by its domain; behind a proxy set `KISIAUTHONG_ORIGIN` (e.g. `https://books.example.org`). Settings → About links to the source (AGPL §13): this repository by default; if you run a modified version, set `KISIAUTHONG_SOURCE_URL` to yours. `KISIAUTHONG_TZ` (an IANA zone such as `Asia/Taipei`) sets the server's "today" for users whose time zone setting is Auto; without it the server's own zone is used (UTC in most containers). Desktop and Android clients are future plans.
+Data lives in `data/kisiauthong.db` (SQLite; `data/` is gitignored). Override with `KISIAUTHONG_DB`, port with `PORT`. The server listens on `127.0.0.1` only; set `KISIAUTHONG_HOST=0.0.0.0` to reach it from other devices or a container, ideally behind HTTPS. Passkeys need a host name, so open the app as `http://localhost:8080` (not `127.0.0.1`) or by its domain; behind a proxy set `KISIAUTHONG_ORIGIN` (e.g. `https://books.example.org`). Settings → About links to the source (AGPL §13): this repository by default; if you run a modified version, set `KISIAUTHONG_SOURCE_URL` to yours. `KISIAUTHONG_TZ` (an IANA zone such as `Asia/Taipei`) sets the server's "today" for users whose time zone setting is Auto; without it the server's own zone is used (UTC in most containers).
 
 Several people can use one server, each with private books. On first visit the app asks for a username and password: on a new install that creates the first user (an administrator) with an empty book; on a database from before users existed it claims the existing books. Sign out and My account (profile, password, two-step verification with an authenticator app and recovery codes, passkeys, a photo or colour for the avatar, API keys for scripts and agents with chosen permissions and expiry) are under the avatar at the top right; administrators also get an Administration area, entered from the foot of the sidebar, to add, reset and remove users and see how the server is doing (see `docs/decisions/0007-users-and-sign-in.md`).
 
@@ -57,6 +57,10 @@ Settings (sidebar → Settings): language (English or 繁體中文（台灣）, 
 ### Releases and checks
 
 GitHub Actions run the tests (`ci.yml`) and vulnerability scans (`security.yml`: govulncheck, Trivy on the repository and the image, CodeQL) on every push and weekly. Pushing a version tag such as `0.1.0` (no `v`; `0.2.0-beta.1` for a pre-release) runs `release.yml`: tests, the downloads built by `scripts/build-release.sh`, the multi-platform image on `ghcr.io/puetsua/kisiauthong`, and the GitHub release.
+
+## Apps
+
+`apps/tauri/` holds one Tauri 2 project for macOS, Windows, iOS and Android. The first version is online-only: on first start it asks for your server's address (for example `https://example.com/kisiauthong/`; `https://` is added when you leave out the scheme), checks that a KiSiauThong server answers there, and then shows that server's own web UI and sign-in. Unencrypted `http://` is allowed only on your own network (such as `192.168.x.x`, a `.local` name or a Tailscale `100.x.y.z` address). Inside the app, Settings → Servers (just above About) lists the saved servers: switch, edit, remove, or add one. Links that leave your server open in the system browser. Passkeys do not work inside the app (sign in with your password); offline use comes later. Build steps, including iOS and Android, are in `apps/tauri/README.md`; see `docs/decisions/0019-tauri-apps-load-the-server.md`.
 
 ## License
 
