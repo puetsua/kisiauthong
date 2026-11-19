@@ -65,7 +65,7 @@ presentation.
   `--schedline`), distinct from the amber of expected and the purple of
   reserved: a blue segment in the account bar parted from the reserved one by
   a 2px gap, with a legend (Free / Reserved / Scheduled / Scheduled in); a
-  Free / Reserved / Scheduled (not posted) split on the dashboard balances;
+  Free / Reserved / Scheduled split on the dashboard balances;
   a blue "Scheduled · posts on its date" section above the period feed that
   lists every scheduled row whatever its date; a blue note in the drawer.
   *Amended by ADR 0016:* the card legend shows the scheduled amount only

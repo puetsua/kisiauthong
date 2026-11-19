@@ -313,7 +313,7 @@ function widgetBody(type, o) {
       const split = (x, c) => (x.reservedMinor || x.heldMinor ? `<ul class="balsplit">
           <li class="free"><span>${esc(__("Free"))}</span><span>${fmt(x.freeMinor, c)}</span></li>
           <li><span><span class="dot earmarked"></span>${esc(__("Reserved"))}</span><span>${fmt(x.reservedMinor, c)}</span></li>
-          <li><span><span class="dot sched"></span>${esc(__("Scheduled (not posted)"))}</span><span>${fmt(x.heldMinor, c)}</span></li></ul>` : "");
+          <li><span><span class="dot sched"></span>${esc(__("Scheduled"))}</span><span>${fmt(x.heldMinor, c)}</span></li></ul>` : "");
       return `<div class="cards">${Object.entries(perCur).map(([c, x]) => `<div class="card"><span class="lab">${esc(__("Balance"))}</span><b>${fmt(x.balanceMinor, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span>${split(x, c)}</div>`).join("")}</div>`;
     }
     case "budgets": {

@@ -149,7 +149,7 @@ const I18N = {
     "Error: {message}": "錯誤：{message}", "Failed to load: {message}": "載入失敗：{message}",
     "Settings unavailable, using defaults: {message}": "無法讀取設定，改用預設值：{message}",
     // scheduled transactions (ADR 0014)
-    "Scheduled": "已排程", "Scheduled (not posted)": "已排程（未入帳）", "Posts {date}": "{date} 入帳",
+    "Scheduled": "已排程", "Posts {date}": "{date} 入帳",
     "{n} scheduled": "{n} 筆已排程", "Open an account for details": "點帳戶看明細", "Reserved and scheduled more than its balance": "已預留與排程超過餘額",
     "Scheduled {amount}": "已排程 {amount}", "Scheduled transaction": "排程交易", "Posts when saved": "儲存後立即入帳",
     "Dated today or earlier: saving posts it now.": "日期是今天或更早：儲存後會立即入帳。", "Scheduled · posts {date}": "已排程 · {date} 自動入帳",
