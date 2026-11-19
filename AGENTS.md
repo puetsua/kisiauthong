@@ -200,7 +200,7 @@ docker compose -f deploy/docker-compose.yml up --build
 - Prefer the existing stack and layout in §2. Creating a new app, swapping a framework, or changing the sync/conflict model requires an ADR and explicit user approval.
 - Never invent a second money representation, date format, or DTO shape — reuse `packages/core` and the OpenAPI contract.
 - Verify before reporting done: run the touched package's build + tests and quote the result. If you cannot run a platform (e.g. no Android SDK here), say which platforms are unverified instead of claiming full verification.
-- Do not add telemetry, ads, third-party trackers, or external network calls beyond the user's own server.
+- Do not add telemetry, ads, third-party trackers, or external network calls beyond the user's own server. The one exception is the app's update check, which runs only when the user asks (ADR 0020).
 - When a task is ambiguous about platform scope, ask — desktop, web, and mobile have separate release pipelines and "fix it everywhere" is rarely free.
 
 ## 11. Open decisions (resolve with an ADR, then update this file)
