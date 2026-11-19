@@ -1,0 +1,12 @@
+{
+  "name": "kisiauthong-app",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "description": "記數通 KiSiauThong apps for macOS, Windows, iOS and Android (Tauri 2), loading the web UI from the user's server",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6"
+  }
+}

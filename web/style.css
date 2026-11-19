@@ -543,10 +543,17 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .slogo{font-family:Georgia,"Noto Serif TC",serif;font-size:1.9rem;color:var(--accent);line-height:1}
 .sabout b{font-family:Georgia,serif;font-size:1.1rem}
 .sabout+.srow{border-top:1px solid var(--rule)}
+/* Settings → Servers, only inside the app (ADR 0019): name, In use, address; buttons on the right */
+.srow.srvrow{grid-template-columns:minmax(0,1fr) auto}
+.srow.srvadd{grid-template-columns:minmax(0,1fr)}
+.srvinfo{min-width:0}
+.srvinfo .pill{margin-left:4px;vertical-align:1px}
+.srvurl{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.84rem;color:var(--muted);overflow-wrap:anywhere;margin-top:2px}
 @media (max-width:800px){
   .settings{grid-template-columns:minmax(0,1fr);gap:0}
   .snav{display:none}
-  .srow{grid-template-columns:minmax(0,1fr);gap:8px;padding:12px 16px}
+  .srow,.srow.srvrow{grid-template-columns:minmax(0,1fr);gap:8px;padding:12px 16px}
+  .srow.srvrow{gap:10px}
 }
 
 /* users: avatar, user button and menu, sign-in screen, My account */

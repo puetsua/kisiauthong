@@ -52,13 +52,15 @@ jobs:
         with:
           node-version: lts/*
       - name: Syntax
-        run: for f in web/*.js scripts/*.js; do node --check "$f"; done
+        run: for f in web/*.js scripts/*.js apps/tauri/src/*.js apps/tauri/src-tauri/src/*.js; do node --check "$f"; done
       - name: Translations complete
         run: node scripts/check-i18n.js
       - name: Rendering smoke tests
         run: node scripts/test-web.js
       - name: Number formats
         run: node scripts/check-numfmt.js
+      - name: App server screen (apps/tauri)
+        run: node scripts/test-app.js
 
   release-build:
     name: Release builds compile

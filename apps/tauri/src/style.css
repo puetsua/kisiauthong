@@ -1,0 +1,49 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* The app's server screen (ADR 0019). The :root tokens are copied from web/style.css
+   and scripts/test-app.js checks they still match; the rest follows the web UI's rules. */
+:root{--page-max:1120px;--ink:#221d2b;--muted:#6b6578;--bg:#f6f4f9;--panel:#fff;--line:#e1dceb;--hover:#f4f1f8;--hover2:#ece7f3;--rule:#ece8f2;--track:#e8e3ef;--soft:#faf8fc;--side:#2a1740;--side2:#45286a;--sidehover:#36204f;--sidetext:#e6dcf2;--sidemuted:#b9a6d1;--accent:#5b2a86;--accent2:#6d3aa0;--accentsoft:#f0e9f8;--pos:#1b6b3c;--posbg:#e3f1e7;--amber:#b45309;--amberbg:#fdf3e3;--red:#b3261e;--redbg:#fdecea;--sched:#2b6cb0;--schedbg:#e8f1fb;--schedink:#1a4a7f;--schedline:#b9d3ee}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font-family:"Segoe UI",system-ui,"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;color:var(--ink);background:#fff;line-height:1.5;-webkit-text-size-adjust:100%}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.fr{display:flex;min-height:100%}
+.brandpane{width:46%;flex:none;background:linear-gradient(160deg,var(--side) 0%,var(--side2) 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:24px}
+.appicon{width:150px;height:150px;border-radius:34px;box-shadow:0 18px 44px rgba(0,0,0,.4)}
+.bname{text-align:center}
+.bname .zh{font-family:Georgia,"Noto Serif TC",serif;font-size:2.6rem;color:#fff;line-height:1.1}
+.bname .en{color:var(--sidemuted);margin-top:6px}
+.formpane{flex:1;min-width:0;background:#fff;display:grid;place-items:center;padding:24px}
+.sheet{width:min(400px,100%)}
+h1{font-family:Georgia,"Noto Serif TC",serif;font-size:1.6rem;margin:0}
+.lead{color:var(--muted);font-size:.9rem;margin:6px 0 18px}
+.flabel{display:flex;flex-direction:column;gap:5px;font-size:.86rem;color:var(--muted)}
+.flabel+.flabel{margin-top:14px}
+.field{padding:11px;border:1px solid var(--line);border-radius:8px;font-size:1rem;color:var(--ink);background:#fff;width:100%;font-family:inherit;margin:0}
+.field.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.field::placeholder{color:#9a93a8}
+.field:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accentsoft)}
+.field.err,.field.err:focus{border-color:var(--red);box-shadow:0 0 0 3px var(--redbg)}
+.hint{font-size:.84rem;color:var(--muted);margin:6px 0 0}
+.errbox{margin:12px 0 0;padding:10px 12px;border-radius:8px;background:var(--redbg);color:var(--red);font-size:.9rem;line-height:1.5}
+.errbox b{display:block;margin-bottom:2px}
+.errbox code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.84rem;overflow-wrap:anywhere}
+.primarybtn{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:10px 18px;font-weight:600;cursor:pointer}
+.primarybtn:hover{background:var(--accent2)}
+.primarybtn.big{width:100%;margin-top:20px;padding:12px}
+.primarybtn:disabled{opacity:.75;cursor:progress}
+.ghostbtn{background:#fff;color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:9px 14px;font-weight:600;cursor:pointer}
+.ghostbtn.big{width:100%;margin-top:10px;padding:11px}
+.primarybtn:focus-visible,.ghostbtn:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+/* phones: the icon and name are a purple header above a white sheet holding the form */
+@media (max-width:800px){
+  body{background:var(--side)}
+  .fr{flex-direction:column}
+  .brandpane{width:auto;gap:14px;padding:calc(env(safe-area-inset-top) + 40px) 16px 52px}
+  .appicon{width:72px;height:72px;border-radius:22px;box-shadow:0 12px 30px rgba(0,0,0,.35)}
+  .bname .zh{font-size:1.9rem}
+  .bname .en{font-size:.85rem;margin-top:3px}
+  .formpane{display:block;flex:1;margin-top:-30px;border-radius:22px 22px 0 0;padding:26px 22px calc(26px + env(safe-area-inset-bottom))}
+  .sheet{width:auto}
+  .primarybtn.big,.ghostbtn.big{min-height:46px}
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "KiSiauThong",
+  "mainBinaryName": "kisiauthong-app",
+  "version": "0.3.0",
+  "identifier": "io.github.puetsua.kisiauthong",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": {
+      "csp": "default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Finance",
+    "copyright": "kisiauthong contributors, AGPL-3.0-or-later",
+    "license": "AGPL-3.0-or-later",
+    "shortDescription": "記數通 KiSiauThong",
+    "longDescription": "Self-hosted personal bookkeeping. The app opens the web UI of your own KiSiauThong server.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
