@@ -301,4 +301,12 @@ func TestMigrationsUpgradeTheFirstSchema(t *testing.T) {
 	if got := b.data.transactionByID("old-exp"); got.Memo != "Paid in cash" || got.At != "2026-11-01T00:15:00Z" {
 		t.Errorf("memo/time not stored: %+v", got)
 	}
+	// migration 15: the merge log exists, so merges and their undo work on an upgraded database
+	p, err := b.mergeTags("tag-food", MergeRequest{SourceIDs: []string{"old-label"}})
+	if err != nil {
+		t.Fatalf("merge after migrating: %v", err)
+	}
+	if _, err := b.undoMerge(p.MergeID); err != nil || b.data.tagByID("old-label") == nil {
+		t.Errorf("undo after migrating: %v", err)
+	}
 }

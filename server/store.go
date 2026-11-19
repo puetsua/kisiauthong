@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS transaction_templates%[1]s (
   template_json TEXT NOT NULL, schedule_json TEXT NOT NULL, PRIMARY KEY(user_id, id));
 CREATE TABLE IF NOT EXISTS settings%[1]s (
   user_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(user_id, key));
-` + reserveTables
+` + reserveTables + tagMergeTable
 
 // reserveTables hold reserves and their allocations (ADR 0013, migration 14).
 const reserveTables = `
@@ -108,7 +108,7 @@ CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 `
 
 // tableNames are the per-user data tables.
-var tableNames = []string{"accounts", "transactions", "tags", "transaction_tags", "transaction_templates", "settings", "reserves", "allocations"}
+var tableNames = []string{"accounts", "transactions", "tags", "transaction_tags", "transaction_templates", "settings", "reserves", "allocations", "tag_merges"}
 
 // tableNamesV8 are the tables migration 8 rebuilt (frozen with dataTablesV8).
 var tableNamesV8 = []string{"accounts", "transactions", "tags", "transaction_tags", "transaction_templates", "settings"}
@@ -175,6 +175,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateAPIKeys,                   // 12
 	migrateTransactionCreatedAt,      // 13
 	migrateReserves,                  // 14
+	migrateTagMerges,                 // 15
 }
 
 func (s *Store) migrate() error {
