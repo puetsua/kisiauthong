@@ -1557,8 +1557,39 @@ const SET_ICON = {
   display: "M3 4h18v16H3zM3 9h18M9 9v11",
   dashboard: "M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z",
   data: "M12 3v12M7 10l5 5 5-5M4 19h16",
+  servers: "M4 5h16v6H4zM4 13h16v6H4zM8 8h.01M8 16h.01",
   about: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7h.01",
 };
+// Settings → Servers exists only inside the KiSiauThong app (apps/tauri), whose shell
+// injects kisiauthongApp; in a browser it is undefined and nothing changes (ADR 0019).
+const appShell = () => globalThis.kisiauthongApp || null;
+function appServerRows(list) {
+  const host = (u) => { try { return new URL(u).host; } catch (e) { return u; } };
+  return list.servers.map((s) => {
+    const inUse = s.id === list.active;
+    return `<div class="srow srvrow"><div class="srvinfo"><span class="sl">${esc(s.name || host(s.url))}</span>${inUse ? ` <span class="pill on">${esc(__("In use"))}</span>` : ""}<div class="srvurl">${esc(s.url)}</div></div>
+      <div class="sbtns">${inUse ? "" : `<button type="button" class="smallbtn" data-srv-use="${esc(s.id)}">${esc(__("Switch"))}</button>`}<button type="button" class="smallbtn" data-srv-edit="${esc(s.id)}">${esc(__("Edit"))}</button><button type="button" class="smallbtn danger" data-srv-del="${esc(s.id)}">${esc(__("Remove"))}</button></div></div>`;
+  }).join("") + `<div class="srow srvadd"><div><button type="button" class="ghostbtn" data-srv-add>${esc(__("Add server"))}</button></div></div>`;
+}
+async function drawAppServers() {
+  const shell = appShell(), card = $("#set-servers .scard");
+  if (!shell || !card) return;
+  let list;
+  try { list = await shell.servers(); } catch (e) { $("#set-servers").hidden = true; return; }
+  card.innerHTML = appServerRows(list);
+  const fail = (e) => msg(String((e && e.message) || e), "error");
+  card.querySelectorAll("[data-srv-use]").forEach((b) => b.addEventListener("click", () => shell.use(b.dataset.srvUse).catch(fail)));
+  card.querySelectorAll("[data-srv-edit]").forEach((b) => b.addEventListener("click", () => shell.edit(b.dataset.srvEdit, LANG).catch(fail)));
+  card.querySelector("[data-srv-add]").addEventListener("click", () => shell.add(LANG).catch(fail));
+  card.querySelectorAll("[data-srv-del]").forEach((b) => b.addEventListener("click", () => {
+    const s = list.servers.find((x) => x.id === b.dataset.srvDel);
+    if (!s) return;
+    // window.confirm() answers false in the macOS and iOS webview, so the app asks natively where it can
+    const text = __("Remove {name} from this app? Its books stay on the server.", { name: s.name || s.url });
+    shell.confirm(text, __("Remove"), __("Cancel")).catch(() => confirm(text))
+      .then((yes) => yes && shell.remove(s.id).then(drawAppServers)).catch(fail);
+  }));
+}
 const setIcon = (k) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="${SET_ICON[k]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 function screenSettings(v) {
   const src = state.about && state.about.sourceUrl;
@@ -1584,6 +1615,7 @@ function screenSettings(v) {
     ["data", __("Data"), [
       row(__("Export all data"), `<div class="sbtns"><a class="smallbtn" href="api/export" download>${esc(__("Export JSON"))}</a></div>`),
     ]],
+    ...(appShell() ? [["servers", __("Servers"), []]] : []),
     ["about", __("About"), [
       `<div class="sabout"><span class="slogo" lang="nan-Hant-TW">記數通</span><span><b>KiSiauThong</b></span></div>`,
       row(__("License"), '<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0-or-later</a>'),
@@ -1613,6 +1645,7 @@ function screenSettings(v) {
   $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
   if ($("#copyCommit")) $("#copyCommit").addEventListener("click", async () => { try { await navigator.clipboard.writeText(verAbout().commit); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } });
   if (state.goAbout) { state.goAbout = false; $("#set-about").scrollIntoView({ block: "start" }); }
+  drawAppServers();
   $("#setOpenDays").addEventListener("change", (e) => { state.dayOpen = {}; saveGeneral({ openDays: parseInt(e.target.value, 10) }, () => __("Days open by default saved.")); });
   $("#setAddCur").addEventListener("change", (e) => { const c = e.target.value; if (c) saveGeneral({ currencies: [...favCurs(), c] }, () => __("{currency} added.", { currency: c })); });
   v.querySelectorAll("[data-cur-del]").forEach((b) => b.addEventListener("click", () => {

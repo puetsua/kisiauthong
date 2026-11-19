@@ -203,6 +203,17 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
 - **Settings-style pages** (Settings, My account, Server): `.settings` with a
   sticky section list (`.snav`, desktop only) and `.scard` cards of
   `.srow` rows, label (`.sl`) left, control right; one column on phones.
+- **Settings → Servers** (only inside the Tauri apps, ADR 0019): the last
+  section before About. One `.srow.srvrow` per saved server: name (or host)
+  with a `.pill.on` *In use* on the active one, the address in mono below,
+  Switch / Edit / Remove (`.smallbtn`, Remove `.danger`) on the right, then an
+  Add server `.ghostbtn` row. Nothing is suggested or pre-filled.
+- **The apps' server screen** (`apps/tauri/src/`, outside the web UI): the
+  brand panel with the large icon beside the form on desktop, a purple header
+  above a white sheet on phones; one address field, a hint with an example,
+  a red `.errbox` naming what went wrong and the address tried, and Connect.
+  It copies the `:root` tokens of `web/style.css` (checked by
+  `scripts/test-app.js`).
 - **Dashboard**: widgets in `.dashgrid`, full or half width, user-arranged
   through Customize dashboard. A new widget must work at both widths. A
   widget with columns shows its table on desktop and, through

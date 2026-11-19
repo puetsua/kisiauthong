@@ -35,7 +35,7 @@ const $el = (sel) => { if (!elements.has(sel)) elements.set(sel, element()); ret
 const document = new Proxy({}, { get: (t, k) => (k === "querySelectorAll" ? listStub : k === "querySelector" ? $el : stub()) });
 const location = { hash: "", search: "", pathname: "/", href: "http://localhost/" };
 const sandbox = {
-  document, location, console, URLSearchParams, Intl, Date, Math, JSON, Promise, setTimeout, clearTimeout,
+  document, location, console, URL, URLSearchParams, Intl, Date, Math, JSON, Promise, setTimeout, clearTimeout,
   navigator: { languages: ["en"] }, history: { replaceState: (st, title, url) => { location.hash = url; } }, localStorage: { getItem: () => null, setItem: () => {} },
   fetch: () => new Promise(() => {}), MutationObserver: function () { return { observe: () => {} }; }, WeakMap, Map, Set,
   matchMedia: () => ({ matches: false, addEventListener: () => {} }), addEventListener: () => {},
@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -217,6 +217,32 @@ test("Settings → About rows per build", () => {
   assert.strictEqual(t.verAboutRows(null, () => "x", "").length, 0, "no rows without version info");
   t.setLang("zh-TW");
   assert.match(aboutRows(builds.nightly), /<row>版本\|.*每日自動建置的測試版（nightly）.*<row>建置時間\|.*<row>提交\|.*>複製</);
+  t.setLang("en");
+  t.state.general = null;
+});
+test("Settings → Servers: only inside the app, above About", () => {
+  const settings = () => { const v = { innerHTML: "", querySelectorAll: listStub }; t.screenSettings(v); return v.innerHTML; };
+  t.state.general = { timeZone: "Asia/Taipei" };
+  assert.doesNotMatch(settings(), /set-servers|Servers/, "a browser has no Servers section");
+  sandbox.kisiauthongApp = { servers: () => new Promise(() => {}) };
+  const html = settings();
+  assert.match(html, /data-goto="servers">.*Servers<\/button><button type="button" data-goto="about">/s, "listed just before About");
+  assert.ok(html.indexOf('id="set-data"') < html.indexOf('id="set-servers"') && html.indexOf('id="set-servers"') < html.indexOf('id="set-about"'));
+  delete sandbox.kisiauthongApp;
+  const rows = t.appServerRows({ active: "a", servers: [
+    { id: "a", name: "Home", url: "https://books.example.org/kisiauthong/" },
+    { id: "b", url: "http://100.64.0.12:9700/" },
+    { id: "c", name: "<b>NAS</b>", url: "https://nas.example.org/" },
+  ] });
+  assert.strictEqual((rows.match(/class="pill on">In use</g) || []).length, 1, "one In use marker");
+  assert.match(rows, /<span class="sl">Home<\/span> <span class="pill on">In use<\/span><div class="srvurl">https:\/\/books.example.org\/kisiauthong\/<\/div>/);
+  assert.doesNotMatch(rows, /data-srv-use="a"/, "no Switch on the server in use");
+  assert.match(rows, /data-srv-use="b">Switch<.*data-srv-edit="b">Edit<.*data-srv-del="b">Remove</s);
+  assert.match(rows, /<span class="sl">100.64.0.12:9700<\/span>/, "no name: the host");
+  assert.match(rows, /&lt;b&gt;NAS&lt;\/b&gt;/, "names are escaped");
+  assert.match(rows, /<button type="button" class="ghostbtn" data-srv-add>Add server<\/button><\/div><\/div>$/);
+  t.setLang("zh-TW");
+  assert.match(t.appServerRows({ active: "a", servers: [{ id: "a", name: "家裡", url: "https://x.example/" }, { id: "b", url: "https://y.example/" }] }), /使用中.*切換.*編輯.*移除.*新增伺服器/s);
   t.setLang("en");
   t.state.general = null;
 });

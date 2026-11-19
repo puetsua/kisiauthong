@@ -82,7 +82,7 @@ const I18N = {
     // dashboard
     "Balances by currency": "各幣別餘額", "Expected to confirm": "待確認",
     "Spending this month": "本月支出", "Recent transactions": "最近交易", "Customize dashboard": "自訂總覽",
-    "Widgets": "小工具", "Add": "加入", "Remove": "移除", "Width": "寬度", "‹ All widgets": "‹ 所有小工具",
+    "Widgets": "小工具", "Add": "加入", "Remove": "移除", "Servers": "伺服器", "In use": "使用中", "Switch": "切換", "Add server": "新增伺服器", "Remove {name} from this app? Its books stay on the server.": "要從這個 App 移除「{name}」嗎？帳本仍留在伺服器上。", "Width": "寬度", "‹ All widgets": "‹ 所有小工具",
     "Move {widget} earlier": "將{widget}往前移", "Move {widget} later": "將{widget}往後移",
     "Settings for {widget}": "{widget}設定", "Remove {widget}": "移除{widget}", "Remove from dashboard": "從總覽移除", "Duplicate": "複製", "Columns": "欄位", "Used": "已用", "Limit": "上限", "% of spending": "占支出比例",
     "Move {column} left": "將{column}往左移", "Move {column} right": "將{column}往右移", "Keep at least one column.": "至少保留一個欄位。",
