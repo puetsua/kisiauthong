@@ -301,6 +301,7 @@ func newMux(webDir string) *http.ServeMux {
 	mux.HandleFunc("/api/accounts/", api(ScopeAccounts, handleUpdateAccount))
 	mux.HandleFunc("/api/tags", api(ScopeTags, handleCreateTag))
 	mux.HandleFunc("/api/tags/", api(ScopeTags, handleUpdateTag))
+	mux.HandleFunc("/api/tag-merges/", api(ScopeTags, handleTagMerge))
 	mux.HandleFunc("/api/reserves", api(ScopeReserves, handleCreateReserve))
 	mux.HandleFunc("/api/reserves/", api(ScopeReserves, handleReserve))
 	mux.HandleFunc("/api/allocations/", api(ScopeReserves, handleAllocation))
@@ -413,6 +414,10 @@ func handleCreateTag(w http.ResponseWriter, r *http.Request, b *Book) {
 
 func handleUpdateTag(w http.ResponseWriter, r *http.Request, b *Book) {
 	id, action, ok := pathID(r)
+	if ok && action == "merge" && r.Method == http.MethodPost {
+		handleMergeTags(w, r, b, id)
+		return
+	}
 	if !ok || action != "" || r.Method != http.MethodPut {
 		writeErr(w, 404, "not found")
 		return

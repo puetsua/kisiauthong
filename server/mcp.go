@@ -110,7 +110,7 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 		for _, t := range mcpTools {
 			if p.can(t.scope) {
 				list = append(list, map[string]interface{}{"name": t.name, "description": t.desc, "inputSchema": t.schema,
-					"annotations": map[string]bool{"readOnlyHint": t.scope == ScopeRead, "destructiveHint": t.name == "delete_transaction"}})
+					"annotations": map[string]bool{"readOnlyHint": t.scope == ScopeRead, "destructiveHint": t.name == "delete_transaction" || t.name == "merge_tags"}})
 			}
 		}
 		rpcReply(w, req.ID, map[string]interface{}{"tools": list}, nil)
@@ -322,6 +322,13 @@ func init() {
 			"period":      enum("Budget period (monthly by default)", "daily", "weekly", "monthly", "yearly"),
 			"periodEvery": integer("Budget period length in periods, e.g. 2 with weekly for every two weeks"),
 		}, "name"), toolCreateTag},
+		{"merge_tags", "Merge categories the user chose into one: every transaction, template and dashboard widget with a merged category gets the kept one instead (once), and the merged ones are deleted. Only merge tags the user asked to merge; similar names may be kept apart on purpose. Use dryRun first to see what changes. The result has a mergeId that the web app can undo.", ScopeTags, obj(map[string]interface{}{
+			"targetId":   str("The category to keep"),
+			"sourceIds":  strs("The categories to merge into it; they are deleted"),
+			"name":       str("Optional new name of the kept category"),
+			"budgetFrom": str("Which budget the kept category gets when it has none and two or more merged categories have one: one of their ids, or \"none\""),
+			"dryRun":     map[string]interface{}{"type": "boolean", "description": "Only report what would change"},
+		}, "targetId", "sourceIds"), toolMergeTags},
 		{"create_reserve", "Create a reserve: money set aside for a purpose, optionally with a target.", ScopeReserves, obj(map[string]interface{}{
 			"name":       str("Name"),
 			"currency":   str("ISO 4217 code the reserve counts in"),
@@ -895,6 +902,33 @@ func toolCreateTag(b *Book, raw json.RawMessage) (map[string]interface{}, error)
 		return nil, err
 	}
 	return map[string]interface{}{"tag": map[string]interface{}{"id": t.ID, "name": t.Name}}, nil
+}
+
+func toolMergeTags(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
+	in, err := args[struct {
+		TargetID   string   `json:"targetId"`
+		SourceIDs  []string `json:"sourceIds"`
+		Name       *string  `json:"name"`
+		BudgetFrom string   `json:"budgetFrom"`
+		DryRun     bool     `json:"dryRun"`
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	p, err := b.mergeTags(in.TargetID, MergeRequest{SourceIDs: in.SourceIDs, Name: in.Name, BudgetFrom: in.BudgetFrom, DryRun: in.DryRun})
+	if err != nil {
+		return nil, err
+	}
+	js, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(js, &out); err != nil {
+		return nil, err
+	}
+	out["dryRun"] = in.DryRun
+	return out, nil
 }
 
 func toolGenerateDue(b *Book, _ json.RawMessage) (map[string]interface{}, error) {

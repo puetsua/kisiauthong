@@ -152,6 +152,7 @@ let toastTimer = 0;
 function msg(t, kind) {
   const el = $("#toast");
   clearTimeout(toastTimer);
+  el.onfocusin = el.onmouseenter = el.onfocusout = el.onmouseleave = null; // an Undo toast's hold (msgUndo)
   if (!t) { el.classList.remove("show"); return; }
   el.textContent = t;
   el.className = "toast" + (kind === "error" ? " error" : "");
@@ -1210,6 +1211,7 @@ function pagePeriod(params) {
   return { mode, p: periodFor(mode, at) };
 }
 function screenTags(v) {
+  if (state.tagPick) { screenTagPick(v); return; }
   const tags = state.data.tags;
   const budgets = tags.filter((t) => t.limitMinor !== undefined);
   const cats = tags.filter((t) => t.limitMinor === undefined);
@@ -1220,10 +1222,139 @@ function screenTags(v) {
     <div class="tgrid">${list.map((t) => card(t, p)).join("")}${tail}</div></section>`;
   v.innerHTML = section(__("Budgets"), budgets, budgetCard, addTile("newBudget", __("Add budget")))
     + section(__("Categories"), cats, categoryCard, addTile("newCategory", __("New category")), switcher);
+  if (tags.length > 1) {
+    v.insertAdjacentHTML("afterbegin", `<div class="pagebar"><span class="muted">${esc(__("{n} tags", { n: tags.length }))}</span><button type="button" class="smallbtn" id="tagMerge">${esc(__("Merge tags…"))}</button></div>`);
+    $("#tagMerge").addEventListener("click", () => { state.tagPick = new Set(); render(); $("#pickTitle").focus(); }); // focus the heading, not a tag: none is singled out
+  }
   v.querySelectorAll("[data-tag-range]").forEach((b) => b.addEventListener("click", () => { setTagRange(b.dataset.tagRange); render(); }));
   $("#newBudget").addEventListener("click", () => openTagDialog("budget"));
   $("#newCategory").addEventListener("click", () => openTagDialog("category"));
   bindDetails(v);
+}
+
+/* ---------- merging tags (#13, ADR 0017) ----------
+   A tool the user starts and controls (ADR 0015): the app never says which tags look alike,
+   highlights or pre-selects any, or proposes a merge. The only help is a plain sort by name. */
+const tagById = (id) => state.data.tags.find((t) => t.id === id);
+const useCount = (id) => state.data.transactions.filter((t) => txnCats(t).includes(id)).length;
+// the select mode's order: by name, with width, case and runs of spaces folded, so it reads like a sorted list
+const sortName = (n) => n.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+const byName = (a, b) => sortName(a.name).localeCompare(sortName(b.name), LANG) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+const budgetText = (t) => __("{cycle} {limit}", { cycle: cycleName(t.cycle, t.cycleEvery), limit: fmt(t.limitMinor, t.currency) });
+function screenTagPick(v) {
+  const sel = state.tagPick, tags = [...state.data.tags].sort(byName);
+  const card = (t) => `<label class="tcard pcard"><input type="checkbox" data-pick="${esc(t.id)}" ${sel.has(t.id) ? "checked" : ""}>
+    <span class="pname">${esc(t.name)}</span><small>${esc(__("{n} transaction(s)", { n: useCount(t.id) }))}${t.limitMinor !== undefined ? ` · ${esc(__("Budget"))}` : ""}</small></label>`;
+  v.innerHTML = `<div class="panel pickhead"><div><h3 id="pickTitle" tabindex="-1">${esc(__("Choose the tags to merge"))}</h3><small>${esc(__("Sorted by name; counts are all transactions."))}</small></div>
+    <button type="button" class="smallbtn" id="pickCancel">${esc(__("Cancel"))}</button></div>
+    <fieldset class="tgrid picking" aria-labelledby="pickTitle">${tags.map(card).join("")}</fieldset>
+    <div class="mergebar"><span id="pickCount" aria-live="polite"></span><button type="button" class="smallbtn" id="pickNone">${esc(__("Clear"))}</button><button type="button" class="primarybtn" id="pickGo"></button></div>`;
+  $("#addBtn").hidden = true; // it would cover the bar
+  const draw = () => {
+    const n = sel.size;
+    $("#pickCount").textContent = __("{n} selected", { n });
+    $("#pickNone").hidden = !n;
+    $("#pickGo").disabled = n < 2;
+    $("#pickGo").textContent = n < 2 ? __("Pick 2 or more") : __("Merge {n} tags", { n });
+  };
+  v.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("change", () => { if (b.checked) sel.add(b.dataset.pick); else sel.delete(b.dataset.pick); draw(); }));
+  $("#pickCancel").addEventListener("click", () => { state.tagPick = null; render(); });
+  $("#pickNone").addEventListener("click", () => { sel.clear(); v.querySelectorAll("[data-pick]").forEach((b) => { b.checked = false; }); draw(); $("#pickCancel").focus(); });
+  $("#pickGo").addEventListener("click", () => openMergeDialog([...sel]));
+  draw();
+}
+// The confirmation: which tag stays (the most used one to start with), its name, the budget when
+// that needs a choice, and what changes, as the server's dry run reports it.
+function openMergeDialog(ids) {
+  const order = ids.map(tagById).filter(Boolean).sort(byName);
+  let target = order.slice().sort((a, b) => useCount(b.id) - useCount(a.id))[0].id, budgetFrom = "", nameEdited = false, preview = null, seq = 0;
+  const radio = (t) => `<label class="mrow"><input type="radio" name="target" value="${esc(t.id)}" ${t.id === target ? "checked" : ""}>
+    <b>${esc(t.name)}</b><small>${esc(__("{n} transaction(s)", { n: useCount(t.id) }))}${t.limitMinor !== undefined ? ` · ${esc(__("Budget"))}` : ""}</small></label>`;
+  openDialog(__("Merge {n} tags", { n: ids.length }), `<form id="dialogForm" class="mergeform">
+    <fieldset class="mpick wide"><legend>${esc(__("Keep which tag (the others merge into it)"))}</legend>${order.map(radio).join("")}</fieldset>
+    ${field("Name after merging", `<input name="name" required maxlength="100" value="${esc(tagById(target).name.trim())}">`, "wide")}
+    <div class="wide" id="mBudget"></div>
+    <div class="mimpact wide" id="mImpact" aria-live="polite"></div>
+    <div class="wide mprevwrap"><span class="lab">${esc(__("After merging"))}</span><div id="mPreview"></div></div>
+    <button class="primarybtn big" type="submit" id="mGo"></button></form>`);
+  const form = $("#dialogForm"), el = form.elements;
+  const sources = () => ids.filter((x) => x !== target);
+  const nameNow = () => el.name.value.trim() || tagById(target).name.trim();
+  const draw = () => {
+    const name = nameNow(), p = preview;
+    $("#mGo").textContent = __("Merge {n} tags into “{name}”", { n: ids.length, name });
+    if (!p) return;
+    const b = p.budget, cands = b.candidates || [];
+    $("#mBudget").innerHTML = cands.length > 1
+      ? field("Budget (only one can stay)", `<select name="budget" required><option value="">${esc(__("Choose…"))}</option>
+        ${cands.map((id) => `<option value="${esc(id)}" ${id === budgetFrom ? "selected" : ""}>${esc(__("Keep the budget of “{name}”: {budget}", { name: tagById(id).name.trim(), budget: budgetText(tagById(id)) }))}</option>`).join("")}
+        <option value="none" ${budgetFrom === "none" ? "selected" : ""}>${esc(__("No budget (a plain category)"))}</option></select>`)
+        + `<p class="formnote hint">${esc(__("{n} of these tags have a budget. The one you keep counts the spending of all of them; the others are removed.", { n: cands.length }))}</p>`
+      : b.outcome === "target" ? `<p class="formnote hint">${esc(__("The budget of “{name}” stays and now counts the merged transactions too.", { name: tagById(target).name.trim() }))}</p>`
+      : b.outcome === "source" ? `<p class="formnote hint">${esc(__("The budget of “{name}” moves to the merged tag and counts all of its transactions.", { name: tagById(b.from).name.trim() }))}</p>` : "";
+    const li = (s) => `<li>${s}</li>`, tpl = (id) => (state.data.transactionTemplates.find((x) => x.id === id) || {}).name || id;
+    $("#mImpact").innerHTML = `<b>${esc(__("What changes"))}</b><ul>
+      ${li(esc(__("{n} transaction(s) move to “{name}”", { n: p.affectedTransactions, name })))}
+      ${p.duplicateLinks ? li(esc(__("{n} of them had two or more of these tags; each keeps one “{name}”, no duplicate.", { n: p.duplicateLinks, name }))) : ""}
+      ${p.templates.length ? li(esc(__("{n} template(s) use “{name}” instead:", { n: p.templates.length, name })) + " " + p.templates.map((id) => `<span class="chip">${esc(tpl(id))}</span>`).join(" ")) : ""}
+      ${p.widgets.length ? li(esc(__("{n} dashboard widget(s) show “{name}” instead.", { n: p.widgets.length, name }))) : ""}
+      ${p.droppedNotificationKeys ? li(esc(__("Dismissed notices of the removed tags are cleared."))) : ""}
+      ${li(esc(__("Removed:")) + " " + sources().map((id) => `<span class="chip">${esc(tagById(id).name)}</span>`).join(" "))}</ul>
+      <p class="formnote hint">${esc(__("You can undo this right after merging."))}</p>`;
+    // the merged tag as its card will look: all its transactions, this period's totals, and the budget it keeps
+    const all = new Set(ids), union = state.data.transactions.filter((t) => txnCats(t).some((c) => all.has(c)));
+    const per = periodFor(tagRange(), state.data.today), live = union.filter((t) => t.state !== "planned" && !isSched(t));
+    const inP = live.filter((t) => t.date >= per.start && t.date <= per.end);
+    const kept = b.outcome === "target" ? tagById(target) : b.outcome === "source" ? tagById(b.from) : null;
+    let budgetHTML = "";
+    if (kept) {
+      const spent = live.filter((t) => flow(t) === "expense" && t.currency === kept.currency && t.date >= kept.periodStart && t.date <= kept.periodEnd).reduce((n, t) => n + t.amountMinor, 0);
+      const pct = kept.limitMinor > 0 ? spent / kept.limitMinor * 100 : 0;
+      budgetHTML = `<span class="bamount"><b>${fmt(spent, kept.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(kept.limitMinor, kept.currency) }))}</small></span>${bar(pct, barCls(pct))}<small>${esc(budgetPeriodText(kept, true))}</small>`;
+    }
+    $("#mPreview").innerHTML = `<div class="tcard ccard mprev"><span class="thead"><b>${esc(name)}</b><small>${esc(__("{n} transaction(s) in all", { n: p.transactions }))}</small></span>${budgetHTML}
+      <span class="tfoot"><span class="amts">${totalsHTML(tagTotals(inP))}</span><small>${esc(__(TAG_NOW_L[per.mode]))}</small></span></div>`;
+  };
+  const body = (dryRun) => ({ sourceIds: sources(), name: el.name.value.trim(), budgetFrom, dryRun });
+  const refresh = async () => {
+    const n = ++seq;
+    try { const p = await post(`/api/tags/${encodeURIComponent(target)}/merge`, body(true)); if (n === seq) { preview = p; draw(); } } catch (err) { errMsg(err); }
+  };
+  form.addEventListener("change", (e) => {
+    if (e.target.name === "target") { target = e.target.value; budgetFrom = ""; if (!nameEdited) el.name.value = tagById(target).name.trim(); refresh(); }
+    if (e.target.name === "budget") { budgetFrom = e.target.value; refresh(); }
+  });
+  el.name.addEventListener("input", () => { nameEdited = true; draw(); });
+  draw();
+  refresh();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const removed = sources(), name = nameNow(), kept = target;
+    try {
+      const p = await post(`/api/tags/${encodeURIComponent(kept)}/merge`, body(false));
+      $("#dialog").close();
+      state.tagPick = null;
+      if (removed.includes(state.filter.tag)) state.filter.tag = kept; // a transaction filter on a merged tag follows it
+      await load();
+      location.hash = tagURL(kept, tagRange(), "");
+      msgUndo(__("Merged {n} tags into “{name}”.", { n: ids.length, name }), async () => {
+        try { await post(`/api/tag-merges/${encodeURIComponent(p.mergeId)}/undo`); await load(); msg(__("Merge undone.")); } catch (err) { errMsg(err); }
+      });
+    } catch (err) { errMsg(err); }
+  });
+}
+// msgUndo: a toast with an Undo button, up for 10 seconds; kept while the pointer or focus is on it
+function msgUndo(text, undo) {
+  msg(text);
+  const el = $("#toast");
+  el.insertAdjacentHTML("beforeend", `<button type="button" class="toastbtn">${esc(__("Undo"))}</button>`);
+  el.classList.add("withbtn");
+  const hide = () => el.classList.remove("show");
+  const later = () => { clearTimeout(toastTimer); toastTimer = setTimeout(hide, 10000); };
+  el.querySelector(".toastbtn").addEventListener("click", (e) => { e.stopPropagation(); msg(""); undo(); });
+  el.onfocusin = el.onmouseenter = () => clearTimeout(toastTimer);
+  el.onfocusout = el.onmouseleave = later;
+  later();
 }
 
 /* ---------- reserves (ADR 0013): money set aside, apart from the transactions ---------- */
@@ -2371,7 +2502,7 @@ async function drawUsers() {
 
 // API keys: for scripts and AI agents, each with only the permissions it needs (ADR 0008)
 const SCOPE_L = { read: N_("Read your books"), "transactions:write": N_("Add and edit transactions"), "accounts:write": N_("Add and edit accounts"),
-  "tags:write": N_("Add and edit categories and budgets"), "reserves:write": N_("Add and edit reserves and their allocations"), "templates:write": N_("Add and edit templates, generate due ones"), "settings:write": N_("Change settings") };
+  "tags:write": N_("Add, edit and merge categories and budgets"), "reserves:write": N_("Add and edit reserves and their allocations"), "templates:write": N_("Add and edit templates, generate due ones"), "settings:write": N_("Change settings") };
 const SCOPE_SHORT = { read: N_("Read"), "transactions:write": N_("Transactions"), "accounts:write": N_("Accounts"), "tags:write": N_("Tags"), "reserves:write": N_("Reserves"), "templates:write": N_("Templates"), "settings:write": N_("Settings") };
 const EXPIRY_L = { 0: N_("Never"), 30: N_("30 days"), 90: N_("90 days"), 365: N_("1 year"), date: N_("On a date…") };
 async function drawKeys(created) {
@@ -2477,6 +2608,7 @@ function render() {
   $("#pageTitle").textContent = __(SCREENS[key][0]);
   const admin = isAdminScreen(key);
   if (!admin) state.lastBookScreen = key;
+  if (key !== "tags") state.tagPick = null; // select mode (merging tags) ends when the page is left
   $("#nav").hidden = admin; $("#adminNav").hidden = !admin;
   const navKey = { tag: "tags", reserve: "reserves", acct: "accounts" }[key] || key; // one category's, reserve's or account's page belongs to its list
   document.querySelectorAll("#nav a, #adminNav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === navKey));
@@ -2505,6 +2637,7 @@ async function load() {
   } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
+  if (state.filter.tag && !state.data.tags.some((t) => t.id === state.filter.tag)) state.filter.tag = ""; // e.g. merged away
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render();

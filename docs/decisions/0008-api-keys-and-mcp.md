@@ -48,7 +48,7 @@ sharing their password or session, and with only the access each needs.
     paging), `spending_by_category`, `list_templates`.
   - `transactions:write`: `add_transaction` (spending, income, transfer,
     allocate), `update_transaction` (fields given only), `delete_transaction`.
-  - `accounts:write`: `create_account`. `tags:write`: `create_tag`.
+  - `accounts:write`: `create_account`. `tags:write`: `create_tag`, `merge_tags` (ADR 0017).
     `templates:write`: `generate_due`. `settings:write` has no tool.
 - Tools speak in what a person thinks in: `spending`/`income` rather than
   transfers to and from external accounts, `title` and `note`. Amounts are
