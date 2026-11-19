@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# The Tauri apps (apps/tauri, ADR 0019): Rust tests and an unsigned macOS debug
+# build, only when the app or what it checks changes. No signing, no release;
+# release.yml does not depend on it.
+name: App
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/tauri/**", "scripts/test-app.js", "web/style.css", "web/icon-512.png", ".github/workflows/app.yml"]
+  pull_request:
+    paths: ["apps/tauri/**", "scripts/test-app.js", "web/style.css", "web/icon-512.png", ".github/workflows/app.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS build
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/tauri
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/tauri/package-lock.json
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            apps/tauri/src-tauri/target
+          key: tauri-macos-${{ hashFiles('apps/tauri/src-tauri/Cargo.lock') }}
+          restore-keys: tauri-macos-
+      - name: Server screen checks
+        run: node ../../scripts/test-app.js
+      - name: Tauri CLI
+        run: npm ci
+      - name: Rust tests
+        working-directory: apps/tauri/src-tauri
+        run: cargo test --locked
+      - name: Build (debug, unsigned)
+        run: npx tauri build --debug --bundles app -- --locked
