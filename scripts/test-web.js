@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -237,13 +237,60 @@ test("Settings → Servers: only inside the app, above About", () => {
   assert.strictEqual((rows.match(/class="pill on">In use</g) || []).length, 1, "one In use marker");
   assert.match(rows, /<span class="sl">Home<\/span> <span class="pill on">In use<\/span><div class="srvurl">https:\/\/books.example.org\/kisiauthong\/<\/div>/);
   assert.doesNotMatch(rows, /data-srv-use="a"/, "no Switch on the server in use");
-  assert.match(rows, /data-srv-use="b">Switch<.*data-srv-edit="b">Edit<.*data-srv-del="b">Remove</s);
+  assert.match(rows, /data-srv-use="b" aria-label="Switch to 100.64.0.12:9700">Switch<.*data-srv-edit="b" aria-label="Edit 100.64.0.12:9700">Edit<.*data-srv-del="b" aria-label="Remove 100.64.0.12:9700">Remove</s, "each button names its server");
+  assert.match(rows, /data-srv-del="a" aria-label="Remove Home">/);
+  assert.match(rows, /aria-label="Edit &lt;b&gt;NAS&lt;\/b&gt;"/, "the name is escaped in the label too");
   assert.match(rows, /<span class="sl">100.64.0.12:9700<\/span>/, "no name: the host");
   assert.match(rows, /&lt;b&gt;NAS&lt;\/b&gt;/, "names are escaped");
   assert.match(rows, /<button type="button" class="ghostbtn" data-srv-add>Add server<\/button><\/div><\/div>$/);
   t.setLang("zh-TW");
-  assert.match(t.appServerRows({ active: "a", servers: [{ id: "a", name: "家裡", url: "https://x.example/" }, { id: "b", url: "https://y.example/" }] }), /使用中.*切換.*編輯.*移除.*新增伺服器/s);
+  const zh = t.appServerRows({ active: "a", servers: [{ id: "a", name: "家裡", url: "https://x.example/" }, { id: "b", url: "https://y.example/" }] });
+  assert.match(zh, /使用中.*切換.*編輯.*移除.*新增伺服器/s);
+  assert.match(zh, /aria-label="移除「家裡」"/);
+  assert.match(zh, /aria-label="切換到「y.example」"/);
   t.setLang("en");
   t.state.general = null;
 });
-console.log(`${n} tests passed`);
+// askConfirm is async; these run after the synchronous tests
+const later = [];
+later.push(["askConfirm: window.confirm() in a browser, the app's native dialog inside the app", async () => {
+  const asked = [];
+  sandbox.confirm = (text) => { asked.push(text); return asked.length === 1; };
+  assert.strictEqual(await t.askConfirm("Delete this?", "Delete"), true, "no bridge: window.confirm says yes");
+  assert.strictEqual(await t.askConfirm("Delete this?", "Delete"), false, "no bridge: window.confirm says no");
+  assert.deepStrictEqual(asked, ["Delete this?", "Delete this?"]);
+  const native = [];
+  sandbox.kisiauthongApp = { confirm: (text, ok, cancel) => { native.push([text, ok, cancel]); return Promise.resolve(native.length === 1); } };
+  asked.length = 0;
+  assert.strictEqual(await t.askConfirm("Revoke this key?", "Revoke"), true);
+  assert.strictEqual(await t.askConfirm("Revoke this key?", "Revoke"), false, "Cancel in the native dialog stops the action");
+  assert.deepStrictEqual(native[0], ["Revoke this key?", "Revoke", "Cancel"]);
+  assert.strictEqual(asked.length, 0, "inside the app window.confirm is not used");
+  t.setLang("zh-TW");
+  await t.askConfirm("x", "刪除");
+  assert.deepStrictEqual(native[2], ["x", "刪除", "取消"], "the buttons in the web UI's language");
+  t.setLang("en");
+  sandbox.kisiauthongApp = { confirm: () => Promise.reject(new Error("No native dialog on this platform yet.")) };
+  sandbox.confirm = (text) => { asked.push(text); return true; };
+  assert.strictEqual(await t.askConfirm("Delete?", "Delete"), true, "no native dialog (iOS, Android): falls back to window.confirm");
+  assert.deepStrictEqual(asked, ["Delete?"]);
+  sandbox.kisiauthongApp = { confirm: () => Promise.resolve("yes") };
+  assert.strictEqual(await t.askConfirm("Delete?", "Delete"), false, "only a real true confirms");
+  sandbox.kisiauthongApp = { servers: () => Promise.resolve({ active: null, servers: [] }) };
+  assert.strictEqual(await t.askConfirm("Delete?", "Delete"), true, "an older bridge without confirm: window.confirm");
+  delete sandbox.kisiauthongApp;
+  delete sandbox.confirm;
+  const bare = read("app.js").match(/(?<![\w.])confirm\(/g) || [];
+  assert.strictEqual(bare.length, 1, "every question goes through askConfirm; window.confirm is called only inside it");
+}]);
+later.push(["Settings → Servers: when the list cannot load, the section and its link are hidden", async () => {
+  sandbox.kisiauthongApp = { servers: () => Promise.reject(new Error("Not allowed from this page.")) };
+  await t.drawAppServers();
+  assert.strictEqual($el("#set-servers").hidden, true);
+  assert.strictEqual($el('.snav [data-goto="servers"]').hidden, true);
+  delete sandbox.kisiauthongApp;
+}]);
+(async () => {
+  for (const [name, fn] of later) { await fn(); n++; console.log("ok", name); }
+  console.log(`${n} tests passed`);
+})().catch((e) => { console.error(e); process.exit(1); });
