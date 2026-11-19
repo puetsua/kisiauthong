@@ -27,8 +27,10 @@ check has to ask somewhere else.
   shows an *App* row with the app's version (only in the app). On Android it
   also has *Check for updates*, which opens the bundled *App updates* screen.
   The screen checks at once, shows "Version X is available (size)", and
-  installs only when the user taps *Download and install*. There is no check
-  at launch, no badge and no banner (ADR 0015).
+  installs only when the user taps *Download and install*. Coming back to the
+  screen with Back does not check again: the shell allows one check on load
+  per opening from Settings. There is no check at launch, no badge and no
+  banner (ADR 0015).
 - **The one request beyond the user's server.** The check is
   `GET https://api.github.com/repos/puetsua/kisiauthong/releases/latest`, sent
   only when the user asks. It carries no account, server or user data, just a

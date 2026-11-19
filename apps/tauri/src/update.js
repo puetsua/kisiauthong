@@ -31,7 +31,7 @@
     const bad = S.updErrBadRelease;
     const words = {
       unreachable: S.updErrUnreachable, status: S.updErrStatus, badAnswer: S.updErrBadAnswer, badVersion: S.updErrBadVersion, noApk: S.updErrNoApk,
-      elsewhere: bad, noChecksum: bad, empty: bad, checksum: S.updErrChecksum, download: S.updErrDownload,
+      elsewhere: bad, noChecksum: bad, empty: bad, checksum: S.updErrChecksum, download: S.updErrDownload, installer: S.updErrInstaller,
       checkFirst: S.updErrCheckFirst, unsupported: S.updErrUnsupported,
     };
     return m && words[m[1]] ? fill(words[m[1]], { detail: m[2] || "" }) : raw;
@@ -42,17 +42,19 @@
     $("updErr").hidden = false;
   }
 
-  async function check() {
+  // onLoad: the shell asks GitHub only right after the user opened this screen,
+  // not when Back returns to it; a tap on Check always asks
+  async function check(onLoad) {
     busy = true;
     found = null;
     $("updErr").hidden = true;
     $("updStatus").textContent = "";
     setButton(S.updChecking, true);
     try {
-      const r = await call("update_check");
+      const r = await call("update_check", { onLoad: !!onLoad });
       $("updVersion").textContent = fill(S.updVersion, { version: r.current });
       found = r.update || null;
-      $("updStatus").textContent = found ? fill(S.updFound, { version: found.version, size: mb(found.size) }) : S.updLatest;
+      if (r.checked) $("updStatus").textContent = found ? fill(S.updFound, { version: found.version, size: mb(found.size) }) : S.updLatest;
     } catch (e) {
       showError(S.updCheckFailed, describe(e));
     }
@@ -87,10 +89,10 @@
     $("updVersion").textContent = st.version ? fill(S.updVersion, { version: st.version }) : "";
     $("updBack").textContent = S.updBack;
     $("updHint").textContent = S.updHint;
-    $("updGo").addEventListener("click", () => { if (!busy) (found ? install() : check()); });
+    $("updGo").addEventListener("click", () => { if (!busy) (found ? install() : check(false)); });
     // back to Settings → About of the server that opened this screen; the shell checks it is a saved one
     $("updBack").addEventListener("click", () => { call("cancel_form", { back: q.get("back") }).catch(() => history.back()); });
-    check();
+    check(true);
   }
   init();
 })();

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 kisiauthong contributors -->
 <resources>
     <string name="app_name">"KiSiauThong"</string>
     <string name="main_activity_title">"KiSiauThong"</string>

@@ -6,8 +6,9 @@
 // with the system's trust store, the download with its SHA-256 check, and
 // handing the APK to the system installer, which also refuses an APK not
 // signed with this app's key. Only the bundled server screen reaches it,
-// through the app's own commands (src/lib.rs). Install rejects with "checksum"
-// or "download: <reason>", which the App updates screen puts into words.
+// through the app's own commands (src/lib.rs). Rejections are codes the App
+// updates screen puts into words: "badAnswer: …" (fetch), "checksum",
+// "download: …" and "installer: …" (install).
 package io.github.puetsua.kisiauthong
 
 import android.app.Activity
@@ -65,21 +66,27 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
     Thread {
       try {
         val c = open(args.url)
-        val status = c.responseCode
-        val stream = if (status in 200..299) c.inputStream else c.errorStream
-        val body = stream?.use { s ->
-          val out = ByteArrayOutputStream()
-          val buf = ByteArray(16 * 1024)
-          while (true) {
-            val n = s.read(buf)
-            if (n < 0) break
-            out.write(buf, 0, n)
-            if (out.size() > 1_000_000) throw IOException("answer too large")
-          }
-          out.toString("UTF-8")
-        } ?: ""
-        c.disconnect()
-        invoke.resolve(JSObject().put("status", status).put("body", body))
+        try {
+          val status = c.responseCode
+          val stream = if (status in 200..299) c.inputStream else c.errorStream
+          val body = stream?.use { s ->
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(16 * 1024)
+            while (true) {
+              val n = s.read(buf)
+              if (n < 0) break
+              out.write(buf, 0, n)
+              if (out.size() > 1_000_000) {
+                invoke.reject("badAnswer: the answer is over 1 MB")
+                return@Thread
+              }
+            }
+            out.toString("UTF-8")
+          } ?: ""
+          invoke.resolve(JSObject().put("status", status).put("body", body))
+        } finally {
+          c.disconnect()
+        }
       } catch (e: Exception) {
         invoke.reject(e.message ?: e.toString())
       }
@@ -93,8 +100,12 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.packageManager.canRequestPackageInstalls()) {
       // Android asks once per app: "Allow from this source"; the user comes back and taps Install again
       val i = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.packageName))
-      activity.startActivity(i)
-      invoke.resolve(JSObject().put("status", "permission"))
+      try {
+        activity.startActivity(i)
+        invoke.resolve(JSObject().put("status", "permission"))
+      } catch (e: Exception) {
+        invoke.reject("installer: " + (e.message ?: e.toString()))
+      }
       return
     }
     Thread {
@@ -104,24 +115,27 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
       try {
         dir.mkdirs()
         val c = open(args.url)
-        c.setRequestProperty("Accept", "application/octet-stream")
-        if (c.responseCode !in 200..299) throw IOException("HTTP " + c.responseCode)
         val md = MessageDigest.getInstance("SHA-256")
         var total = 0L
-        c.inputStream.use { input ->
-          apk.outputStream().use { out ->
-            val buf = ByteArray(64 * 1024)
-            while (true) {
-              val n = input.read(buf)
-              if (n < 0) break
-              total += n
-              if (total > args.size) throw IOException("the download is larger than the release says")
-              md.update(buf, 0, n)
-              out.write(buf, 0, n)
+        try {
+          c.setRequestProperty("Accept", "application/octet-stream")
+          if (c.responseCode !in 200..299) throw IOException("HTTP " + c.responseCode)
+          c.inputStream.use { input ->
+            apk.outputStream().use { out ->
+              val buf = ByteArray(64 * 1024)
+              while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                total += n
+                if (total > args.size) throw IOException("the download is larger than the release says")
+                md.update(buf, 0, n)
+                out.write(buf, 0, n)
+              }
             }
           }
+        } finally {
+          c.disconnect()
         }
-        c.disconnect()
         val hex = md.digest().joinToString("") { "%02x".format(it) }
         if (total != args.size || !hex.equals(args.sha256, ignoreCase = true)) {
           apk.delete()
@@ -137,7 +151,7 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
             activity.startActivity(i)
             invoke.resolve(JSObject().put("status", "started"))
           } catch (e: Exception) {
-            invoke.reject(e.message ?: e.toString())
+            invoke.reject("installer: " + (e.message ?: e.toString()))
           }
         }
       } catch (e: Exception) {

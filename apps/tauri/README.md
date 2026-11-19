@@ -24,8 +24,8 @@ apps/tauri/
     capabilities/       the bundled screen's capability (saved servers get theirs at run time)
     permissions/app.toml  the "server-screen" and "bridge" permission sets
     Info.plist, Info.ios.plist  App Transport Security: https, except on the local network
-  test/cleartext-cases.json   where http:// is allowed; the same cases for connect.js and profiles.rs
     gen/android/        the Android project (committed): UpdatePlugin.kt, manifest, release signing, icons
+  test/cleartext-cases.json   where http:// is allowed; the same cases for connect.js and profiles.rs
 ```
 
 ## How it works

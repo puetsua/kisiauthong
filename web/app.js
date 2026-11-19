@@ -1614,6 +1614,7 @@ async function drawAppAbout() {
   if (!slot || !shell || typeof shell.appInfo !== "function") return;
   let info;
   try { info = await shell.appInfo(); } catch (e) { return; }
+  if (!slot.isConnected) return; // Settings was drawn again meanwhile; that call fills the new slot
   const btn = info.updates && typeof shell.updates === "function" ? `<button type="button" class="smallbtn" id="appUpdates">${esc(__("Check for updates"))}</button>` : "";
   slot.outerHTML = `<div class="srow"><span class="sl">${esc(__("App"))}</span><div class="sc"><div class="verline"><span>${esc(info.version)}</span>${btn}</div></div></div>`;
   if ($("#appUpdates")) $("#appUpdates").addEventListener("click", () => shell.updates(LANG).catch((e) => msg(String((e && e.message) || e), "error")));

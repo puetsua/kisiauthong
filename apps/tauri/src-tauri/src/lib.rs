@@ -17,6 +17,7 @@ mod update;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use serde::Serialize;
@@ -36,6 +37,9 @@ struct Shell {
     granted: Mutex<HashSet<String>>,
     /// what the last update check found; install only ever uses this
     update: Mutex<Option<update::Update>>,
+    /// set when the user opens App updates: the screen's check on load may run
+    /// once, and not again when Back returns to the screen (ADR 0020)
+    update_asked: AtomicBool,
 }
 
 impl Shell {
@@ -69,6 +73,8 @@ struct AppInfo {
 struct UpdateCheck {
     current: String,
     update: Option<update::Update>,
+    /// false: GitHub was not asked (the screen loaded without the user asking)
+    checked: bool,
 }
 
 #[derive(Serialize)]
@@ -259,14 +265,20 @@ fn cancel_form(webview: Webview, shell: State<'_, Shell>, back: Option<String>) 
     go(&webview, target)
 }
 
-/// Asks GitHub for the latest release (only when the user presses Check).
+/// Asks GitHub for the latest release, only when the user asked: a tap on
+/// Check (`on_load` false), or the screen loading right after the user opened
+/// it from Settings (`on_load` true, once per opening).
 #[tauri::command]
-async fn update_check(app: AppHandle, webview: Webview) -> Result<UpdateCheck, String> {
+async fn update_check(app: AppHandle, webview: Webview, on_load: Option<bool>) -> Result<UpdateCheck, String> {
     require_local(&webview)?;
     let current = app.package_info().version.to_string();
+    let asked = app.state::<Shell>().update_asked.swap(false, Ordering::SeqCst);
+    if on_load.unwrap_or(false) && !asked {
+        return Ok(UpdateCheck { current, update: None, checked: false });
+    }
     let found = android::check(&app, &current).await?;
     *app.state::<Shell>().update.lock().unwrap() = found.clone();
-    Ok(UpdateCheck { current, update: found })
+    Ok(UpdateCheck { current, update: found, checked: true })
 }
 
 /// Downloads and installs what the last check found; nothing from the page.
@@ -297,6 +309,7 @@ fn open_updates(webview: Webview, shell: State<'_, Shell>, lang: Option<String>)
     require_known(&webview, &shell)?;
     let mut back = webview.url().map_err(|e| e.to_string())?;
     back.set_fragment(Some("settings?about"));
+    shell.update_asked.store(true, Ordering::SeqCst);
     let mut params = vec![("mode", "update"), ("back", back.as_str())];
     if let Some(lang) = lang.as_deref() {
         params.push(("lang", lang));
@@ -483,7 +496,7 @@ mod android {
         let (api, downloads) = source(app);
         let f: Fetched = call(app, "fetch", serde_json::json!({ "url": api }))
             .await
-            .map_err(|e| format!("unreachable: {e}"))?;
+            .map_err(|e| if e.starts_with("badAnswer: ") { e } else { format!("unreachable: {e}") })?;
         match f.status {
             200..=299 => update::pick(&f.body, current, &downloads),
             404 => Ok(None),
@@ -498,7 +511,10 @@ mod android {
         }
         let r: Started = call(app, "install", serde_json::json!({ "url": u.url, "sha256": u.sha256, "size": u.size }))
             .await
-            .map_err(|e| if e == "checksum" || e.starts_with("download: ") { e } else { format!("download: {e}") })?;
+            .map_err(|e| {
+                let coded = e == "checksum" || e.starts_with("download: ") || e.starts_with("installer: ");
+                if coded { e } else { format!("download: {e}") }
+            })?;
         Ok(r.status)
     }
 }
@@ -586,7 +602,7 @@ pub fn run() {
             let file = app.path().app_data_dir()?.join("servers.json");
             let store = Store::load(&file);
             let urls: Vec<String> = store.servers.iter().map(|p| p.url.clone()).collect();
-            app.manage(Shell { store: Mutex::new(store), file, granted: Mutex::new(HashSet::new()), update: Mutex::new(None) });
+            app.manage(Shell { store: Mutex::new(store), file, granted: Mutex::new(HashSet::new()), update: Mutex::new(None), update_asked: AtomicBool::new(false) });
             for u in &urls {
                 grant(app.handle(), u);
             }

@@ -23,7 +23,7 @@ val tauriProperties = Properties().apply {
 val keystoreProperties = Properties().apply {
     val propFile = rootProject.file("keystore.properties")
     if (propFile.exists()) {
-        propFile.inputStream().use { load(it) }
+        propFile.reader(Charsets.UTF_8).use { load(it) } // UTF-8, so any password works
     }
 }
 
