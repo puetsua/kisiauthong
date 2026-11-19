@@ -115,8 +115,14 @@ test("strings: both languages have the same keys and {url} placeholders, and eve
   }
   for (const kind of ["invalid", "unreachable", "notServer", "cleartext", "certificate", "save"])
     assert.ok(en[kind + "Title"] && en[kind + "Text"], kind);
-  const js = fs.readFileSync(path.join(app, "first-run.js"), "utf8");
-  for (const m of js.matchAll(/\bS\.([a-zA-Z]+)/g)) assert.ok(m[1] in en, `first-run.js uses S.${m[1]}`);
+  for (const f of ["first-run.js", "update.js"]) {
+    const js = fs.readFileSync(path.join(app, f), "utf8");
+    for (const m of js.matchAll(/\bS\.([a-zA-Z]+)/g)) assert.ok(m[1] in en, `${f} uses S.${m[1]}`);
+  }
+  for (const k of Object.keys(en)) {
+    const ph = (t) => (t.match(/\{[a-z]+\}/g) || []).sort().join();
+    assert.strictEqual(ph(zh[k]), ph(en[k]), `placeholders of ${k}`);
+  }
 });
 
 test("the screen's colour tokens match web/style.css", () => {
@@ -128,7 +134,7 @@ test("the screen's colour tokens match web/style.css", () => {
 test("the bridge script is plain, valid JavaScript", () => {
   const src = fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "src", "bridge.js"), "utf8");
   new Function(src); // throws on a syntax error
-  for (const cmd of ["servers", "use_server", "remove_server", "open_server_form", "open_external", "confirm"]) {
+  for (const cmd of ["servers", "use_server", "remove_server", "open_server_form", "open_external", "confirm", "app_info", "open_updates"]) {
     assert.ok(src.includes(`"${cmd}"`), cmd);
     assert.ok(fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "permissions", "app.toml"), "utf8").includes(`allow-${cmd.replace(/_/g, "-")}`), `bridge permission for ${cmd}`);
   }
@@ -150,6 +156,19 @@ test("the bridge passes confirm() to the shell's native dialog", async () => {
   const frame = { top: {}, __TAURI_INTERNALS__: win.__TAURI_INTERNALS__ };
   new Function("window", "document", "location", src)(frame, doc, {});
   assert.strictEqual(frame.kisiauthongApp, undefined, "not in frames");
+});
+
+test("app updates: only the bundled screen may check and install (ADR 0020)", () => {
+  const toml = fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "permissions", "app.toml"), "utf8");
+  const set = (id) => {
+    const m = toml.match(new RegExp(`identifier = "${id}"[\\s\\S]*?permissions = \\[([^\\]]*)\\]`));
+    assert.ok(m, id);
+    return m[1];
+  };
+  for (const p of ["allow-update-check", "allow-update-install"]) {
+    assert.ok(set("server-screen").includes(p), `server-screen has ${p}`);
+    assert.ok(!set("bridge").includes(p), `bridge (saved servers' pages) must not have ${p}`);
+  }
 });
 
 (async () => {

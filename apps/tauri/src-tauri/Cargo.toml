@@ -25,6 +25,8 @@ serde_json = "1"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 sys-locale = "0.3"
+# release versions for app updates (src/update.rs)
+semver = "1"
 
 # The server check uses the system's TLS and trust store where it can, so it
 # trusts the certificates the system webview trusts.

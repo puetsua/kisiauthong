@@ -25,10 +25,20 @@
       <button class="primarybtn big" id="go" type="submit"></button>
       <button class="ghostbtn big" id="cancel" type="button" hidden></button>
     </form>
+    <div id="upd" class="sheet" hidden>
+      <h1 id="updTitle"></h1>
+      <p id="updVersion" class="lead"></p>
+      <p id="updStatus" class="status" role="status" aria-live="polite"></p>
+      <div class="errbox" id="updErr" role="alert" hidden><b id="updErrTitle"></b><span id="updErrText"></span></div>
+      <button class="primarybtn big" id="updGo" type="button"></button>
+      <button class="ghostbtn big" id="updBack" type="button"></button>
+      <p class="hint" id="updHint"></p>
+    </div>
   </section>
 </main>
 <script src="connect.js"></script>
 <script src="strings.js"></script>
 <script src="first-run.js"></script>
+<script src="update.js"></script>
 </body>
 </html>

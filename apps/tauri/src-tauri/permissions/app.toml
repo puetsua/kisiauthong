@@ -3,10 +3,10 @@
 
 [[set]]
 identifier = "server-screen"
-description = "The bundled server screen: read the saved servers, check an address, save a server, go back."
-permissions = ["allow-app-state", "allow-probe", "allow-save-server", "allow-cancel-form"]
+description = "The bundled server screen: read the saved servers, check an address, save a server, go back, and check for and install an app update (Android)."
+permissions = ["allow-app-state", "allow-probe", "allow-save-server", "allow-cancel-form", "allow-update-check", "allow-update-install"]
 
 [[set]]
 identifier = "bridge"
-description = "What a saved server's web UI may ask of the app: list, switch to, remove servers, open the add or edit screen, open a link in the system browser, and ask a yes/no question in a native dialog."
-permissions = ["allow-servers", "allow-use-server", "allow-remove-server", "allow-open-server-form", "allow-open-external", "allow-confirm"]
+description = "What a saved server's web UI may ask of the app: list, switch to, remove servers, open the add or edit screen, open a link in the system browser, ask a yes/no question in a native dialog, read the app's version, and open the App updates screen."
+permissions = ["allow-servers", "allow-use-server", "allow-remove-server", "allow-open-server-form", "allow-open-external", "allow-confirm", "allow-app-info", "allow-open-updates"]

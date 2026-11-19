@@ -14,7 +14,8 @@
   };
   Object.defineProperty(window, "kisiauthongApp", {
     value: Object.freeze({
-      version: 1,
+      // the bridge's own version: 2 added appInfo and updates
+      version: 2,
       // → { active: id | null, servers: [{ id, name?, url, lastUsed? }] }
       servers: function () { return call("servers"); },
       // switch the window to another saved server
@@ -27,6 +28,10 @@
       // a native yes/no dialog → Promise<boolean>; window.confirm() does nothing in
       // WKWebView (macOS, iOS) because the webview has no confirm panel
       confirm: function (message, ok, cancel) { return call("confirm", { message: String(message), ok: ok || null, cancel: cancel || null }); },
+      // → { version: "0.3.0", platform: "android" | "ios" | "macos" | "windows" | "linux", updates: boolean }
+      appInfo: function () { return call("app_info"); },
+      // open the app's App updates screen, which checks at once (only where appInfo().updates)
+      updates: function (lang) { return call("open_updates", { lang: lang || null }); },
     }),
   });
   document.addEventListener("click", function (e) {

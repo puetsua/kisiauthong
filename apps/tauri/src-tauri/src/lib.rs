@@ -8,10 +8,12 @@
 // calls and base path work exactly as in a browser. The shell adds three
 // things: the bundled server screen (../src) to enter or fix a server address,
 // the saved server list (profiles.rs), and a small bridge (bridge.js) through
-// which the server's Settings → Servers lists and manages that list.
+// which the server's Settings → Servers lists and manages that list. On
+// Android it can also update itself from the project's releases (update.rs).
 
 mod probe;
 mod profiles;
+mod update;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -32,6 +34,8 @@ struct Shell {
     file: PathBuf,
     /// origins that already have a remote capability for the bridge
     granted: Mutex<HashSet<String>>,
+    /// what the last update check found; install only ever uses this
+    update: Mutex<Option<update::Update>>,
 }
 
 impl Shell {
@@ -45,8 +49,26 @@ impl Shell {
 struct AppState {
     /// the system locale, such as zh-Hant-TW; the screen picks its language from it
     locale: String,
+    /// this app's version, such as 0.3.0
+    version: String,
     active: Option<String>,
     servers: Vec<Profile>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppInfo {
+    version: String,
+    /// android, ios, macos, windows, linux
+    platform: &'static str,
+    /// whether the app can update itself (Android only for now; ADR 0020)
+    updates: bool,
+}
+
+#[derive(Serialize)]
+struct UpdateCheck {
+    current: String,
+    update: Option<update::Update>,
 }
 
 #[derive(Serialize)]
@@ -166,10 +188,15 @@ fn allow_navigation(app: &AppHandle, url: &Url) -> bool {
 /* ---------- commands of the server screen (local only) ---------- */
 
 #[tauri::command]
-fn app_state(webview: Webview, shell: State<'_, Shell>) -> Result<AppState, String> {
+fn app_state(app: AppHandle, webview: Webview, shell: State<'_, Shell>) -> Result<AppState, String> {
     require_local(&webview)?;
     let s = shell.store.lock().unwrap();
-    Ok(AppState { locale: sys_locale::get_locale().unwrap_or_default(), active: s.active.clone(), servers: s.servers.clone() })
+    Ok(AppState {
+        locale: sys_locale::get_locale().unwrap_or_default(),
+        version: app.package_info().version.to_string(),
+        active: s.active.clone(),
+        servers: s.servers.clone(),
+    })
 }
 
 #[tauri::command]
@@ -223,7 +250,47 @@ fn cancel_form(webview: Webview, shell: State<'_, Shell>) -> Result<(), String> 
     go(&webview, target)
 }
 
+/// Asks GitHub for the latest release (only when the user presses Check).
+#[tauri::command]
+async fn update_check(app: AppHandle, webview: Webview) -> Result<UpdateCheck, String> {
+    require_local(&webview)?;
+    let current = app.package_info().version.to_string();
+    let found = android::check(&app, &current).await?;
+    *app.state::<Shell>().update.lock().unwrap() = found.clone();
+    Ok(UpdateCheck { current, update: found })
+}
+
+/// Downloads and installs what the last check found; nothing from the page.
+#[tauri::command]
+async fn update_install(app: AppHandle, webview: Webview) -> Result<String, String> {
+    require_local(&webview)?;
+    let found = app.state::<Shell>().update.lock().unwrap().clone();
+    let u = found.ok_or("Check for updates first.")?;
+    android::install(&app, u).await
+}
+
 /* ---------- the bridge: also from saved servers' pages ---------- */
+
+#[tauri::command]
+fn app_info(app: AppHandle, webview: Webview, shell: State<'_, Shell>) -> Result<AppInfo, String> {
+    require_known(&webview, &shell)?;
+    Ok(AppInfo {
+        version: app.package_info().version.to_string(),
+        platform: std::env::consts::OS,
+        updates: cfg!(target_os = "android"),
+    })
+}
+
+/// Opens the bundled screen's App updates page; Back returns to Settings.
+#[tauri::command]
+fn open_updates(webview: Webview, shell: State<'_, Shell>, lang: Option<String>) -> Result<(), String> {
+    require_known(&webview, &shell)?;
+    let mut params = vec![("mode", "update")];
+    if let Some(lang) = lang.as_deref() {
+        params.push(("lang", lang));
+    }
+    go(&webview, screen_url(&params))
+}
 
 #[tauri::command]
 fn servers(webview: Webview, shell: State<'_, Shell>) -> Result<ServerList, String> {
@@ -342,6 +409,105 @@ fn confirm(_message: String, _ok: Option<String>, _cancel: Option<String>) -> Re
     Err("No native dialog on this platform yet.".into())
 }
 
+/* ---------- Android: the Kotlin side of updates (UpdatePlugin.kt) ---------- */
+
+#[cfg(target_os = "android")]
+mod android {
+    use serde::Deserialize;
+    use tauri::plugin::PluginHandle;
+    use tauri::{AppHandle, Manager, Wry};
+
+    use crate::update::{self, Update};
+
+    pub struct Handle(pub PluginHandle<Wry>);
+
+    pub fn plugin() -> tauri::plugin::TauriPlugin<Wry> {
+        tauri::plugin::Builder::new("appupdate")
+            .setup(|app, api| {
+                let h = api.register_android_plugin("io.github.puetsua.kisiauthong", "UpdatePlugin")?;
+                app.manage(Handle(h));
+                Ok(())
+            })
+            .build()
+    }
+
+    /// The release list and where downloads must come from. A debug build may
+    /// read both from update-source.txt in the app data folder (two lines), to
+    /// test against a local server; release builds always use GitHub.
+    fn source(app: &AppHandle) -> (String, String) {
+        #[cfg(debug_assertions)]
+        if let Ok(dir) = app.path().app_data_dir() {
+            if let Ok(s) = std::fs::read_to_string(dir.join("update-source.txt")) {
+                let mut l = s.lines().map(str::trim).filter(|l| !l.is_empty());
+                if let (Some(api), Some(dl)) = (l.next(), l.next()) {
+                    return (api.into(), dl.into());
+                }
+            }
+        }
+        let _ = app;
+        (update::RELEASES_API.into(), update::DOWNLOADS.into())
+    }
+
+    fn call<T: serde::de::DeserializeOwned + Send + 'static>(
+        app: &AppHandle,
+        cmd: &'static str,
+        args: serde_json::Value,
+    ) -> impl std::future::Future<Output = Result<T, String>> {
+        let h = app.state::<Handle>().0.clone();
+        async move {
+            tauri::async_runtime::spawn_blocking(move || h.run_mobile_plugin::<T>(cmd, args))
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())
+        }
+    }
+
+    pub async fn check(app: &AppHandle, current: &str) -> Result<Option<Update>, String> {
+        #[derive(Deserialize)]
+        struct Fetched {
+            status: u16,
+            body: String,
+        }
+        let (api, downloads) = source(app);
+        let f: Fetched = call(app, "fetch", serde_json::json!({ "url": api }))
+            .await
+            .map_err(|e| format!("Could not reach GitHub: {e}"))?;
+        match f.status {
+            200..=299 => update::pick(&f.body, current, &downloads),
+            404 => Ok(None),
+            s => Err(format!("GitHub answered with status {s}.")),
+        }
+    }
+
+    pub async fn install(app: &AppHandle, u: Update) -> Result<String, String> {
+        #[derive(Deserialize)]
+        struct Started {
+            status: String,
+        }
+        let r: Started =
+            call(app, "install", serde_json::json!({ "url": u.url, "sha256": u.sha256, "size": u.size })).await?;
+        Ok(r.status)
+    }
+}
+
+/// Desktop updates are #33; iOS updates come from the App Store.
+#[cfg(not(target_os = "android"))]
+mod android {
+    use tauri::AppHandle;
+
+    use crate::update::Update;
+
+    const NOT_HERE: &str = "This app cannot update itself on this platform yet.";
+
+    pub async fn check(_app: &AppHandle, _current: &str) -> Result<Option<Update>, String> {
+        Err(NOT_HERE.into())
+    }
+
+    pub async fn install(_app: &AppHandle, _u: Update) -> Result<String, String> {
+        Err(NOT_HERE.into())
+    }
+}
+
 /* ---------- the window ---------- */
 
 fn open_window(app: &AppHandle) -> tauri::Result<()> {
@@ -383,13 +549,19 @@ fn open_window(app: &AppHandle) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(android::plugin());
+    builder
         .invoke_handler(tauri::generate_handler![
             app_state,
             probe,
             save_server,
             cancel_form,
+            update_check,
+            update_install,
+            app_info,
+            open_updates,
             servers,
             use_server,
             remove_server,
@@ -401,7 +573,7 @@ pub fn run() {
             let file = app.path().app_data_dir()?.join("servers.json");
             let store = Store::load(&file);
             let urls: Vec<String> = store.servers.iter().map(|p| p.url.clone()).collect();
-            app.manage(Shell { store: Mutex::new(store), file, granted: Mutex::new(HashSet::new()) });
+            app.manage(Shell { store: Mutex::new(store), file, granted: Mutex::new(HashSet::new()), update: Mutex::new(None) });
             for u in &urls {
                 grant(app.handle(), u);
             }
