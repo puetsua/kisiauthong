@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "kisiauthong-app"
+version = "0.3.0"
+description = "記數通 KiSiauThong app: opens the web UI of the user's own server"
+authors = ["kisiauthong contributors"]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/puetsua/kisiauthong"
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+# staticlib and cdylib are what the iOS and Android builds link
+name = "kisiauthong_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+sys-locale = "0.3"
+
+# The server check uses the system's TLS and trust store where it can, so it
+# trusts the certificates the system webview trusts.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["native-tls-no-alpn", "system-proxy"] }
+
+# Native yes/no dialogs for the bridge (the backend of tauri-plugin-dialog, used
+# directly because that plugin replaces window.confirm with an async function,
+# which would let the web UI's `if (!confirm(…)) return;` go on without asking).
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+rfd = { version = "0.16", default-features = false, features = ["common-controls-v6"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

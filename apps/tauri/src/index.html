@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>記數通 KiSiauThong</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="fr">
+  <section class="brandpane">
+    <img class="appicon" src="icon-512.png" alt="">
+    <div class="bname"><div class="zh" lang="nan-Hant-TW">記數通</div><div class="en" lang="en">KiSiauThong</div></div>
+  </section>
+  <section class="formpane">
+    <form id="form" class="sheet" novalidate>
+      <h1 id="title"></h1>
+      <p id="lead" class="lead"></p>
+      <label class="flabel" id="nameRow" hidden><span id="nameLabel"></span><input id="name" class="field" type="text" maxlength="80" autocomplete="off"></label>
+      <label class="flabel"><span id="urlLabel"></span><input id="url" class="field mono" type="url" inputmode="url" placeholder="https://" autocomplete="url" autocapitalize="off" autocorrect="off" spellcheck="false" aria-describedby="hint err"></label>
+      <p class="hint" id="hint"></p>
+      <div class="errbox" id="err" role="alert" hidden><b id="errTitle"></b><span id="errText"></span></div>
+      <button class="primarybtn big" id="go" type="submit"></button>
+      <button class="ghostbtn big" id="cancel" type="button" hidden></button>
+    </form>
+  </section>
+</main>
+<script src="connect.js"></script>
+<script src="strings.js"></script>
+<script src="first-run.js"></script>
+</body>
+</html>

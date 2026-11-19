@@ -40,10 +40,11 @@ pnpm-debug.log*
 /server/web/
 vendor/
 
-# Rust / Tauri desktop
+# Rust / Tauri apps (apps/tauri, ADR 0019)
 target/
-desktop/src-tauri/target/
-desktop/src-tauri/gen/
+apps/tauri/node_modules/
+apps/tauri/src-tauri/target/
+apps/tauri/src-tauri/gen/
 
 # Mobile (Expo / React Native / Android)
 mobile/.expo/
