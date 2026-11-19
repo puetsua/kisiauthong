@@ -145,6 +145,8 @@ test("the bridge passes confirm() to the shell's native dialog", async () => {
   assert.deepStrictEqual(calls.pop(), ["confirm", { message: "Delete this transaction?", ok: "Delete", cancel: "Cancel" }]);
   await win.kisiauthongApp.confirm("Sure?");
   assert.deepStrictEqual(calls.pop(), ["confirm", { message: "Sure?", ok: null, cancel: null }], "no labels: the system's OK and Cancel");
+  await win.kisiauthongApp.add("zh-TW");
+  assert.deepStrictEqual(calls.pop(), ["open_server_form", { mode: "add", id: null, lang: "zh-TW" }], "Change server on the sign-in card and Add server open the server screen");
   const frame = { top: {}, __TAURI_INTERNALS__: win.__TAURI_INTERNALS__ };
   new Function("window", "document", "location", src)(frame, doc, {});
   assert.strictEqual(frame.kisiauthongApp, undefined, "not in frames");

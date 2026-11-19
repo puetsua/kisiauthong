@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -251,6 +251,31 @@ test("Settings → Servers: only inside the app, above About", () => {
   t.setLang("en");
   t.state.general = null;
 });
+test("sign-in card: the server row and Change server only inside the app, on every signed-out step", () => {
+  const card = () => $el("#authScreen").innerHTML;
+  const steps = () => { t.showAuth("login"); const login = card(); t.showAuth("setup"); const setup = card(); t.showCodeStep("ticket"); return { login, setup, code: card() }; };
+  location.host = "100.100.106.127:9728";
+  for (const [step, html] of Object.entries(steps())) assert.doesNotMatch(html, /srvfoot|authServer|Change server/, `a browser: nothing new on ${step}`);
+  const opened = [];
+  sandbox.kisiauthongApp = { add: (lang) => { opened.push(lang); return Promise.resolve(); } };
+  let onClick = null;
+  $el("#authServer").addEventListener = (type, fn) => { if (type === "click") onClick = fn; };
+  t.showAuth("login");
+  onClick();
+  assert.deepStrictEqual(opened, ["en"], "Change server opens the app's server screen in the web UI's language");
+  for (const [step, html] of Object.entries(steps())) {
+    assert.match(html, /<div class="srvfoot"><span>Server <span class="host">100\.100\.106\.127:9728<\/span><\/span><button class="linkbtn" type="button" id="authServer" aria-label="Change server \(now 100\.100\.106\.127:9728\)">Change server<\/button><\/div>\s*<\/form>$/, `the row closes the card on ${step}`);
+  }
+  location.host = 'evil"<b>.example';
+  assert.match(steps().login, /<span class="host">evil&quot;&lt;b&gt;\.example<\/span>.*aria-label="Change server \(now evil&quot;&lt;b&gt;\.example\)"/s, "the host is escaped in text and label");
+  t.setLang("zh-TW");
+  location.host = "books.example.org";
+  assert.match(steps().code, /<span>伺服器 <span class="host">books\.example\.org<\/span><\/span>.*aria-label="更換伺服器（目前：books\.example\.org）">更換伺服器</s);
+  t.setLang("en");
+  delete sandbox.kisiauthongApp;
+  delete location.host;
+});
+
 // askConfirm is async; these run after the synchronous tests
 const later = [];
 later.push(["askConfirm: window.confirm() in a browser, the app's native dialog inside the app", async () => {

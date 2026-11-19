@@ -2208,6 +2208,20 @@ async function boot() {
     await load();
   } catch (e) { msg(__("Failed to load: {message}", { message: e.message }), "error"); }
 }
+// Inside the app only (ADR 0019): the foot of every signed-out step names the server this sign-in
+// belongs to (from the page's own address) and offers a way back to the app's server screen, which is
+// otherwise reached from Settings, after signing in. Nothing in a browser.
+function authServerRow() {
+  if (!appShell()) return "";
+  const host = location.host;
+  return `<div class="srvfoot"><span>${esc(__("Server"))} <span class="host">${esc(host)}</span></span><button class="linkbtn" type="button" id="authServer" aria-label="${esc(__("Change server (now {host})", { host }))}">${esc(__("Change server"))}</button></div>`;
+}
+function bindAuthServer() {
+  const b = $("#authServer");
+  if (!b) return;
+  // the server screen's form for another address; one already saved is switched to, Cancel comes back here
+  b.addEventListener("click", () => appShell().add(LANG).catch((x) => { const err = $("#authErr"); err.textContent = String((x && x.message) || x); err.hidden = false; }));
+}
 // the sign-in screen replaces the app until someone is signed in
 function showAuth(mode) {
   state.me = null; state.data = null;
@@ -2226,9 +2240,11 @@ function showAuth(mode) {
       <p class="autherr" id="authErr" role="alert" hidden></p>
       <button class="primarybtn big" type="submit">${esc(setup ? __("Create account") : __("Sign in"))}</button>
       ${setup || !window.PublicKeyCredential ? "" : `<div class="author"><span>${esc(__("or"))}</span></div><button class="smallbtn big passkeybtn" type="button" id="passkeySignIn">${KEY_ICON}${esc(__("Sign in with a passkey"))}</button>`}
+      ${authServerRow()}
     </form>`;
   const form = $("#authForm");
   form.elements.username.focus();
+  bindAuthServer();
   const pk = $("#passkeySignIn");
   if (pk) pk.addEventListener("click", async () => {
     const err = $("#authErr");
@@ -2258,9 +2274,11 @@ function showCodeStep(ticket) {
       <p class="autherr" id="authErr" role="alert" hidden></p>
       <button class="primarybtn big" type="submit">${esc(__("Verify"))}</button>
       <button class="linkbtn authback" type="button" id="authBack">${esc(__("‹ Back"))}</button>
+      ${authServerRow()}
     </form>`;
   const form = $("#authForm");
   form.elements.code.focus();
+  bindAuthServer();
   $("#authBack").addEventListener("click", () => showAuth("login"));
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
