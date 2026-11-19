@@ -60,7 +60,7 @@ struct Asset {
 
 /// Whether `latest` is a newer version than `current`. Tags have no "v" (ADR 0009).
 pub fn is_newer(current: &str, latest: &str) -> Result<bool, String> {
-    let c = Version::parse(current).map_err(|e| format!("badAnswer: this app's version {current:?}: {e}"))?;
+    let c = Version::parse(current).map_err(|e| format!("badVersion: {current}: {e}"))?;
     let l = Version::parse(latest).map_err(|e| format!("badAnswer: the release tag {latest:?}: {e}"))?;
     Ok(l > c)
 }

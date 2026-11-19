@@ -33,7 +33,7 @@ android {
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "io.github.puetsua.kisiauthong"
-        minSdk = 24
+        minSdk = 29 // Android 10 (AGENTS.md §6)
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")

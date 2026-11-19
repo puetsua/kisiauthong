@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 kisiauthong contributors -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
   <!-- only downloaded app updates are shared, with the system installer (UpdatePlugin.kt) -->
   <cache-path name="updates" path="updates/" />

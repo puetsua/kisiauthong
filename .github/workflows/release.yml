@@ -127,7 +127,9 @@ jobs:
             exit 0
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          printf 'storeFile=%s\npassword=%s\nkeyAlias=kisiauthong\n' "$RUNNER_TEMP/release.jks" "$KEYSTORE_PASSWORD" > src-tauri/gen/android/keystore.properties
+          # a .properties value: escape backslashes and a leading space
+          password=$(printf '%s' "$KEYSTORE_PASSWORD" | sed -e 's/\\/\\\\/g' -e 's/^ /\\ /')
+          printf 'storeFile=%s\npassword=%s\nkeyAlias=kisiauthong\n' "$RUNNER_TEMP/release.jks" "$password" > src-tauri/gen/android/keystore.properties
           echo "ok=true" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v7
         if: steps.key.outputs.ok == 'true'
@@ -208,6 +210,7 @@ jobs:
 
           EOF
           if [ -f "dist/kisiauthong-app-${TAG}-android.apk" ]; then
+            (cd dist && sha256sum "kisiauthong-app-${TAG}-android.apk" >> SHA256SUMS)
             cat >> notes.md <<EOF
           **Android app**: \`kisiauthong-app-${TAG}-android.apk\` opens your own server. Once installed, it updates itself from Settings → About → Check for updates.
 

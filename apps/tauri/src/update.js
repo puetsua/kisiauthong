@@ -30,7 +30,7 @@
     const raw = reason(e), m = raw.match(/^(\w+)(?::\s*([\s\S]*))?$/);
     const bad = S.updErrBadRelease;
     const words = {
-      unreachable: S.updErrUnreachable, status: S.updErrStatus, badAnswer: S.updErrBadAnswer, noApk: S.updErrNoApk,
+      unreachable: S.updErrUnreachable, status: S.updErrStatus, badAnswer: S.updErrBadAnswer, badVersion: S.updErrBadVersion, noApk: S.updErrNoApk,
       elsewhere: bad, noChecksum: bad, empty: bad, checksum: S.updErrChecksum, download: S.updErrDownload,
       checkFirst: S.updErrCheckFirst, unsupported: S.updErrUnsupported,
     };
@@ -76,12 +76,12 @@
   }
 
   async function init() {
+    $("form").hidden = true; // before the first await, so the server form never flashes
     let st = { locale: "", version: "" };
     try { st = await call("app_state"); } catch (e) { /* a plain browser */ }
     const lang = pickLang([q.get("lang"), st.locale, ...(navigator.languages || [])].filter(Boolean));
     S = window.KstStrings[lang];
     document.documentElement.lang = lang === "zh-TW" ? "zh-Hant-TW" : "en";
-    $("form").hidden = true;
     $("upd").hidden = false;
     $("updTitle").textContent = S.updTitle;
     $("updVersion").textContent = st.version ? fill(S.updVersion, { version: st.version }) : "";
