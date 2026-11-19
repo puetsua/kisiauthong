@@ -1674,8 +1674,10 @@ function screenSettings(v) {
   $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
   if ($("#copyCommit")) $("#copyCommit").addEventListener("click", async () => { try { await navigator.clipboard.writeText(verAbout().commit); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } });
   if (state.goAbout) { state.goAbout = false; $("#set-about").scrollIntoView({ block: "start" }); }
-  drawAppServers();
-  drawAppAbout();
+  // "#settings?about": back from the app's App updates screen; scroll once the app's rows are in
+  const toAbout = hashParts().params.has("about");
+  if (toAbout) history.replaceState(null, "", "#settings");
+  Promise.all([drawAppServers(), drawAppAbout()]).then(() => { if (toAbout && $("#set-about")) $("#set-about").scrollIntoView({ block: "start" }); });
   $("#setOpenDays").addEventListener("change", (e) => { state.dayOpen = {}; saveGeneral({ openDays: parseInt(e.target.value, 10) }, () => __("Days open by default saved.")); });
   $("#setAddCur").addEventListener("change", (e) => { const c = e.target.value; if (c) saveGeneral({ currencies: [...favCurs(), c] }, () => __("{currency} added.", { currency: c })); });
   v.querySelectorAll("[data-cur-del]").forEach((b) => b.addEventListener("click", () => {

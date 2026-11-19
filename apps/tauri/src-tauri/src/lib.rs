@@ -240,12 +240,21 @@ fn save_server(
     go(&webview, target)
 }
 
+/// Leaves the bundled screen: to `back` when it is a page of a saved server
+/// (the App updates screen passes the page that opened it), otherwise to the
+/// active server's Settings.
 #[tauri::command]
-fn cancel_form(webview: Webview, shell: State<'_, Shell>) -> Result<(), String> {
+fn cancel_form(webview: Webview, shell: State<'_, Shell>, back: Option<String>) -> Result<(), String> {
     require_local(&webview)?;
-    let target = match shell.store.lock().unwrap().active_profile() {
-        Some(a) => settings_of(a)?,
-        None => screen_url(&[]),
+    let target = {
+        let store = shell.store.lock().unwrap();
+        match back.as_deref().and_then(|b| Url::parse(b).ok()).filter(|u| known(&store, u)) {
+            Some(u) => u,
+            None => match store.active_profile() {
+                Some(a) => settings_of(a)?,
+                None => screen_url(&[]),
+            },
+        }
     };
     go(&webview, target)
 }
@@ -265,7 +274,7 @@ async fn update_check(app: AppHandle, webview: Webview) -> Result<UpdateCheck, S
 async fn update_install(app: AppHandle, webview: Webview) -> Result<String, String> {
     require_local(&webview)?;
     let found = app.state::<Shell>().update.lock().unwrap().clone();
-    let u = found.ok_or("Check for updates first.")?;
+    let u = found.ok_or("checkFirst")?;
     android::install(&app, u).await
 }
 
@@ -281,11 +290,14 @@ fn app_info(app: AppHandle, webview: Webview, shell: State<'_, Shell>) -> Result
     })
 }
 
-/// Opens the bundled screen's App updates page; Back returns to Settings.
+/// Opens the bundled screen's App updates page; Back returns to Settings → About
+/// on the server that opened it.
 #[tauri::command]
 fn open_updates(webview: Webview, shell: State<'_, Shell>, lang: Option<String>) -> Result<(), String> {
     require_known(&webview, &shell)?;
-    let mut params = vec![("mode", "update")];
+    let mut back = webview.url().map_err(|e| e.to_string())?;
+    back.set_fragment(Some("settings?about"));
+    let mut params = vec![("mode", "update"), ("back", back.as_str())];
     if let Some(lang) = lang.as_deref() {
         params.push(("lang", lang));
     }
@@ -471,11 +483,11 @@ mod android {
         let (api, downloads) = source(app);
         let f: Fetched = call(app, "fetch", serde_json::json!({ "url": api }))
             .await
-            .map_err(|e| format!("Could not reach GitHub: {e}"))?;
+            .map_err(|e| format!("unreachable: {e}"))?;
         match f.status {
             200..=299 => update::pick(&f.body, current, &downloads),
             404 => Ok(None),
-            s => Err(format!("GitHub answered with status {s}.")),
+            s => Err(format!("status: {s}")),
         }
     }
 
@@ -484,8 +496,9 @@ mod android {
         struct Started {
             status: String,
         }
-        let r: Started =
-            call(app, "install", serde_json::json!({ "url": u.url, "sha256": u.sha256, "size": u.size })).await?;
+        let r: Started = call(app, "install", serde_json::json!({ "url": u.url, "sha256": u.sha256, "size": u.size }))
+            .await
+            .map_err(|e| if e == "checksum" || e.starts_with("download: ") { e } else { format!("download: {e}") })?;
         Ok(r.status)
     }
 }
@@ -497,7 +510,7 @@ mod android {
 
     use crate::update::Update;
 
-    const NOT_HERE: &str = "This app cannot update itself on this platform yet.";
+    const NOT_HERE: &str = "unsupported";
 
     pub async fn check(_app: &AppHandle, _current: &str) -> Result<Option<Update>, String> {
         Err(NOT_HERE.into())

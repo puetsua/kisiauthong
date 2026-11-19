@@ -6,7 +6,8 @@
 // with the system's trust store, the download with its SHA-256 check, and
 // handing the APK to the system installer, which also refuses an APK not
 // signed with this app's key. Only the bundled server screen reaches it,
-// through the app's own commands (src/lib.rs).
+// through the app's own commands (src/lib.rs). Install rejects with "checksum"
+// or "download: <reason>", which the App updates screen puts into words.
 package io.github.puetsua.kisiauthong
 
 import android.app.Activity
@@ -21,6 +22,7 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -42,7 +44,7 @@ class InstallArgs {
 @TauriPlugin
 class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
   init {
-    // an APK handed to the installer is not needed once the app runs again
+    // the installer copies an APK before it asks, so none is needed once the app runs again
     Thread { File(activity.cacheDir, "updates").deleteRecursively() }.start()
   }
 
@@ -66,9 +68,15 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
         val status = c.responseCode
         val stream = if (status in 200..299) c.inputStream else c.errorStream
         val body = stream?.use { s ->
-          val bytes = s.readBytes()
-          if (bytes.size > 1_000_000) throw IOException("answer too large")
-          String(bytes, Charsets.UTF_8)
+          val out = ByteArrayOutputStream()
+          val buf = ByteArray(16 * 1024)
+          while (true) {
+            val n = s.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            if (out.size() > 1_000_000) throw IOException("answer too large")
+          }
+          out.toString("UTF-8")
         } ?: ""
         c.disconnect()
         invoke.resolve(JSObject().put("status", status).put("body", body))
@@ -90,11 +98,11 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
     Thread {
+      // a new file each time: an installer may still be reading an earlier one
       val dir = File(activity.cacheDir, "updates")
-      val apk = File(dir, "kisiauthong-update.apk")
+      val apk = File(dir, "kisiauthong-update-" + System.currentTimeMillis() + ".apk")
       try {
         dir.mkdirs()
-        dir.listFiles()?.forEach { it.delete() }
         val c = open(args.url)
         c.setRequestProperty("Accept", "application/octet-stream")
         if (c.responseCode !in 200..299) throw IOException("HTTP " + c.responseCode)
@@ -117,7 +125,7 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
         val hex = md.digest().joinToString("") { "%02x".format(it) }
         if (total != args.size || !hex.equals(args.sha256, ignoreCase = true)) {
           apk.delete()
-          invoke.reject("The download does not match the release's checksum.")
+          invoke.reject("checksum")
           return@Thread
         }
         val uri = FileProvider.getUriForFile(activity, activity.packageName + ".fileprovider", apk)
@@ -134,7 +142,7 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
         }
       } catch (e: Exception) {
         apk.delete()
-        invoke.reject(e.message ?: e.toString())
+        invoke.reject("download: " + (e.message ?: e.toString()))
       }
     }.start()
   }

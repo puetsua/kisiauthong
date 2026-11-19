@@ -8,6 +8,9 @@
 // on every platform. The check runs only when the user asks for it; it is the
 // app's one request to somewhere other than the user's own server.
 
+// Errors are "code" or "code: detail"; the App updates screen (update.js)
+// puts the code into words in the user's language.
+
 // Only the Android shell calls these; elsewhere only the tests do.
 #![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
@@ -57,8 +60,8 @@ struct Asset {
 
 /// Whether `latest` is a newer version than `current`. Tags have no "v" (ADR 0009).
 pub fn is_newer(current: &str, latest: &str) -> Result<bool, String> {
-    let c = Version::parse(current).map_err(|e| format!("This app's version {current:?} is not valid: {e}"))?;
-    let l = Version::parse(latest).map_err(|e| format!("The latest release {latest:?} is not a version: {e}"))?;
+    let c = Version::parse(current).map_err(|e| format!("badAnswer: this app's version {current:?}: {e}"))?;
+    let l = Version::parse(latest).map_err(|e| format!("badAnswer: the release tag {latest:?}: {e}"))?;
     Ok(l > c)
 }
 
@@ -71,7 +74,7 @@ fn sha256_of(digest: Option<&str>) -> Option<String> {
 /// date. An error when the release is newer but carries no usable Android app.
 /// `downloads` is where the APK must come from (DOWNLOADS, except in tests).
 pub fn pick(json: &str, current: &str, downloads: &str) -> Result<Option<Update>, String> {
-    let r: Release = serde_json::from_str(json).map_err(|e| format!("Could not read the release list: {e}"))?;
+    let r: Release = serde_json::from_str(json).map_err(|e| format!("badAnswer: {e}"))?;
     if r.draft || r.prerelease {
         return Ok(None);
     }
@@ -86,15 +89,15 @@ pub fn pick(json: &str, current: &str, downloads: &str) -> Result<Option<Update>
         .assets
         .iter()
         .find(|a| a.name == name)
-        .ok_or_else(|| format!("Version {} has no Android app yet.", r.tag_name))?;
+        .ok_or_else(|| format!("noApk: {}", r.tag_name))?;
     let prefix = format!("{downloads}{}/", r.tag_name);
     if !a.browser_download_url.starts_with(&prefix) {
-        return Err(format!("The download of version {} is not where releases are kept.", r.tag_name));
+        return Err(format!("elsewhere: {}", r.tag_name));
     }
     let sha256 = sha256_of(a.digest.as_deref())
-        .ok_or_else(|| format!("The download of version {} has no checksum.", r.tag_name))?;
+        .ok_or_else(|| format!("noChecksum: {}", r.tag_name))?;
     if a.size == 0 {
-        return Err(format!("The download of version {} is empty.", r.tag_name));
+        return Err(format!("empty: {}", r.tag_name));
     }
     Ok(Some(Update { version: r.tag_name.clone(), url: a.browser_download_url.clone(), size: a.size, sha256 }))
 }
@@ -156,21 +159,27 @@ mod tests {
     #[test]
     fn a_newer_release_without_a_usable_apk_is_an_error() {
         let none = release("0.4.0", "");
-        assert!(pick(&none, "0.3.0", DOWNLOADS).unwrap_err().contains("no Android app"));
+        assert_eq!(pick(&none, "0.3.0", DOWNLOADS).unwrap_err(), "noApk: 0.4.0");
         for bad in ["", "sha256:", "sha256:abc", "md5:0123", &format!("sha256:{}", "z".repeat(64))] {
             let json = release("0.4.0", &apk("0.4.0", bad));
-            assert!(pick(&json, "0.3.0", DOWNLOADS).unwrap_err().contains("checksum"), "{bad:?}");
+            assert_eq!(pick(&json, "0.3.0", DOWNLOADS).unwrap_err(), "noChecksum: 0.4.0", "{bad:?}");
         }
         let elsewhere = release(
             "0.4.0",
             &format!(r#"{{"name":"kisiauthong-app-0.4.0-android.apk","size":5,"browser_download_url":"https://example.org/0.4.0/a.apk","digest":"sha256:{HEX}"}}"#),
         );
-        assert!(pick(&elsewhere, "0.3.0", DOWNLOADS).unwrap_err().contains("not where releases are kept"));
+        assert_eq!(pick(&elsewhere, "0.3.0", DOWNLOADS).unwrap_err(), "elsewhere: 0.4.0");
         let other_tag = release(
             "0.4.0",
             &format!(r#"{{"name":"kisiauthong-app-0.4.0-android.apk","size":5,"browser_download_url":"{DOWNLOADS}0.3.0/kisiauthong-app-0.4.0-android.apk","digest":"sha256:{HEX}"}}"#),
         );
-        assert!(pick(&other_tag, "0.3.0", DOWNLOADS).is_err(), "the download belongs to the release's own tag");
-        assert!(pick("not json", "0.3.0", DOWNLOADS).is_err());
+        assert_eq!(pick(&other_tag, "0.3.0", DOWNLOADS).unwrap_err(), "elsewhere: 0.4.0", "the download belongs to the release's own tag");
+        let empty = release(
+            "0.4.0",
+            &format!(r#"{{"name":"kisiauthong-app-0.4.0-android.apk","size":0,"browser_download_url":"{DOWNLOADS}0.4.0/kisiauthong-app-0.4.0-android.apk","digest":"sha256:{HEX}"}}"#),
+        );
+        assert_eq!(pick(&empty, "0.3.0", DOWNLOADS).unwrap_err(), "empty: 0.4.0");
+        assert!(pick("not json", "0.3.0", DOWNLOADS).unwrap_err().starts_with("badAnswer: "));
+        assert!(pick(&release("latest", ""), "0.3.0", DOWNLOADS).unwrap_err().starts_with("badAnswer: "));
     }
 }

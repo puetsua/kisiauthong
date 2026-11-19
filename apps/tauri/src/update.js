@@ -25,6 +25,17 @@
     $("updGo").textContent = label;
     $("updGo").disabled = !!disabled;
   }
+  // the shell's errors are "code" or "code: detail" (src-tauri/src/update.rs)
+  function describe(e) {
+    const raw = reason(e), m = raw.match(/^(\w+)(?::\s*([\s\S]*))?$/);
+    const bad = S.updErrBadRelease;
+    const words = {
+      unreachable: S.updErrUnreachable, status: S.updErrStatus, badAnswer: S.updErrBadAnswer, noApk: S.updErrNoApk,
+      elsewhere: bad, noChecksum: bad, empty: bad, checksum: S.updErrChecksum, download: S.updErrDownload,
+      checkFirst: S.updErrCheckFirst, unsupported: S.updErrUnsupported,
+    };
+    return m && words[m[1]] ? fill(words[m[1]], { detail: m[2] || "" }) : raw;
+  }
   function showError(title, text) {
     $("updErrTitle").textContent = title;
     $("updErrText").textContent = text;
@@ -43,7 +54,7 @@
       found = r.update || null;
       $("updStatus").textContent = found ? fill(S.updFound, { version: found.version, size: mb(found.size) }) : S.updLatest;
     } catch (e) {
-      showError(S.updCheckFailed, reason(e));
+      showError(S.updCheckFailed, describe(e));
     }
     busy = false;
     setButton(found ? S.updInstall : S.updCheck);
@@ -57,9 +68,10 @@
       const status = await call("update_install");
       $("updStatus").textContent = status === "permission" ? S.updPermission : S.updStarted;
     } catch (e) {
-      showError(S.updInstallFailed, reason(e));
+      showError(S.updInstallFailed, describe(e));
     }
     busy = false;
+    // still enabled after the installer opened: each download is a new file, so a retry is safe
     setButton(S.updInstall);
   }
 
@@ -76,7 +88,8 @@
     $("updBack").textContent = S.updBack;
     $("updHint").textContent = S.updHint;
     $("updGo").addEventListener("click", () => { if (!busy) (found ? install() : check()); });
-    $("updBack").addEventListener("click", () => { call("cancel_form").catch(() => history.back()); });
+    // back to Settings → About of the server that opened this screen; the shell checks it is a saved one
+    $("updBack").addEventListener("click", () => { call("cancel_form", { back: q.get("back") }).catch(() => history.back()); });
     check();
   }
   init();
