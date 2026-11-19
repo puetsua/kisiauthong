@@ -55,6 +55,8 @@ jobs:
         run: for f in web/*.js scripts/*.js; do node --check "$f"; done
       - name: Translations complete
         run: node scripts/check-i18n.js
+      - name: Rendering smoke tests
+        run: node scripts/test-web.js
       - name: Number formats
         run: node scripts/check-numfmt.js
 

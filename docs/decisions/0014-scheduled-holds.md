@@ -68,6 +68,9 @@ presentation.
   Free / Reserved / Scheduled (not posted) split on the dashboard balances;
   a blue "Scheduled · posts on its date" section above the period feed that
   lists every scheduled row whatever its date; a blue note in the drawer.
+  *Amended by ADR 0016:* the card legend shows the scheduled amount only
+  (no dates, no Scheduled in line), Transactions folds the section into one
+  line, and the dates and rows are listed on each account's page.
 - `planned` keeps its meaning. Templates still generate planned rows that
   wait for confirmation; letting a template generate posted rows ahead of
   their date (and so get holds) is a later decision.
