@@ -189,6 +189,11 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   (not a button there: `.acard.static`), never a longer one;
   details go in the panels under it. An account's page puts its blue
   Scheduled panel beside the card on wide screens (`.acctpage.withsched`).
+- **Select mode** (Tags → Merge tags…): the page becomes checkbox cards
+  (real `<input type="checkbox">` in a `<label class="tcard pcard">`), with a
+  Cancel in a head panel and a sticky `.mergebar` holding the live count
+  (`aria-live`) and the action; the + button hides. Leaving the page ends
+  it. Nothing is pre-selected and the order is a plain sort (ADR 0015).
 - **Empty states**: `.empty`, one short sentence; add how to create the first
   item only when it is not obvious.
 - **Settings-style pages** (Settings, My account, Server): `.settings` with a
@@ -277,6 +282,9 @@ topmost popup only.
   Success: `role="status"`, 3 s. Error: red, `role="alert"`, 7 s, click to
   dismiss. A new toast replaces the old one.
 - Phrase it as the result, short, ending with a full stop.
+- A change that can be taken back (merging tags) uses `msgUndo(text, undo)`:
+  the toast carries an Undo button and stays 10 s, longer while the pointer
+  or keyboard focus is on it.
 
 ## Controls
 

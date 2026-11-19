@@ -650,3 +650,35 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 dialog .cropzoom input[type=range]{flex:1;width:auto;padding:0;border:0;margin:0;accent-color:var(--accent)}
 .cropper .primarybtn{width:min(320px,calc(100vw - 96px))}
 dialog:has(.cropper){width:min(400px,calc(100vw - 32px))}
+/* merging tags (#13, ADR 0017): select mode, the confirmation, the Undo toast. Selected cards look
+   selected and nothing else stands out: no tag is marked as similar or suggested (ADR 0015). */
+.muted{color:var(--muted);font-size:.9rem}
+.pickhead{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;margin-bottom:14px}
+.pickhead h3{margin:0;font-size:1rem}.pickhead small{display:block;color:var(--muted)}
+.tgrid.picking{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;border:0;margin:0;padding:0 0 12px;min-width:0}
+.pcard{position:relative;gap:2px;padding:12px 12px 12px 42px;min-width:0}
+.pcard input{position:absolute;left:12px;top:15px;width:20px;height:20px;margin:0;accent-color:var(--accent);cursor:pointer}
+.pcard .pname{font-weight:700;overflow-wrap:anywhere}
+.pcard:has(input:checked){border-color:var(--accent);background:var(--accentsoft)}
+.pcard:has(input:focus-visible){outline:3px solid var(--accent2);outline-offset:2px}
+.mergebar{position:sticky;bottom:16px;z-index:5;display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 12px 10px 16px;background:var(--panel);border:1px solid var(--accent);border-radius:12px;box-shadow:0 10px 28px rgba(40,20,60,.18)}
+.mergebar>span{margin-right:auto;font-weight:600}
+.mergebar .primarybtn:disabled{opacity:.45;cursor:default}
+@media (max-width:800px){.mergebar{bottom:calc(76px + env(safe-area-inset-bottom))}}
+.mergeform fieldset.mpick{border:0;padding:0;margin:12px 0 0;min-width:0;display:flex;flex-direction:column;gap:6px}
+.mergeform fieldset.mpick legend{font-size:.86rem;color:var(--muted);padding:0;margin-bottom:6px}
+dialog label.mrow{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin:0;padding:7px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--panel);color:var(--ink);font-size:.92rem}
+dialog label.mrow small{color:var(--muted)}
+dialog label.mrow b{overflow-wrap:anywhere}
+.mrow:has(input:checked){border-color:var(--accent);background:var(--accentsoft)}
+.mrow:has(input:focus-visible){outline:3px solid var(--accent2);outline-offset:1px}
+dialog .mrow input{width:auto;margin:0;accent-color:var(--accent)}
+.mimpact{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--soft);border:1px solid var(--line);font-size:.9rem}
+.mimpact ul{margin:6px 0 0;padding-left:18px}.mimpact li{margin:3px 0;overflow-wrap:anywhere}.mimpact .chip{font-size:.8rem}
+.mprevwrap{margin-top:12px}.mprevwrap .lab{font-size:.86rem;color:var(--muted)}
+.mprev{cursor:default;margin-top:6px;border-color:var(--accent)}
+.mprev .thead b{overflow-wrap:anywhere}
+.toast.withbtn{display:flex;align-items:center;gap:14px;width:max-content}
+.pickhead h3:focus{outline:none}
+.toastbtn{flex:none;border:1px solid rgba(255,255,255,.7);background:none;color:#fff;font:inherit;font-weight:700;border-radius:6px;padding:3px 12px;cursor:pointer}
+.toastbtn:hover{background:rgba(255,255,255,.12)}.toastbtn:focus-visible{outline:2px solid #fff;outline-offset:2px}
