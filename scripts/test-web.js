@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -165,6 +165,28 @@ test("zh-TW: the summary line and the card read as designed", () => {
   assert.match(strip($el("#txnResults").innerHTML), /3 筆已排程<\/span><span class="schedhint">點帳戶看明細/);
   assert.match(strip(t.accountCard(acc)), /已排程 TWD 23,000</);
   t.setLang("en");
+});
+
+// the tag merge flow's labels (#26): the entry manages tags, the bar's button opens the options dialog
+test("tags: \"Manage tags\" entry and the \"Merge options\" button, en and zh-TW", () => {
+  const tagView = () => Object.assign(view(), { insertAdjacentHTML(pos, html) { this.innerHTML = html + this.innerHTML; } });
+  t.state.data.tags = [{ id: "g1", name: "Food" }, { id: "g2", name: "Snacks" }, { id: "g3", name: "Rent" }];
+  for (const [lang, entry, pick, go] of [["en", "Manage tags", "Pick 2 or more", "Merge options"], ["zh-TW", "管理標籤", "至少選 2 個", "合併選項"]]) {
+    t.setLang(lang);
+    t.state.tagPick = null;
+    const v = tagView();
+    t.screenTags(v);
+    assert.ok(v.innerHTML.includes(`id="tagMerge">${entry}</button>`), lang + " entry");
+    t.state.tagPick = new Set(["g1"]);
+    t.screenTags(tagView());
+    assert.strictEqual($el("#pickGo").textContent, pick);
+    t.state.tagPick = new Set(["g1", "g2"]);
+    t.screenTags(tagView());
+    assert.strictEqual($el("#pickGo").textContent, go, lang + " selection button");
+  }
+  t.setLang("en");
+  t.state.tagPick = null;
+  t.state.data.tags = [];
 });
 
 // the version (#14): shown as the build stamped it, never with a "v" prefix; a chip only for nightly
