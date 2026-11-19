@@ -824,7 +824,7 @@ function bindDays(root) {
   }));
 }
 async function deleteTxn(id) {
-  if (!confirm(__("Delete this transaction? This cannot be undone."))) return false;
+  if (!(await askConfirm(__("Delete this transaction? This cannot be undone."), __("Delete")))) return false;
   try { await api("/api/transactions/" + id, { method: "DELETE" }); msg(__("Deleted.")); await load(); return true; }
   catch (e) { errMsg(e); return false; }
 }
@@ -1453,7 +1453,7 @@ function openReserveDialog(editId) {
 async function deleteReserve(r) {
   const n = state.data.allocations.filter((a) => a.reserveId === r.id).length;
   const m = state.data.transactionTemplates.filter((tp) => tp.template.type === "allocate" && tp.template.reserveId === r.id).length;
-  if (!confirm(__("Delete {name}? Its {n} allocation(s) and {m} template(s) are deleted too. Your accounts and transactions stay as they are.", { name: r.name, n, m }))) return;
+  if (!(await askConfirm(__("Delete {name}? Its {n} allocation(s) and {m} template(s) are deleted too. Your accounts and transactions stay as they are.", { name: r.name, n, m }), __("Delete")))) return;
   try { await api("/api/reserves/" + r.id, { method: "DELETE" }); msg(__("Deleted.")); location.hash = "#reserves"; await load(); } catch (e) { errMsg(e); }
 }
 // dir: "in" puts money in, "out" takes it out (with a button that fills in all the reserve
@@ -1479,7 +1479,7 @@ function openAllocDialog(reserveId, dir, editId) {
     a ? __("Save changes") : __(DIR_L[d]),
     a ? `<button type="button" class="smallbtn danger" id="dlgDelAlloc">${esc(__("Delete"))}</button>` : ""));
   onDlg("dlgDelAlloc", async () => {
-    if (!confirm(__("Delete this allocation? To undo a decision, add a new one instead."))) return;
+    if (!(await askConfirm(__("Delete this allocation? To undo a decision, add a new one instead."), __("Delete")))) return;
     try { await api("/api/allocations/" + a.id, { method: "DELETE" }); msg(__("Deleted.")); await load(); } catch (e) { errMsg(e); }
   });
   if (fill) {
@@ -1563,19 +1563,38 @@ const SET_ICON = {
 // Settings → Servers exists only inside the KiSiauThong app (apps/tauri), whose shell
 // injects kisiauthongApp; in a browser it is undefined and nothing changes (ADR 0019).
 const appShell = () => globalThis.kisiauthongApp || null;
+// Asks before a destructive action; ok names the action ("Delete"). A browser shows window.confirm().
+// Inside the app the system dialog comes through kisiauthongApp.confirm, because the macOS and iOS
+// webview answers window.confirm() with false without asking; where the app has no native dialog
+// (iOS, Android) it falls back to window.confirm(), which Android shows (ADR 0019).
+async function askConfirm(text, ok) {
+  const shell = appShell();
+  if (shell && typeof shell.confirm === "function") {
+    try { return (await shell.confirm(text, ok, __("Cancel"))) === true; } catch (e) { /* no native dialog on this platform */ }
+  }
+  return confirm(text);
+}
 function appServerRows(list) {
   const host = (u) => { try { return new URL(u).host; } catch (e) { return u; } };
   return list.servers.map((s) => {
-    const inUse = s.id === list.active;
-    return `<div class="srow srvrow"><div class="srvinfo"><span class="sl">${esc(s.name || host(s.url))}</span>${inUse ? ` <span class="pill on">${esc(__("In use"))}</span>` : ""}<div class="srvurl">${esc(s.url)}</div></div>
-      <div class="sbtns">${inUse ? "" : `<button type="button" class="smallbtn" data-srv-use="${esc(s.id)}">${esc(__("Switch"))}</button>`}<button type="button" class="smallbtn" data-srv-edit="${esc(s.id)}">${esc(__("Edit"))}</button><button type="button" class="smallbtn danger" data-srv-del="${esc(s.id)}">${esc(__("Remove"))}</button></div></div>`;
+    const inUse = s.id === list.active, name = s.name || host(s.url);
+    // each button says which server it acts on, for screen readers
+    const aria = (label) => `aria-label="${esc(__(label, { name }))}"`;
+    return `<div class="srow srvrow"><div class="srvinfo"><span class="sl">${esc(name)}</span>${inUse ? ` <span class="pill on">${esc(__("In use"))}</span>` : ""}<div class="srvurl">${esc(s.url)}</div></div>
+      <div class="sbtns">${inUse ? "" : `<button type="button" class="smallbtn" data-srv-use="${esc(s.id)}" ${aria(N_("Switch to {name}"))}>${esc(__("Switch"))}</button>`}<button type="button" class="smallbtn" data-srv-edit="${esc(s.id)}" ${aria(N_("Edit {name}"))}>${esc(__("Edit"))}</button><button type="button" class="smallbtn danger" data-srv-del="${esc(s.id)}" ${aria(N_("Remove {name}"))}>${esc(__("Remove"))}</button></div></div>`;
   }).join("") + `<div class="srow srvadd"><div><button type="button" class="ghostbtn" data-srv-add>${esc(__("Add server"))}</button></div></div>`;
 }
 async function drawAppServers() {
   const shell = appShell(), card = $("#set-servers .scard");
   if (!shell || !card) return;
   let list;
-  try { list = await shell.servers(); } catch (e) { $("#set-servers").hidden = true; return; }
+  try { list = await shell.servers(); } catch (e) {
+    // the page is not one of the saved servers: hide the section and its link in the section list
+    $("#set-servers").hidden = true;
+    const link = document.querySelector('.snav [data-goto="servers"]');
+    if (link) link.hidden = true;
+    return;
+  }
   card.innerHTML = appServerRows(list);
   const fail = (e) => msg(String((e && e.message) || e), "error");
   card.querySelectorAll("[data-srv-use]").forEach((b) => b.addEventListener("click", () => shell.use(b.dataset.srvUse).catch(fail)));
@@ -1584,9 +1603,7 @@ async function drawAppServers() {
   card.querySelectorAll("[data-srv-del]").forEach((b) => b.addEventListener("click", () => {
     const s = list.servers.find((x) => x.id === b.dataset.srvDel);
     if (!s) return;
-    // window.confirm() answers false in the macOS and iOS webview, so the app asks natively where it can
-    const text = __("Remove {name} from this app? Its books stay on the server.", { name: s.name || s.url });
-    shell.confirm(text, __("Remove"), __("Cancel")).catch(() => confirm(text))
+    askConfirm(__("Remove {name} from this app? Its books stay on the server.", { name: s.name || s.url }), __("Remove"))
       .then((yes) => yes && shell.remove(s.id).then(drawAppServers)).catch(fail);
   }));
 }
@@ -2438,7 +2455,7 @@ async function drawPasskeys() {
     + `<form id="pkAdd" class="srow"><span class="sl">${esc(__("Add a passkey"))}</span><div class="sc"><div class="inline"><input name="name" maxlength="60" value="${esc(deviceName())}" aria-label="${esc(__("Passkey name"))}"><button class="smallbtn" type="submit">${esc(__("Add"))}</button></div></div></form>`
     + (window.PublicKeyCredential ? "" : `<p class="formnote" style="padding:0 20px 14px">${esc(__("This browser does not support passkeys."))}</p>`);
   card.querySelectorAll("[data-pk-del]").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm(__("Remove this passkey? You will no longer be able to sign in with it."))) return;
+    if (!(await askConfirm(__("Remove this passkey? You will no longer be able to sign in with it."), __("Remove")))) return;
     try { await api("/api/me/passkeys/" + encodeURIComponent(b.dataset.pkDel), { method: "DELETE" }); msg(__("Passkey removed.")); drawPasskeys(); } catch (e) { errMsg(e); }
   }));
   $("#pkAdd").addEventListener("submit", async (e) => {
@@ -2567,7 +2584,7 @@ async function drawUsers() {
   }));
   card.querySelectorAll("[data-u-del]").forEach((b) => b.addEventListener("click", async () => {
     const id = idOf(b);
-    if (!confirm(__("Delete {name} and all of their books? This cannot be undone.", { name: nameOf(id) }))) return;
+    if (!(await askConfirm(__("Delete {name} and all of their books? This cannot be undone.", { name: nameOf(id) }), __("Delete")))) return;
     try { await api("/api/users/" + encodeURIComponent(id), { method: "DELETE" }); msg(__("User deleted.")); drawUsers(); } catch (e) { errMsg(e); }
   }));
   $("#userAdd").addEventListener("submit", async (e) => {
@@ -2608,7 +2625,7 @@ async function drawKeys(created) {
   const copy = $("#newKeyCopy");
   if (copy) copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(created.key); msg(__("Copied.")); } catch (e) { getSelection().selectAllChildren($("#newKeyText")); } });
   card.querySelectorAll("[data-key-del]").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm(__("Revoke this key? Anything using it stops working at once."))) return;
+    if (!(await askConfirm(__("Revoke this key? Anything using it stops working at once."), __("Revoke")))) return;
     try { await api("/api/me/keys/" + encodeURIComponent(b.dataset.keyDel), { method: "DELETE" }); msg(__("Key revoked.")); drawKeys(); } catch (e) { errMsg(e); }
   }));
   // "On a date…": the key works through the end of the chosen day, in the display time zone

@@ -55,10 +55,15 @@ struct ServerList {
     servers: Vec<Profile>,
 }
 
-/// The bundled server screen: tauri://localhost on Apple platforms (and
-/// Linux), http://tauri.localhost on Windows and Android.
+/// The bundled server screen: exactly tauri://localhost on Apple platforms
+/// (and Linux), http://tauri.localhost on Windows and Android. Nothing else
+/// counts, not https://tauri.localhost nor another tauri:// host; check_url
+/// also refuses to save a server on the app's own host names.
 fn is_local(url: &Url) -> bool {
-    url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost")
+    #[cfg(any(windows, target_os = "android"))]
+    return url.scheme() == "http" && url.host_str() == Some("tauri.localhost") && url.port().is_none();
+    #[cfg(not(any(windows, target_os = "android")))]
+    return url.scheme() == "tauri" && url.host_str() == Some("localhost") && url.port().is_none();
 }
 
 fn screen_url(params: &[(&str, &str)]) -> Url {
@@ -115,7 +120,8 @@ fn grant(app: &AppHandle, server_url: &str) {
 
 // The capabilities already limit who may call what; the commands check again
 // against the current list, because a removed server keeps its capability
-// until the app restarts.
+// until the app restarts: Tauri can add a capability at run time but not take
+// one back, and a deny capability would stay if the same server is added again.
 fn require_local(w: &Webview) -> Result<(), String> {
     match w.url() {
         Ok(u) if is_local(&u) => Ok(()),
@@ -412,9 +418,19 @@ mod tests {
 
     #[test]
     fn local_and_known_pages() {
-        assert!(is_local(&Url::parse("tauri://localhost/index.html").unwrap()));
-        assert!(is_local(&Url::parse("http://tauri.localhost/index.html?mode=add").unwrap()));
-        assert!(!is_local(&Url::parse("https://tauri.localhost.example.org/").unwrap()));
+        assert!(is_local(&screen_url(&[])));
+        assert!(is_local(&screen_url(&[("mode", "add")])));
+        for other in [
+            "https://tauri.localhost/",
+            "https://tauri.localhost.example.org/",
+            "http://tauri.localhost:8080/",
+            "tauri://evil.example/",
+            "tauri://localhost:9728/",
+        ] {
+            assert!(!is_local(&Url::parse(other).unwrap()), "{other} is not the server screen");
+        }
+        #[cfg(not(any(windows, target_os = "android")))]
+        assert!(!is_local(&Url::parse("http://tauri.localhost/index.html").unwrap()), "only the platform's own form");
         let mut s = Store::default();
         s.upsert(None, None, "https://books.example.org/kisiauthong/").unwrap();
         assert!(known(&s, &Url::parse("https://books.example.org/kisiauthong/#settings").unwrap()));

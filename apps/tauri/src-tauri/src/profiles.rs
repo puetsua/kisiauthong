@@ -11,7 +11,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use url::Url;
+use url::{Host, Url};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -133,15 +133,27 @@ impl Store {
     }
 }
 
+/// Host names the shell itself answers on Windows and Android (the server
+/// screen and the IPC channel); a server there would pass for the app.
+const RESERVED_HOSTS: &[&str] = &["tauri.localhost", "ipc.localhost"];
+
 /// The checks the shell repeats on an address from the server screen: http or
-/// https, a host, no user name or password, no query or fragment, a trailing slash.
+/// https, a host that is not the app's own, no user name or password,
+/// unencrypted http:// only on the own network, no query or fragment, a
+/// trailing slash.
 pub fn check_url(input: &str) -> Result<String, String> {
     let mut u = Url::parse(input.trim()).map_err(|_| "Not a valid address.".to_string())?;
     if !matches!(u.scheme(), "http" | "https") || u.host_str().is_none_or(str::is_empty) {
         return Err("Only http:// and https:// addresses are supported.".into());
     }
+    if u.host_str().is_some_and(|h| RESERVED_HOSTS.contains(&h)) {
+        return Err("That address belongs to the app itself.".into());
+    }
     if !u.username().is_empty() || u.password().is_some() {
         return Err("The address must not contain a user name or password.".into());
+    }
+    if !cleartext_allowed(u.as_str()) {
+        return Err("Unencrypted http:// is allowed only on your own network; use an https:// address.".into());
     }
     u.set_query(None);
     u.set_fragment(None);
@@ -150,6 +162,34 @@ pub fn check_url(input: &str) -> Result<String, String> {
         u.set_path(&p);
     }
     Ok(u.to_string())
+}
+
+/// Unencrypted http:// is allowed only on the user's own network: loopback,
+/// private and link-local addresses, 100.64.0.0/10 (Tailscale), IPv6 ULA and
+/// link-local, localhost, .local and single-label names (ADR 0019). The same
+/// rule as cleartextAllowed in ../src/connect.js; both are tested against
+/// ../test/cleartext-cases.json. Any other scheme is not this rule's business.
+pub fn cleartext_allowed(url: &str) -> bool {
+    let Ok(u) = Url::parse(url) else { return false };
+    if u.scheme() != "http" {
+        return true;
+    }
+    match u.host() {
+        Some(Host::Ipv4(a)) => {
+            let [x, y, ..] = a.octets();
+            a.is_loopback() || a.is_private() || a.is_link_local() || (x == 100 && (64..=127).contains(&y))
+        }
+        Some(Host::Ipv6(a)) => {
+            let s = a.segments()[0];
+            a.is_loopback() || s & 0xfe00 == 0xfc00 || s & 0xffc0 == 0xfe80
+        }
+        Some(Host::Domain(d)) => {
+            let d = d.to_ascii_lowercase();
+            let d = d.trim_end_matches('.');
+            d == "localhost" || d.ends_with(".localhost") || d.ends_with(".local") || !d.contains('.')
+        }
+        None => false,
+    }
 }
 
 /// scheme://host[:port] of an address, the unit the webview's cookies and the
@@ -242,9 +282,31 @@ mod tests {
         assert!(check_url("ftp://example.org/").is_err());
         assert!(check_url("https://me:pw@example.org/").is_err());
         assert!(check_url("not a url").is_err());
+        assert!(check_url("http://books.example.org/").is_err(), "the cleartext rule, repeated");
+        assert_eq!(check_url("http://192.168.1.20:8080").unwrap(), "http://192.168.1.20:8080/");
+        assert!(check_url("http://tauri.localhost/").is_err(), "the app's own host");
+        assert!(check_url("https://ipc.localhost/").is_err());
         assert_eq!(origin_of("https://books.example.org/kisiauthong/").as_deref(), Some("https://books.example.org"));
         assert_eq!(origin_of("http://100.64.0.12:9700/").as_deref(), Some("http://100.64.0.12:9700"));
         assert_eq!(origin_of("tauri://localhost/index.html"), None);
+    }
+
+    #[derive(Deserialize)]
+    struct Cases {
+        allowed: Vec<String>,
+        blocked: Vec<String>,
+    }
+
+    #[test]
+    fn cleartext_rule_matches_the_server_screen() {
+        let cases: Cases = serde_json::from_str(include_str!("../../test/cleartext-cases.json")).unwrap();
+        assert!(cases.allowed.len() > 10 && cases.blocked.len() > 5);
+        for u in &cases.allowed {
+            assert!(cleartext_allowed(u), "{u} should be allowed");
+        }
+        for u in &cases.blocked {
+            assert!(!cleartext_allowed(u), "{u} should be blocked");
+        }
     }
 
     #[test]

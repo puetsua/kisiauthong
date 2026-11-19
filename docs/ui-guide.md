@@ -233,7 +233,7 @@ topmost popup only.
 | Menu | `.usermenu`, `.actmenu` | a short list of actions on one thing | choosing, clicking outside, Esc (focus returns to the trigger) |
 | Notifications | `#notifPanel` | the bell's list | the bell, clicking outside, Esc |
 | Bottom sheet | `#moreSheet` | phone navigation only | link, backdrop, Esc |
-| `confirm()` | browser | one-line yes/no before deleting | — |
+| `askConfirm(text, action)` | browser `confirm()`; the system dialog inside the app (ADR 0019) | one-line yes/no before deleting; `action` names the button ("Delete") | — |
 
 ### Transaction panel
 

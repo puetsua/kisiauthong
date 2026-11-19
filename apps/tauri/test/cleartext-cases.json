@@ -1,0 +1,33 @@
+{
+  "comment": "Where unencrypted http:// is allowed (ADR 0019). Read by scripts/test-app.js for connect.js and by cargo test for profiles.rs, so both sides keep the same rule.",
+  "allowed": [
+    "https://books.example.org/",
+    "http://localhost:8080/",
+    "http://localhost.:8080/",
+    "http://dev.localhost/",
+    "http://127.0.0.1:9728/",
+    "http://10.0.0.5/",
+    "http://172.16.0.1/",
+    "http://172.31.255.1/",
+    "http://192.168.1.20:8080/",
+    "http://169.254.1.1/",
+    "http://100.64.0.12:9700/",
+    "http://100.127.255.254/",
+    "http://nas.local/",
+    "http://nas/",
+    "http://[::1]:8080/",
+    "http://[fd7a:115c:a1e0::1]/",
+    "http://[fe80::1]/"
+  ],
+  "blocked": [
+    "http://books.example.org/",
+    "http://books.tailnet.ts.net/",
+    "http://8.8.8.8/",
+    "http://172.32.0.1/",
+    "http://100.128.0.1/",
+    "http://100.63.255.255/",
+    "http://192.169.0.1/",
+    "http://[2001:db8::1]/",
+    "not a url"
+  ]
+}
