@@ -48,14 +48,11 @@ test("statusUrl is relative to the base path", () => {
   assert.strictEqual(C.statusUrl("https://books.example.org/kisiauthong/"), "https://books.example.org/kisiauthong/api/auth/status");
 });
 
-test("cleartextAllowed: https always; http only on the own network", () => {
-  for (const u of ["https://books.example.org/", "http://localhost:8080/", "http://127.0.0.1:9728/", "http://10.0.0.5/",
-    "http://172.16.0.1/", "http://172.31.255.1/", "http://192.168.1.20:8080/", "http://169.254.1.1/", "http://100.64.0.12:9700/",
-    "http://100.127.255.254/", "http://nas.local/", "http://nas/", "http://[::1]:8080/", "http://[fd7a:115c:a1e0::1]/", "http://[fe80::1]/"])
-    assert.strictEqual(C.cleartextAllowed(u), true, u);
-  for (const u of ["http://books.example.org/", "http://books.tailnet.ts.net/", "http://8.8.8.8/", "http://172.32.0.1/",
-    "http://100.128.0.1/", "http://192.169.0.1/", "http://[2001:db8::1]/", "not a url"])
-    assert.strictEqual(C.cleartextAllowed(u), false, u);
+test("cleartextAllowed: https always; http only on the own network (cases shared with the Rust shell)", () => {
+  const cases = JSON.parse(fs.readFileSync(path.join(root, "apps", "tauri", "test", "cleartext-cases.json"), "utf8"));
+  assert.ok(cases.allowed.length > 10 && cases.blocked.length > 5);
+  for (const u of cases.allowed) assert.strictEqual(C.cleartextAllowed(u), true, u);
+  for (const u of cases.blocked) assert.strictEqual(C.cleartextAllowed(u), false, u);
 });
 
 const base = "https://books.example.org/kisiauthong/";
@@ -135,6 +132,22 @@ test("the bridge script is plain, valid JavaScript", () => {
     assert.ok(src.includes(`"${cmd}"`), cmd);
     assert.ok(fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "permissions", "app.toml"), "utf8").includes(`allow-${cmd.replace(/_/g, "-")}`), `bridge permission for ${cmd}`);
   }
+});
+
+test("the bridge passes confirm() to the shell's native dialog", async () => {
+  const src = fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "src", "bridge.js"), "utf8");
+  const calls = [];
+  const win = { __TAURI_INTERNALS__: { invoke: (cmd, args) => { calls.push([cmd, args]); return Promise.resolve(true); } } };
+  win.top = win;
+  const doc = { addEventListener: () => {} };
+  new Function("window", "document", "location", src)(win, doc, { href: "https://books.example.org/" });
+  assert.strictEqual(await win.kisiauthongApp.confirm("Delete this transaction?", "Delete", "Cancel"), true);
+  assert.deepStrictEqual(calls.pop(), ["confirm", { message: "Delete this transaction?", ok: "Delete", cancel: "Cancel" }]);
+  await win.kisiauthongApp.confirm("Sure?");
+  assert.deepStrictEqual(calls.pop(), ["confirm", { message: "Sure?", ok: null, cancel: null }], "no labels: the system's OK and Cancel");
+  const frame = { top: {}, __TAURI_INTERNALS__: win.__TAURI_INTERNALS__ };
+  new Function("window", "document", "location", src)(frame, doc, {});
+  assert.strictEqual(frame.kisiauthongApp, undefined, "not in frames");
 });
 
 (async () => {
