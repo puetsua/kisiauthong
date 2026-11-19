@@ -13,15 +13,18 @@ apps/tauri/
     connect.js          pure rules: normalise an address, the http:// rule, read the check's answer
     strings.js          English and zh-TW strings of the screen
     first-run.js        the screen's behaviour
+    update.js           the App updates screen (mode=update; Android)
     style.css           tokens copied from web/style.css (checked by scripts/test-app.js)
   src-tauri/
     src/lib.rs          window, navigation guard, commands, per-server capabilities
     src/profiles.rs     servers.json: saved servers and the one in use
     src/probe.rs        GET <server>api/auth/status with the system TLS stack
+    src/update.rs       app updates: pick a newer release's APK (ADR 0020)
     src/bridge.js       injected into every page: window.kisiauthongApp, links to the system browser
     capabilities/       the bundled screen's capability (saved servers get theirs at run time)
     permissions/app.toml  the "server-screen" and "bridge" permission sets
     Info.plist, Info.ios.plist  App Transport Security: https, except on the local network
+    gen/android/        the Android project (committed): UpdatePlugin.kt, manifest, release signing, icons
   test/cleartext-cases.json   where http:// is allowed; the same cases for connect.js and profiles.rs
 ```
 
@@ -51,14 +54,23 @@ apps/tauri/
    Cancel goes back to the sign-in page. In a browser the row is not there.
 5. Pages may only stay on the bundled screen or a saved server's origin. Other
    links, `target="_blank"` and `window.open` open in the system browser.
+6. **App updates** ([ADR 0020](../../docs/decisions/0020-app-updates.md)).
+   Settings → About shows the app's version. On Android, *Check for updates*
+   opens the bundled App updates screen. It asks GitHub for the latest release,
+   only then, and installs `kisiauthong-app-<version>-android.apk` only after
+   the user taps *Download and install*. The download must match the size and
+   SHA-256 in the release, and Android's installer requires the same signing
+   key. Desktop updates are #33; iOS updates come from the App Store.
 
 The bridge is reachable only from the bundled screen and from saved server
 origins: Tauri rejects app commands from remote pages unless a capability
 grants them, and the app adds one per saved origin at run time with only the
 `bridge` set (list, switch, remove, open the add/edit screen, open a link
-outside, ask a yes/no question in a native dialog). The commands check the
-calling page's origin again; a removed server's capability stays until the
-app restarts, because Tauri cannot take a run-time capability back.
+outside, ask a yes/no question in a native dialog, read the app's version,
+open the App updates screen). Checking for and installing an update is only
+allowed from the bundled screen. The commands check the calling page's origin
+again; a removed server's capability stays until the app restarts, because
+Tauri cannot take a run-time capability back.
 
 Questions before destructive actions (delete a transaction, reserve,
 allocation or user; remove a passkey or a server; revoke an API key) go
@@ -124,7 +136,7 @@ Check that `NSAppTransportSecurity` / `NSAllowsLocalNetworking` from
 `Info.ios.plist` reached the generated `Info.plist`; without it every
 `http://` server, even on the local network, is blocked by iOS.
 
-### Android (not built here yet)
+### Android
 
 Needs Android Studio with the SDK, the NDK and platform tools, and
 `JAVA_HOME`, `ANDROID_HOME` and `NDK_HOME` set as in the Tauri prerequisites.
@@ -132,13 +144,32 @@ Needs Android Studio with the SDK, the NDK and platform tools, and
 ```sh
 rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 cd apps/tauri
-npx tauri android init         # creates src-tauri/gen/android
-npx tauri android dev
+npx tauri android dev          # src-tauri/gen/android is committed; do not run `android init` over it
 npx tauri android build --apk
 ```
 
-Open points for the first Android build:
+Release builds are signed with the key named in `src-tauri/gen/android/keystore.properties`
+(`storeFile=<path to .jks>`, `password=…`, `keyAlias=kisiauthong`), which git
+ignores; keep the key and its password outside the repo, backed up. Every
+release must use the same key, or installed apps cannot update. The release
+workflow builds the APK when the secrets `ANDROID_KEYSTORE_BASE64` (the `.jks`
+file, base64) and `ANDROID_KEYSTORE_PASSWORD` are set.
 
+To test updates without a release, a **debug** build reads `update-source.txt`
+in the app data folder (`/data/user/0/io.github.puetsua.kisiauthong/`): line 1
+is the release JSON URL, line 2 the prefix downloads must start with. Serve a
+higher-version debug APK and a release JSON next to it, and use `adb reverse`
+so the emulator reaches it as `127.0.0.1`.
+
+Open points for Android:
+
+- **Local network protection** (Android 17, target SDK 37): an app may reach
+  addresses on the phone's own Wi-Fi network (192.168.x.x, 10.x, the
+  emulator's 10.0.2.2) only with the runtime permission `ACCESS_LOCAL_NETWORK`.
+  The app does not ask for it: the expected way to reach a home server from a
+  phone is Tailscale or a similar VPN. Not yet tried on a device: that a
+  Tailscale `100.x.y.z` address is outside this protection. In the emulator,
+  use `adb reverse` and `127.0.0.1`.
 - The server check uses rustls with the platform verifier on Android, which
   needs `rustls_platform_verifier::android::init_hosted` called with the JNI
   context at start-up (see the rustls-platform-verifier README); until then
@@ -147,5 +178,5 @@ Open points for the first Android build:
   `gen/android/app/src/main/AndroidManifest.xml` (the generated template allows
   it only in debug builds); the app's own rule still blocks it off the local
   network.
-- `src-tauri/gen/` is ignored by git for now; once the iOS and Android
-  projects are customised, commit `gen/apple` and `gen/android`.
+- `src-tauri/gen/android` is committed (ADR 0020); `gen/apple` is still
+  ignored until the iOS project is customised.

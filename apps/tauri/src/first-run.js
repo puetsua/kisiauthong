@@ -6,6 +6,7 @@
 //              it checks that server and opens it, or shows why it cannot
 //   mode=add   Settings → Servers → Add server
 //   mode=edit  Settings → Servers → Edit, with id=<profile id>
+//   mode=update  Settings → About → Check for updates (Android): update.js
 // lang=<tag> comes from the web UI so the screen keeps its language; otherwise
 // the system locale decides. On success the shell moves the window to the server.
 "use strict";
@@ -13,6 +14,7 @@
   const { checkServer, normalizeServerUrl, pickLang } = window.KstConnect;
   const $ = (id) => document.getElementById(id);
   const q = new URLSearchParams(location.search);
+  if (q.get("mode") === "update") return;
   const call = (cmd, args) => {
     const t = window.__TAURI_INTERNALS__;
     return t ? t.invoke(cmd, args || {}) : Promise.reject(new Error("not running in the app"));

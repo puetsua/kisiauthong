@@ -103,9 +103,69 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  android:
+    # The Android app (ADR 0020), signed with the release key from the secrets
+    # ANDROID_KEYSTORE_BASE64 (the .jks file, base64) and ANDROID_KEYSTORE_PASSWORD.
+    # Without them the release goes ahead with no Android app.
+    name: Android app
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/tauri
+    steps:
+      - uses: actions/checkout@v7
+      - name: Signing key
+        id: key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::warning::No Android signing key in the secrets; this release has no Android app."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          # a .properties value: escape backslashes and a leading space
+          password=$(printf '%s' "$KEYSTORE_PASSWORD" | sed -e 's/\\/\\\\/g' -e 's/^ /\\ /')
+          printf 'storeFile=%s\npassword=%s\nkeyAlias=kisiauthong\n' "$RUNNER_TEMP/release.jks" "$password" > src-tauri/gen/android/keystore.properties
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v7
+        if: steps.key.outputs.ok == 'true'
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/tauri/package-lock.json
+      - name: Rust, JDK and NDK
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+      - name: Build
+        if: steps.key.outputs.ok == 'true'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          npm ci
+          npx tauri android build --apk --config "{\"version\":\"$TAG\"}"
+          mkdir -p "$GITHUB_WORKSPACE/dist-android"
+          cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
+            "$GITHUB_WORKSPACE/dist-android/kisiauthong-app-$TAG-android.apk"
+      - uses: actions/upload-artifact@v7
+        if: steps.key.outputs.ok == 'true'
+        with:
+          name: android
+          path: dist-android/
+          if-no-files-found: error
+
   release:
     name: GitHub release
-    needs: [binaries, docker]
+    needs: [binaries, docker, android]
+    # a failed Android build leaves the APK out; it never holds back the server release
+    if: ${{ !cancelled() && needs.binaries.result == 'success' && needs.docker.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -114,6 +174,12 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: dist
+          path: dist
+      - uses: actions/download-artifact@v8
+        # absent when the Android job had no signing key
+        continue-on-error: true
+        with:
+          name: android
           path: dist
       - name: Create the release
         env:
@@ -143,6 +209,13 @@ jobs:
           | Linux, ARM 32-bit (older Raspberry Pi) | \`linux-armv7.tar.gz\` |
 
           EOF
+          if [ -f "dist/kisiauthong-app-${TAG}-android.apk" ]; then
+            (cd dist && sha256sum "kisiauthong-app-${TAG}-android.apk" >> SHA256SUMS)
+            cat >> notes.md <<EOF
+          **Android app**: \`kisiauthong-app-${TAG}-android.apk\` opens your own server. Once installed, it updates itself from Settings → About → Check for updates.
+
+          EOF
+          fi
           prerelease=""
           [[ "$TAG" == *-* ]] && prerelease="--prerelease"
           gh release create "$TAG" dist/* --verify-tag --title "$TAG" --notes-file notes.md --generate-notes $prerelease

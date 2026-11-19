@@ -2142,6 +2142,7 @@ version = "0.3.0"
 dependencies = [
  "reqwest",
  "rfd",
+ "semver",
  "serde",
  "serde_json",
  "sys-locale",
