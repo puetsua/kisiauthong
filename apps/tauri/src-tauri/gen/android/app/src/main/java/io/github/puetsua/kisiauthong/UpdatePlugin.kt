@@ -127,7 +127,7 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
                 val n = input.read(buf)
                 if (n < 0) break
                 total += n
-                if (total > args.size) throw IOException("the download is larger than the release says")
+                if (total > args.size) break // larger than the release says: the check below rejects it
                 md.update(buf, 0, n)
                 out.write(buf, 0, n)
               }

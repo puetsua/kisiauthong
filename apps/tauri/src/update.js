@@ -66,6 +66,7 @@
     busy = true;
     $("updErr").hidden = true;
     setButton(S.updDownloading, true);
+    $("updBack").disabled = true; // stay until the installer opens or an error shows
     try {
       const status = await call("update_install");
       $("updStatus").textContent = status === "permission" ? S.updPermission : S.updStarted;
@@ -73,6 +74,7 @@
       showError(S.updInstallFailed, describe(e));
     }
     busy = false;
+    $("updBack").disabled = false;
     // still enabled after the installer opened: each download is a new file, so a retry is safe
     setButton(S.updInstall);
   }

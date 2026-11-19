@@ -246,6 +246,19 @@ fn save_server(
     go(&webview, target)
 }
 
+/// Where Back from the bundled screen may go: `back` only when it is a page of
+/// a saved server.
+fn back_to(store: &Store, back: Option<&str>) -> Option<Url> {
+    back.and_then(|b| Url::parse(b).ok()).filter(|u| known(store, u))
+}
+
+/// Whether the App updates screen may ask GitHub now: always on a tap, and on
+/// load only once after the user opened the screen (the flag is used up).
+fn may_check(asked: &AtomicBool, on_load: bool) -> bool {
+    let was_asked = asked.swap(false, Ordering::SeqCst);
+    !on_load || was_asked
+}
+
 /// Leaves the bundled screen: to `back` when it is a page of a saved server
 /// (the App updates screen passes the page that opened it), otherwise to the
 /// active server's Settings.
@@ -254,7 +267,7 @@ fn cancel_form(webview: Webview, shell: State<'_, Shell>, back: Option<String>) 
     require_local(&webview)?;
     let target = {
         let store = shell.store.lock().unwrap();
-        match back.as_deref().and_then(|b| Url::parse(b).ok()).filter(|u| known(&store, u)) {
+        match back_to(&store, back.as_deref()) {
             Some(u) => u,
             None => match store.active_profile() {
                 Some(a) => settings_of(a)?,
@@ -272,8 +285,7 @@ fn cancel_form(webview: Webview, shell: State<'_, Shell>, back: Option<String>) 
 async fn update_check(app: AppHandle, webview: Webview, on_load: Option<bool>) -> Result<UpdateCheck, String> {
     require_local(&webview)?;
     let current = app.package_info().version.to_string();
-    let asked = app.state::<Shell>().update_asked.swap(false, Ordering::SeqCst);
-    if on_load.unwrap_or(false) && !asked {
+    if !may_check(&app.state::<Shell>().update_asked, on_load.unwrap_or(false)) {
         return Ok(UpdateCheck { current, update: None, checked: false });
     }
     let found = android::check(&app, &current).await?;
@@ -639,6 +651,31 @@ mod tests {
         assert!(!known(&s, &Url::parse("http://books.example.org/kisiauthong/").unwrap()), "other scheme");
         assert!(!known(&s, &Url::parse("https://books.example.org:8443/").unwrap()), "other port");
         assert!(!known(&s, &Url::parse("https://www.gnu.org/licenses/agpl-3.0.html").unwrap()));
+    }
+
+    #[test]
+    fn back_goes_only_to_a_saved_server() {
+        let mut s = Store::default();
+        s.upsert(None, None, "https://books.example.org/kisiauthong/").unwrap();
+        let ok = "https://books.example.org/kisiauthong/#settings?about";
+        assert_eq!(back_to(&s, Some(ok)).map(|u| u.to_string()).as_deref(), Some(ok));
+        assert_eq!(back_to(&s, Some("https://evil.example/#settings")), None, "not a saved server");
+        assert_eq!(back_to(&s, Some("http://tauri.localhost/index.html")), None, "not the screen itself");
+        assert_eq!(back_to(&s, Some("not a url")), None);
+        assert_eq!(back_to(&s, None), None);
+    }
+
+    #[test]
+    fn the_screen_asks_github_once_per_opening() {
+        let asked = AtomicBool::new(false);
+        assert!(!may_check(&asked, true), "loaded without the user opening it (Back into the screen)");
+        asked.store(true, Ordering::SeqCst); // the user opened App updates
+        assert!(may_check(&asked, true), "the check on load right after opening");
+        assert!(!may_check(&asked, true), "not again on the next load");
+        assert!(may_check(&asked, false), "a tap on Check always asks");
+        asked.store(true, Ordering::SeqCst);
+        assert!(may_check(&asked, false));
+        assert!(!may_check(&asked, true), "a tap uses up the opening too");
     }
 
     #[test]
