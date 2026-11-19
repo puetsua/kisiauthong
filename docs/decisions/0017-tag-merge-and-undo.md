@@ -20,10 +20,10 @@ starts (A) was chosen.
 
 ## Decision
 
-- **UI.** The Tags page has a "Merge tags…" button. It switches the page to
+- **UI.** The Tags page has a "Manage tags" button. It switches the page to
   select mode: every tag as a checkbox card, sorted by name with width,
   case and spacing folded (a plain sort; nothing is highlighted, labelled
-  or pre-selected). A sticky bar "Merge N tags" opens the confirmation:
+  or pre-selected). A sticky bar button "Merge options" opens the confirmation:
   which tag is kept (the most used one to start with), its name, the
   budget when that needs a choice, and what changes, from the server's dry
   run. The result is the kept tag's page with a 10-second Undo toast.

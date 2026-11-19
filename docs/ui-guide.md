@@ -192,10 +192,11 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   (not a button there: `.acard.static`), never a longer one;
   details go in the panels under it. An account's page puts its blue
   Scheduled panel beside the card on wide screens (`.acctpage.withsched`).
-- **Select mode** (Tags → Merge tags…): the page becomes checkbox cards
+- **Select mode** (Tags → Manage tags): the page becomes checkbox cards
   (real `<input type="checkbox">` in a `<label class="tcard pcard">`), with a
   Cancel in a head panel and a sticky `.mergebar` holding the live count
-  (`aria-live`) and the action; the + button hides. Leaving the page ends
+  (`aria-live`) and the action (Merge options, which opens the
+  confirmation dialog); the + button hides. Leaving the page ends
   it. Nothing is pre-selected and the order is a plain sort (ADR 0015).
 - **Empty states**: `.empty`, one short sentence; add how to create the first
   item only when it is not obvious.

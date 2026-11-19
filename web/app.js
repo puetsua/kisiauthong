@@ -1223,7 +1223,7 @@ function screenTags(v) {
   v.innerHTML = section(__("Budgets"), budgets, budgetCard, addTile("newBudget", __("Add budget")))
     + section(__("Categories"), cats, categoryCard, addTile("newCategory", __("New category")), switcher);
   if (tags.length > 1) {
-    v.insertAdjacentHTML("afterbegin", `<div class="pagebar"><span class="muted">${esc(__("{n} tags", { n: tags.length }))}</span><button type="button" class="smallbtn" id="tagMerge">${esc(__("Merge tags…"))}</button></div>`);
+    v.insertAdjacentHTML("afterbegin", `<div class="pagebar"><span class="muted">${esc(__("{n} tags", { n: tags.length }))}</span><button type="button" class="smallbtn" id="tagMerge">${esc(__("Manage tags"))}</button></div>`);
     $("#tagMerge").addEventListener("click", () => { state.tagPick = new Set(); render(); $("#pickTitle").focus(); }); // focus the heading, not a tag: none is singled out
   }
   v.querySelectorAll("[data-tag-range]").forEach((b) => b.addEventListener("click", () => { setTagRange(b.dataset.tagRange); render(); }));
@@ -1255,7 +1255,7 @@ function screenTagPick(v) {
     $("#pickCount").textContent = __("{n} selected", { n });
     $("#pickNone").hidden = !n;
     $("#pickGo").disabled = n < 2;
-    $("#pickGo").textContent = n < 2 ? __("Pick 2 or more") : __("Merge {n} tags", { n });
+    $("#pickGo").textContent = n < 2 ? __("Pick 2 or more") : __("Merge options");
   };
   v.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("change", () => { if (b.checked) sel.add(b.dataset.pick); else sel.delete(b.dataset.pick); draw(); }));
   $("#pickCancel").addEventListener("click", () => { state.tagPick = null; render(); });
