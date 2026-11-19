@@ -130,9 +130,15 @@ var uiLanguages = map[string]bool{"en": true, "zh-TW": true}
 
 const maxCurrencies = 50
 
-// AboutInfo is read-only and comes from the environment, not the settings table.
+// AboutInfo is read-only and comes from the environment and the build, not
+// the settings table. The version fields are the ones the build stamps
+// (version.go); nothing about the host, paths or the database.
 type AboutInfo struct {
 	SourceURL string `json:"sourceUrl"`
+	Version   string `json:"version"`   // "0.2.0", "0.2.0-1118-c22ff51" or "dev", never a "v" prefix
+	Commit    string `json:"commit"`    // full commit hash, "" when the build did not stamp one
+	BuildTime string `json:"buildTime"` // RFC 3339 UTC, "" when the build did not stamp one
+	Nightly   bool   `json:"nightly"`   // an automatic nightly test build
 }
 
 // NotificationSettings remembers which derived notifications the user
@@ -360,6 +366,7 @@ func (s *Book) loadSettings() (Settings, error) {
 	if out.About.SourceURL == "" {
 		out.About.SourceURL = defaultSourceURL
 	}
+	buildAbout(&out.About)
 	return out, nil
 }
 

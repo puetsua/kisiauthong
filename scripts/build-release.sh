@@ -8,6 +8,10 @@
 #
 #   scripts/build-release.sh 1.2.3 [outdir]       (outdir defaults to dist/)
 #
+# The version (no "v" prefix), the commit (COMMIT, default: git HEAD) and the
+# build time (BUILD_TIME, default: now, UTC) are stamped into the executable
+# and shown in Settings → About (ADR 0018).
+#
 # Needs Go, tar, zip and sha256sum. The server is pure Go (SQLite included),
 # so every platform cross-compiles with CGO_ENABLED=0.
 set -euo pipefail
@@ -18,6 +22,9 @@ out="${2:-$root/dist}"
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 work="$(mktemp -d)"
+commit="${COMMIT:-$(git -C "$root" rev-parse HEAD 2>/dev/null || true)}"
+built="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+ldflags="-s -w -X main.appVersion=$version -X main.commit=$commit -X main.buildTime=$built"
 
 # the web UI is embedded from server/web (build tag embedweb)
 rm -rf "$root/server/web"
@@ -39,7 +46,7 @@ for target in "${targets[@]}"; do
   mkdir -p "$work/$name"
   echo "building $name"
   (cd "$root/server" && CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
-    go build -trimpath -tags embedweb -ldflags "-s -w -X main.appVersion=$version" -o "$work/$name/$exe" .)
+    go build -trimpath -tags embedweb -ldflags "$ldflags" -o "$work/$name/$exe" .)
   cp "$root/LICENSE" "$root/README.md" "$work/$name/"
   if [[ "$goos" == windows ]]; then
     (cd "$work" && zip -qr "$out/$name.zip" "$name")

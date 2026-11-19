@@ -201,7 +201,7 @@ docker compose -f deploy/docker-compose.yml up --build
 
 - Start by reading this file, `README.md`, and any ADR touching your area. Check `git status` / open changes before editing; do not overwrite uncommitted user work.
 - Keep changes scoped to the platform(s) the task names. A fix in shared logic belongs in `packages/core` (with tests), not copied into each app.
-- Before proposing UI, read the Principles in `docs/ui-guide.md`; the app does not nudge or second-guess the user (ADR 0015). Version strings have no `v` prefix (`0.2.0`, ADR 0009).
+- Before proposing UI, read the Principles in `docs/ui-guide.md`; the app does not nudge or second-guess the user (ADR 0015). Version strings have no `v` prefix (`0.2.0`, ADR 0009); builds stamp version, commit, build time and channel (ADR 0018).
 - Prefer the existing stack and layout in §2. Creating a new app, swapping a framework, or changing the sync/conflict model requires an ADR and explicit user approval.
 - Never invent a second money representation, date format, or DTO shape — reuse `packages/core` and the OpenAPI contract.
 - Verify before reporting done: run the touched package's build + tests and quote the result. If you cannot run a platform (e.g. no Android SDK here), say which platforms are unverified instead of claiming full verification.

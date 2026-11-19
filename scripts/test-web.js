@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -167,4 +167,35 @@ test("zh-TW: the summary line and the card read as designed", () => {
   t.setLang("en");
 });
 
+// the version (#14): shown as the build stamped it, never with a "v" prefix; a chip only for nightly
+const sha = "c22ff51a3e9d07b41f6c2580e9a7d13b64f0c8e2"; // made up
+const builds = {
+  release: { version: "0.2.0", commit: sha, buildTime: "2026-11-12T08:30:05Z", nightly: false },
+  nightly: { version: "0.2.0-1118-c22ff51", commit: sha, buildTime: "2026-11-17T19:00:12Z", nightly: true },
+  dev: { version: "dev", commit: "", buildTime: "", nightly: false },
+};
+const aboutRows = (a) => t.verAboutRows(a, (label, control) => `<row>${label}|${control}</row>`, "https://example.invalid/src/").join("");
+test("version text: chip only for nightly, no v prefix", () => {
+  assert.strictEqual(t.verHTML(builds.release), '<span class="vertext">0.2.0</span>');
+  assert.strictEqual(t.verHTML(builds.nightly), '<span class="vertext">0.2.0-1118-c22ff51</span><span class="verchip">nightly</span>');
+  assert.strictEqual(t.verHTML(builds.dev), '<span class="vertext">dev</span>');
+  for (const a of Object.values(builds)) assert.doesNotMatch(t.verHTML(a) + aboutRows(a), />v\d|"v\d/);
+});
+test("Settings → About rows per build", () => {
+  t.state.general = { timeZone: "Asia/Taipei" };
+  const rel = aboutRows(builds.release), night = aboutRows(builds.nightly), dev = aboutRows(builds.dev);
+  assert.match(rel, /<row>Build time\|2026-11-12 16:30 \(Asia\/Taipei, UTC\+8\)<\/row>/);
+  assert.match(rel, new RegExp(`<a href="https://example.invalid/src/commit/${sha}" target="_blank" rel="noopener"><code class="hash">c22ff51</code></a><button type="button" class="smallbtn" id="copyCommit">Copy</button>`));
+  assert.doesNotMatch(rel, /verchip|vernote/);
+  assert.match(night, /<span class="verchip">nightly<\/span><\/div><div class="muted vernote">Nightly test build, built automatically every day<\/div>/);
+  assert.match(night, /2026-11-18 03:00 \(Asia\/Taipei, UTC\+8\)/, "the build time in the display zone");
+  t.state.general = { timeZone: "America/Los_Angeles" };
+  assert.match(aboutRows(builds.nightly), /2026-11-17 11:00 \(America\/Los Angeles, UTC-8\)/, "may fall on another day than the 1118 in the version");
+  assert.strictEqual(dev, '<row>Version|<div class="verline"><span class="vertext">dev</span></div></row>', "a dev build has no build time or commit");
+  assert.strictEqual(t.verAboutRows(null, () => "x", "").length, 0, "no rows without version info");
+  t.setLang("zh-TW");
+  assert.match(aboutRows(builds.nightly), /<row>版本\|.*每日自動建置的測試版（nightly）.*<row>建置時間\|.*<row>提交\|.*>複製</);
+  t.setLang("en");
+  t.state.general = null;
+});
 console.log(`${n} tests passed`);

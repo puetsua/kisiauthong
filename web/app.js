@@ -1510,6 +1510,46 @@ function openAllocDialog(reserveId, dir, editId) {
   });
 }
 
+// The version (issue #14, ADR 0018): under the licence line in the sidebar, at the foot of the More
+// sheet, and in Settings → About. The server sends what the build stamped; it is shown as is, never
+// with a "v" prefix: "0.2.0", "0.2.0-1118-c22ff51" (+ a nightly chip) or "dev".
+const verAbout = () => (state.about && state.about.version ? state.about : null);
+// the version text, plus a teal chip only for a nightly build
+const verHTML = (a) => `<span class="vertext">${esc(a.version)}</span>${a.nightly ? `<span class="verchip">${esc(__("nightly"))}</span>` : ""}`;
+// the build time as a clock in the display zone shows it, with that zone: "2026-11-18 11:00 (Asia/Taipei, UTC+8)"
+function verBuilt(a) {
+  const z = displayTZ(), p = zoneParts(new Date(a.buildTime), z);
+  let off = "";
+  try { off = new Intl.DateTimeFormat("en", { timeZone: z, timeZoneName: "shortOffset" }).formatToParts(new Date(a.buildTime)).find((x) => x.type === "timeZoneName").value.replace("GMT", "UTC"); } catch (e) { /* the offset is a nicety */ }
+  return `${p.date} ${p.time} (${z.replace(/_/g, " ")}${off ? ", " + off : ""})`;
+}
+function drawVersion() {
+  const a = verAbout();
+  for (const el of document.querySelectorAll(".sidefoot, #moreVer")) {
+    let link = el.querySelector(".verfoot");
+    if (!a) { if (link) link.remove(); continue; }
+    if (!link) { el.insertAdjacentHTML("beforeend", `<a class="verfoot" href="#settings" data-goabout></a>`); link = el.querySelector(".verfoot"); }
+    link.innerHTML = verHTML(a);
+    link.title = __("Version details");
+  }
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("[data-goabout]")) return;
+  if (location.hash === "#settings" && $("#set-about")) { e.preventDefault(); $("#set-about").scrollIntoView({ behavior: "smooth", block: "start" }); }
+  else state.goAbout = true;
+});
+// Settings → About: version, and the build time and commit when the build stamped them (a dev build has neither)
+function verAboutRows(a, row, src) {
+  if (!a) return [];
+  const hash = `<code class="hash">${esc((a.commit || "").slice(0, 7))}</code>`;
+  const link = src ? `<a href="${esc(src.replace(/\/$/, ""))}/commit/${esc(a.commit)}" target="_blank" rel="noopener">${hash}</a>` : hash;
+  return [
+    row(__("Version"), `<div class="verline">${verHTML(a)}</div>${a.nightly ? `<div class="muted vernote">${esc(__("Nightly test build, built automatically every day"))}</div>` : ""}`),
+    ...(a.buildTime ? [row(__("Build time"), esc(verBuilt(a)))] : []),
+    ...(a.commit ? [row(__("Commit"), `<div class="verline">${link}<button type="button" class="smallbtn" id="copyCommit">${esc(__("Copy"))}</button></div>`)] : []),
+  ];
+}
+
 // Settings: sections of label | control rows; on wide screens a sticky list of the sections.
 const SET_ICON = {
   region: ACCOUNT_ICONS.globe[1],
@@ -1548,6 +1588,7 @@ function screenSettings(v) {
       `<div class="sabout"><span class="slogo" lang="nan-Hant-TW">記數通</span><span><b>KiSiauThong</b></span></div>`,
       row(__("License"), '<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0-or-later</a>'),
       row(__("Source"), src ? `<a href="${esc(src)}" target="_blank" rel="noopener">${esc(src)}</a>` : `<span class="muted">${esc(__("Set KISIAUTHONG_SOURCE_URL"))}</span>`),
+      ...verAboutRows(verAbout(), row, src),
     ]],
   ];
   v.innerHTML = `<div class="settings">
@@ -1570,6 +1611,8 @@ function screenSettings(v) {
   $("#setNumFmt").addEventListener("change", (e) => saveGeneral({ numberFormat: e.target.value }, () => __("Number format saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
   $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
+  if ($("#copyCommit")) $("#copyCommit").addEventListener("click", async () => { try { await navigator.clipboard.writeText(verAbout().commit); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } });
+  if (state.goAbout) { state.goAbout = false; $("#set-about").scrollIntoView({ block: "start" }); }
   $("#setOpenDays").addEventListener("change", (e) => { state.dayOpen = {}; saveGeneral({ openDays: parseInt(e.target.value, 10) }, () => __("Days open by default saved.")); });
   $("#setAddCur").addEventListener("change", (e) => { const c = e.target.value; if (c) saveGeneral({ currencies: [...favCurs(), c] }, () => __("{currency} added.", { currency: c })); });
   v.querySelectorAll("[data-cur-del]").forEach((b) => b.addEventListener("click", () => {
@@ -2183,6 +2226,7 @@ function renderUserBtn() {
   $("#userBtn").innerHTML = avatarHTML(u, 32);
   $("#userBtn").setAttribute("aria-label", __("{name}: account menu", { name: u.displayName || u.username }));
   drawSideAdmin();
+  drawVersion();
 }
 function toggleUserMenu(open) {
   const menu = $("#userMenu"), u = state.me;
@@ -2616,6 +2660,7 @@ function render() {
   $("#tabMore").classList.toggle("on", !["dashboard", "transactions", "accounts"].includes(navKey));
   $("#moreAdmin").hidden = !(state.me && state.me.isAdmin);
   drawSideAdmin();
+  drawVersion();
   drawHideBtn();
   renderBell();
   $("#addBtn").hidden = admin || (key === "dashboard" && state.customizing); // nothing to add there; it would cover widgets being edited
