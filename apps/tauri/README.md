@@ -22,6 +22,7 @@ apps/tauri/
     capabilities/       the bundled screen's capability (saved servers get theirs at run time)
     permissions/app.toml  the "server-screen" and "bridge" permission sets
     Info.plist, Info.ios.plist  App Transport Security: https, except on the local network
+  test/cleartext-cases.json   where http:// is allowed; the same cases for connect.js and profiles.rs
 ```
 
 ## How it works
@@ -51,7 +52,16 @@ The bridge is reachable only from the bundled screen and from saved server
 origins: Tauri rejects app commands from remote pages unless a capability
 grants them, and the app adds one per saved origin at run time with only the
 `bridge` set (list, switch, remove, open the add/edit screen, open a link
-outside, ask a yes/no question in a native dialog). The commands check the calling page's origin again.
+outside, ask a yes/no question in a native dialog). The commands check the
+calling page's origin again; a removed server's capability stays until the
+app restarts, because Tauri cannot take a run-time capability back.
+
+Questions before destructive actions (delete a transaction, reserve,
+allocation or user; remove a passkey or a server; revoke an API key) go
+through `askConfirm` in `web/app.js`: `window.confirm()` in a browser, the
+system dialog through `kisiauthongApp.confirm()` in the app. This matters on
+macOS, where WKWebView answers `window.confirm()` with false without showing
+anything.
 
 ## What does not work in the app (yet)
 
@@ -63,14 +73,10 @@ outside, ask a yes/no question in a native dialog). The commands check the calli
   Windows the file is saved to the Downloads folder and shown in Finder /
   Explorer. iOS and Android have no download handler yet; export from a
   browser there.
-- **`window.confirm()` on macOS and iOS** answers false at once (WKWebView
-  has no confirm panel here), so web UI actions that ask first — deleting a
-  transaction, reserve, allocation, user or passkey, revoking an API key — do
-  nothing in the Apple apps. Windows and Android show the native dialog.
-  Settings → Servers → Remove asks through `kisiauthongApp.confirm()` instead
-  (a native dialog on desktop; on iOS it falls back to `confirm()` and so
-  cannot remove a server yet). How the web UI should ask is an open decision
-  (ADR 0019).
+- **Questions on iOS.** The shell has a native yes/no dialog on desktop only.
+  On iOS the web UI falls back to `window.confirm()`, which WKWebView answers
+  with false, so deleting, removing and revoking do nothing there until the
+  iOS build adds a native dialog. Android shows its own dialog.
 - **Offline use.** Nothing is cached; without a path to the server only the
   server screen's error shows. Sync is a later issue.
 - **A server that stops answering mid-session** leaves the webview's own error

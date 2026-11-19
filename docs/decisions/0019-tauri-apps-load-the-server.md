@@ -2,7 +2,8 @@
 # 0019 — Tauri apps that open the user's own server
 
 Date: 2026-11-19
-Status: accepted (issue #28); supersedes the "desktop and mobile are future
+Status: accepted (issue #28), amended by issue #30 (questions before
+destructive actions go through the native dialog); supersedes the "desktop and mobile are future
 plans" part of ADR 0001
 
 ## Context
@@ -52,6 +53,11 @@ How the web UI is loaded decides whether it works unchanged:
   `.local` and single-label names. This is what Apple's App Transport Security
   allows with `NSAllowsLocalNetworking` (set in `Info.plist`), applied on every
   platform so a server works the same on each. Anything else needs `https://`.
+  The server screen applies it before the check, and the shell repeats it when
+  saving (`profiles::check_url`); both sides are tested against the same cases
+  (`apps/tauri/test/cleartext-cases.json`). The shell also refuses to save a
+  server on its own host names (`tauri.localhost`, `ipc.localhost`), and only
+  the exact address of the bundled screen counts as local.
 - **Saved servers are profiles**: `servers.json` in the app data folder holds a
   list of `{ id, name?, url, lastUsed? }` and the active id. The first-run
   screen asks for exactly one address; more fit later without a format change.
@@ -67,7 +73,9 @@ How the web UI is loaded decides whether it works unchanged:
   refuses app commands from remote pages unless a capability allows them; the
   shell adds one at run time per saved server origin, granting only that set,
   and each command checks the caller's origin against the current list again
-  (a removed server keeps its capability until the app restarts). The server
+  (a removed server keeps its capability until the app restarts: Tauri can add
+  a capability at run time but not take one back, and a deny capability would
+  stay if the same server is added again). The server
   screen alone may check addresses and save servers. The web UI's hook is a few
   lines in `web/app.js` that do nothing in a browser, where `kisiauthongApp` is
   undefined.
@@ -88,16 +96,21 @@ How the web UI is loaded decides whether it works unchanged:
   cannot ship, so sign in with a password (and TOTP) in the app; `<a download>`
   (Data → Export JSON) saves to the Downloads folder and reveals the file on
   desktop, while iOS and Android have no download handler yet.
-- **`window.confirm()` answers false in WKWebView** (macOS, iOS): wry gives
-  the webview no confirm panel, so in the Apple apps every web UI action
-  guarded by `if (!confirm(…)) return;` (deleting a transaction, a reserve, an
-  allocation, a user, a passkey, revoking an API key) does nothing. Windows and
-  Android show their native dialog. The bridge has `kisiauthongApp.confirm()`,
-  a native dialog on desktop (rfd, the backend of tauri-plugin-dialog; the
-  plugin itself is not used because it replaces `window.confirm` with an async
-  function, which would make those guards go on without asking). Removing a
-  server uses it. Whether the web UI moves to an in-page confirm dialog (works
-  in every browser and webview, iOS included) or asks the bridge is open.
+- **Questions before destructive actions** (issue #30). `window.confirm()`
+  answers false at once in WKWebView (macOS, iOS), because wry gives the
+  webview no confirm panel, so a plain `if (!confirm(…)) return;` would stop
+  every delete in the Apple apps. The web UI therefore asks through one
+  helper, `askConfirm(text, action)` in `web/app.js`, used by every question
+  (deleting a transaction, reserve, allocation or user, removing a passkey or
+  a server, revoking an API key). In a browser it is `window.confirm()`, with
+  no visible change. Inside the app it calls `kisiauthongApp.confirm()`, the
+  system dialog with the action and Cancel buttons in the web UI's language
+  (rfd on macOS and Windows, the backend of tauri-plugin-dialog; the plugin
+  itself is not used because it replaces `window.confirm` with an async
+  function, which would make such guards go on without asking). Where the
+  shell has no native dialog yet (iOS, Android) it falls back to
+  `window.confirm()`: Android shows its own dialog; on iOS these actions still
+  do nothing until the iOS build adds a native dialog.
 - iOS and Android builds need Xcode and the Android SDK; they are scripted in
   `apps/tauri/README.md` and not built in CI yet. Store signing and releases are
   a later issue.
