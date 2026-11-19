@@ -3,8 +3,9 @@
 
 Date: 2026-11-19
 Status: accepted (issue #28), amended by issue #30 (questions before
-destructive actions go through the native dialog); supersedes the "desktop and mobile are future
-plans" part of ADR 0001
+destructive actions go through the native dialog) and issue #35 (a way back to
+the server screen while signed out); supersedes the "desktop and mobile are
+future plans" part of ADR 0001
 
 ## Context
 
@@ -67,6 +68,14 @@ How the web UI is loaded decides whether it works unchanged:
   removing the last one returns to the server screen. Add and Edit open the
   bundled server screen (in the web UI's language), so there is one address
   form with one set of checks and errors.
+- **Signed out** (issue #35): Settings needs a signed-in user, so every
+  signed-out step of the sign-in card (sign in, two-step code, first-user
+  setup) ends, only inside the app, with a row naming the server (its host
+  and port, from the page's own address) and a *Change server* link. The link
+  opens the server screen's Add server form through the same bridge call as
+  Settings → Add server: an address already saved is switched to, a new one
+  is checked and saved, and Cancel comes back to the sign-in page. A wrong or
+  unwanted server can thus be changed without signing in.
 - **The bridge.** Settings is rendered by the server's web UI, so the shell
   injects a small script (`bridge.js`) into its window that defines
   `window.kisiauthongApp` (`servers`, `use`, `remove`, `add`, `edit`, `confirm`). Tauri

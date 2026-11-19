@@ -45,6 +45,10 @@ apps/tauri/
    above About) lists the saved servers through `window.kisiauthongApp`:
    Switch, Edit, Remove and Add server. Add and Edit open the bundled screen
    again; Cancel goes back to Settings.
+   Signed out, the sign-in card (sign in, two-step code, first-user setup)
+   ends with a row naming the server's host and a **Change server** link to
+   the same Add server form, so the server can be changed without signing in;
+   Cancel goes back to the sign-in page. In a browser the row is not there.
 5. Pages may only stay on the bundled screen or a saved server's origin. Other
    links, `target="_blank"` and `window.open` open in the system browser.
 
