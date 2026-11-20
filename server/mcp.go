@@ -314,6 +314,7 @@ func init() {
 			"openingBalance": num("Decimal balance the account starts with; negative for debt"),
 			"limit":          num("Optional credit or loan limit, tracked against the amount owed"),
 			"icon":           str("Optional icon name: wallet, bank, card, piggy, chart, loan, phone"),
+			"note":           str("Optional free-text note for the user's own records, up to 4000 characters"),
 		}, "name"), toolCreateAccount},
 		{"create_tag", "Create a category, optionally with a budget.", ScopeTags, obj(map[string]interface{}{
 			"name":        str("Name"),
@@ -321,6 +322,7 @@ func init() {
 			"budget":      num("Budget per period, decimal"),
 			"period":      enum("Budget period (monthly by default)", "daily", "weekly", "monthly", "yearly"),
 			"periodEvery": integer("Budget period length in periods, e.g. 2 with weekly for every two weeks"),
+			"note":        str("Optional free-text note for the user's own records, up to 4000 characters"),
 		}, "name"), toolCreateTag},
 		{"merge_tags", "Merge categories the user chose into one: every transaction, template and dashboard widget with a merged category gets the kept one instead (once), and the merged ones are deleted. Only merge tags the user asked to merge; similar names may be kept apart on purpose. Use dryRun first to see what changes. The result has a mergeId that the web app can undo.", ScopeTags, obj(map[string]interface{}{
 			"targetId":   str("The category to keep"),
@@ -372,7 +374,11 @@ func toolListAccounts(b *Book, _ json.RawMessage) (map[string]interface{}, error
 	own, ext := []map[string]interface{}{}, []map[string]interface{}{}
 	for _, a := range b.data.Accounts {
 		if a.IsExternal() {
-			ext = append(ext, map[string]interface{}{"id": a.ID, "name": a.Name})
+			m := map[string]interface{}{"id": a.ID, "name": a.Name}
+			if a.Memo != "" {
+				m["note"] = a.Memo
+			}
+			ext = append(ext, m)
 			continue
 		}
 		bal, reserved, held := b.data.Balance(a.ID, today), b.data.Reserved(a.ID), b.data.Held(a.ID, today)
@@ -385,6 +391,9 @@ func toolListAccounts(b *Book, _ json.RawMessage) (map[string]interface{}, error
 			owed := max(-bal, 0)
 			m["limit"], m["owed"] = money(*a.LimitMinor, a.Currency), money(owed, a.Currency)
 		}
+		if a.Memo != "" {
+			m["note"] = a.Memo // the user's own note (issue #42)
+		}
 		own = append(own, m)
 	}
 	return map[string]interface{}{"today": today, "accounts": own, "externalAccounts": ext}, nil
@@ -395,6 +404,9 @@ func toolListTags(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
 	cats := []map[string]interface{}{}
 	for _, t := range b.data.Tags {
 		m := map[string]interface{}{"id": t.ID, "name": t.Name}
+		if t.Memo != "" {
+			m["note"] = t.Memo // the user's own note (issue #42)
+		}
 		if t.LimitMinor != nil {
 			start, end := BudgetPeriod(t, today)
 			spent := b.data.BudgetSpent(t.ID, start, end, today)
@@ -831,15 +843,15 @@ func toolDeleteTransaction(b *Book, raw json.RawMessage) (map[string]interface{}
 
 func toolCreateAccount(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
 	in, err := args[struct {
-		Name, Currency, Icon string
-		External             bool
-		OpeningBalance       json.Number
-		Limit                json.Number
+		Name, Currency, Icon, Note string
+		External                   bool
+		OpeningBalance             json.Number
+		Limit                      json.Number
 	}](raw)
 	if err != nil {
 		return nil, err
 	}
-	a := Account{ID: newID("acc"), Name: in.Name, Kind: "own", Currency: normCurrency(in.Currency), Icon: in.Icon}
+	a := Account{ID: newID("acc"), Name: in.Name, Kind: "own", Currency: normCurrency(in.Currency), Icon: in.Icon, Memo: in.Note}
 	if in.External {
 		a.Kind = "external"
 	} else {
@@ -873,15 +885,15 @@ func toolCreateAccount(b *Book, raw json.RawMessage) (map[string]interface{}, er
 
 func toolCreateTag(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
 	in, err := args[struct {
-		Name, Currency, Period string
-		Budget                 json.Number
-		PeriodEvery            int
+		Name, Currency, Period, Note string
+		Budget                       json.Number
+		PeriodEvery                  int
 	}](raw)
 	if err != nil {
 		return nil, err
 	}
 	t := Tag{ID: newID("tag"), Name: strings.TrimSpace(in.Name), Currency: normCurrency(in.Currency),
-		Cycle: in.Period, CycleEvery: in.PeriodEvery}
+		Cycle: in.Period, CycleEvery: in.PeriodEvery, Memo: in.Note}
 	if t.Name == "" {
 		return nil, fmt.Errorf("name required")
 	}

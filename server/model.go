@@ -14,6 +14,7 @@ type Account struct {
 	LimitMinor          *int64 `json:"limitMinor,omitempty"` // owed = max(0, -balance) is tracked against it
 	StatementCloseDay   *int   `json:"statementCloseDay,omitempty"`
 	PaymentDueDay       *int   `json:"paymentDueDay,omitempty"`
+	Memo                string `json:"memo,omitempty"` // the user's own free-text note (issue #42)
 }
 
 // Transaction is a money movement (ADR 0013): always stored as a transfer.
@@ -85,6 +86,7 @@ type Tag struct {
 	CycleStart string `json:"cycleStart,omitempty"` // first day of one period; "" = calendar-aligned
 	CycleEnd   string `json:"cycleEnd,omitempty"`   // "range" budgets only
 	Currency   string `json:"currency,omitempty"`   // a budget's currency
+	Memo       string `json:"memo,omitempty"`       // the user's own free-text note (issue #42)
 }
 
 // Reserve earmarks money in own accounts, optionally toward a target (ADR 0013).

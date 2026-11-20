@@ -343,10 +343,22 @@ var legacyAccountIcon = map[string]string{"bank": "bank", "savings": "savings", 
 
 var iconRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,23}$`)
 
+// validMemo trims an account's or tag's note and keeps it within a transaction note's limit.
+func validMemo(m *string) error {
+	*m = strings.TrimSpace(*m)
+	if utf8.RuneCountInString(*m) > maxMemoRunes {
+		return fmt.Errorf("note longer than %d characters", maxMemoRunes)
+	}
+	return nil
+}
+
 func validateAccount(a *Account) error {
 	a.Name = strings.TrimSpace(a.Name)
 	if a.Name == "" {
 		return fmt.Errorf("name required")
+	}
+	if err := validMemo(&a.Memo); err != nil {
+		return err
 	}
 	if icon, ok := legacyAccountIcon[a.Kind]; ok {
 		a.Kind = "own"

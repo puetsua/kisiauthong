@@ -331,11 +331,11 @@ func execTx(tx *sql.Tx, uid, q string, args ...interface{}) error {
 
 func writeTagRow(tx *sql.Tx, uid string, t Tag, insert bool) error {
 	if insert {
-		return execTx(tx, uid, `INSERT INTO tags(user_id,id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency) VALUES(?,?,?,?,?,?,?,?,?)`,
-			t.ID, t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency)
+		return execTx(tx, uid, `INSERT INTO tags(user_id,id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			t.ID, t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo)
 	}
-	_, err := tx.Exec(`UPDATE tags SET name=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=? WHERE user_id=? AND id=?`,
-		t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, uid, t.ID)
+	_, err := tx.Exec(`UPDATE tags SET name=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,memo=? WHERE user_id=? AND id=?`,
+		t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo, uid, t.ID)
 	return err
 }
 
