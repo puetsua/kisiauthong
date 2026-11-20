@@ -367,15 +367,24 @@ function setWidgetOpt(id, key, val) {
 const GEAR = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.4 7.4 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 2.6-1.5l2.4 1 2-3.4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>`;
 const ARROW = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const UP = ARROW("M12 19V5M6 11l6-6 6 6"), DOWN = ARROW("M12 5v14M6 13l6 6 6-6");
-function dashTile(w, i, draft) {
-  const id = w.id, name = widgetName(w), last = draft.items.length - 1;
-  return `<section class="panel dw edit${w.size === "half" ? " half" : ""}${state.dashSel === id ? " sel" : ""}" data-tile="${esc(id)}">
-    <div class="tilebar"><span class="grip" aria-hidden="true">⠿</span><button type="button" class="tname" data-tile-edit="${esc(id)}">${esc(name)}</button>
+// The short line under a widget's name in a collapsed tile on phones: its width, and its rows when it has them.
+function tileMeta(w) {
+  const def = widgetDef(w.type), parts = [__(w.size === "half" ? "Half width" : "Full width")];
+  if (def.rows) parts.push(__("{n} rows", { n: w.rows || def.rows }));
+  return parts.join(" · ");
+}
+// phone: on phones (issue #40) the tile is only its bar, and the selected one holds its settings
+// under the bar; on desktop it shows a preview and the settings live in the pane.
+function dashTile(w, i, draft, phone) {
+  const id = w.id, name = widgetName(w), last = draft.items.length - 1, sel = state.dashSel === id;
+  const body = phone ? (sel ? `<div class="tileset">${dashSettingsHTML(w, true)}</div>` : "") : `<div class="tilebody" inert>${widgetBody(w.type, w)}</div>`;
+  return `<section class="panel dw edit${w.size === "half" ? " half" : ""}${sel ? " sel" : ""}" data-tile="${esc(id)}">
+    <div class="tilebar"><span class="grip" aria-hidden="true">⠿</span><button type="button" class="tname" data-tile-edit="${esc(id)}"><span class="tnm">${esc(name)}</span><small class="tmeta">${esc(tileMeta(w))}</small></button>
       <button type="button" class="iconbtn" data-tile-move="-1" aria-label="${esc(__("Move {widget} earlier", { widget: name }))}" ${i === 0 ? "disabled" : ""}>${UP}</button>
       <button type="button" class="iconbtn" data-tile-move="1" aria-label="${esc(__("Move {widget} later", { widget: name }))}" ${i === last ? "disabled" : ""}>${DOWN}</button>
-      <button type="button" class="iconbtn" data-tile-edit="${esc(id)}" aria-label="${esc(__("Settings for {widget}", { widget: name }))}" title="${esc(__("Settings"))}">${GEAR}</button>
+      <button type="button" class="iconbtn" data-tile-edit="${esc(id)}" aria-label="${esc(__("Settings for {widget}", { widget: name }))}" title="${esc(__("Settings"))}"${phone ? ` aria-expanded="${sel}"` : ""}>${GEAR}</button>
       <button type="button" class="iconbtn" data-tile-remove aria-label="${esc(__("Remove {widget}", { widget: name }))}" title="${esc(__("Remove"))}">✕</button></div>
-    <div class="tilebody" inert>${widgetBody(w.type, w)}</div></section>`;
+    ${body}</section>`;
 }
 // Columns editor: shown columns first in their order, then the hidden ones; tick to show, arrows to reorder.
 function colPicker(o) {
@@ -388,26 +397,35 @@ function colPicker(o) {
       <button type="button" class="iconbtn" data-col-move="1" aria-label="${esc(__("Move {column} right", { column: name }))}" ${i === list.length - 1 ? "disabled" : ""}>${DOWN}</button></li>`;
   }).join("")}</ul></fieldset>`;
 }
-function dashPaneHTML(draft) {
-  const o = state.dashSel && draft.items.find((w) => w.id === state.dashSel);
+// The pane: every widget type to add, or (desktop) the settings of the selected widget. On phones it
+// is only the add grid below the tiles, "+ type" buttons with no drag handles.
+function dashPaneHTML(draft, phone) {
+  const o = !phone && state.dashSel && draft.items.find((w) => w.id === state.dashSel);
+  if (phone) {
+    return `<h3>${esc(__("Add widget"))}</h3>
+      <div class="palgrid">${DASH_WIDGETS.map((d) => `<button type="button" class="paladd" data-pal-add="${esc(d.id)}" aria-label="${esc(__("Add {widget}", { widget: __(d.label) }))}"><span aria-hidden="true">+</span>${esc(__(d.label))}</button>`).join("")}</div>`;
+  }
   if (!o) {
     return `<h3>${esc(__("Widgets"))}</h3>
       <ul class="palette">${DASH_WIDGETS.map((d) => `<li data-pal="${esc(d.id)}"><span class="grip" aria-hidden="true">⠿</span><span class="grow">${esc(__(d.label))}</span><button type="button" class="smallbtn" data-pal-add="${esc(d.id)}">${esc(__("Add"))}</button></li>`).join("")}</ul>
       <div class="droptrash">${esc(__("Drop here to remove"))}</div>`;
   }
+  return `<button type="button" class="linkbtn" data-pane-back>${esc(__("‹ All widgets"))}</button>
+    <h3>${esc(widgetLabel(o.type))}</h3>${dashSettingsHTML(o)}`;
+}
+// A widget's settings; inline (phones) they sit under the tile's bar, which already names it.
+function dashSettingsHTML(o, inline) {
   const w = widgetDef(o.type), label = widgetLabel(o.type);
   const items = w.pick ? pickItems(w.pick) : [];
   const shown = (x) => !(o.include && o.include.length) || o.include.includes(x);
-  return `<button type="button" class="linkbtn" data-pane-back>${esc(__("‹ All widgets"))}</button>
-    <h3>${esc(label)}</h3>
-    <div class="paneform">
+  return `<div class="paneform">
       <label>${esc(__("Title"))} <input type="text" data-dash-title value="${esc(o.title || "")}" placeholder="${esc(label)}" maxlength="60"></label>
       <label>${esc(__("Width"))} <select data-dash-size><option value="full">${esc(__("Full width"))}</option><option value="half" ${o.size === "half" ? "selected" : ""}>${esc(__("Half width"))}</option></select></label>
       ${w.rows ? `<label>${esc(__("Rows"))} <input type="number" data-dash-rows min="1" max="50" value="${o.rows || w.rows}"></label>` : ""}
       ${WIDGET_COLS[o.type] ? colPicker(o) : ""}
       ${items.length ? `<fieldset><legend>${esc(__("Show"))}</legend>${items.map((it) => `<label><input type="checkbox" data-dash-inc value="${esc(it.id)}" ${shown(it.id) ? "checked" : ""}> ${esc(it.label)}</label>`).join("")}</fieldset>` : ""}
     </div>
-    <div class="setrow"><button type="button" class="smallbtn" data-pane-dup>${esc(__("Duplicate"))}</button><button type="button" class="smallbtn danger" data-pane-remove>${esc(__("Remove from dashboard"))}</button></div>`;
+    <div class="setrow${inline ? " tileacts" : ""}"><button type="button" class="smallbtn" data-pane-dup>${esc(__("Duplicate"))}</button><button type="button" class="smallbtn danger" data-pane-remove>${esc(__("Remove from dashboard"))}</button></div>`;
 }
 function screenDashboardEditor(v) {
   const draft = state.dashDraft;
@@ -436,14 +454,27 @@ function screenDashboardEditor(v) {
     t.classList.add("flash");
     setTimeout(() => t.classList.remove("flash"), 1200);
   };
+  // phones (≤ 800px, issue #40): tiles collapse to their bars, settings open under the bar, the pane
+  // below only adds, and nothing is dragged; turning the device across the breakpoint redraws
+  const phoneMQ = matchMedia("(max-width:800px)"), phone = () => phoneMQ.matches;
+  const onBreakpoint = () => { if (!document.body.contains(canvas)) { phoneMQ.removeEventListener("change", onBreakpoint); return; } draw(); };
+  phoneMQ.addEventListener("change", onBreakpoint);
   const drawCanvas = () => {
-    canvas.innerHTML = draft.items.map((w, i) => dashTile(w, i, draft)).join("") || `<div class="empty dropend">${esc(__("Drag widgets here, or use Add."))}</div>`;
+    const ph = phone();
+    canvas.innerHTML = draft.items.map((w, i) => dashTile(w, i, draft, ph)).join("") || `<div class="empty dropend">${esc(ph ? __("Add a widget below.") : __("Drag widgets here, or use Add."))}</div>`;
     canvas.querySelectorAll("[data-tile]").forEach((tile) => {
       const id = tile.dataset.tile;
       tile.addEventListener("click", (e) => {
-        if (e.target.closest("[data-tile-move],[data-tile-remove]")) return;
+        if (e.target.closest("[data-tile-move],[data-tile-remove],.tileset")) return;
+        if (ph) {
+          // the bar opens this widget's settings under it, and closes them again
+          state.dashSel = state.dashSel === id ? null : id;
+          draw();
+          const t = canvas.querySelector(`[data-tile="${CSS.escape(id)}"]`);
+          if (t) { t.querySelector(".iconbtn[data-tile-edit]").focus(); t.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+          return;
+        }
         state.dashSel = id; draw();
-        // on narrow screens the pane sits above the dashboard: bring the settings into view
         if (pane.getBoundingClientRect().top < 0) pane.scrollIntoView({ behavior: "smooth", block: "start" });
       });
       tile.querySelector("[data-tile-remove]").addEventListener("click", () => remove(id));
@@ -456,54 +487,77 @@ function screenDashboardEditor(v) {
         if (again && !again.disabled) again.focus();
       }));
     });
+    if (ph && state.dashSel) { const box = canvas.querySelector(".tileset"); if (box) bindSettings(box, state.dashSel, true); }
   };
   const drawPane = () => {
-    pane.innerHTML = dashPaneHTML(draft);
-    const id = state.dashSel;
-    const on = (sel, ev, fn) => pane.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, () => fn(el)));
-    on("[data-pane-back]", "click", () => { state.dashSel = null; draw(); });
+    const ph = phone();
+    pane.innerHTML = dashPaneHTML(draft, ph);
+    pane.querySelectorAll("[data-pane-back]").forEach((b) => b.addEventListener("click", () => { state.dashSel = null; draw(); }));
+    pane.querySelectorAll("[data-pal-add]").forEach((b) => b.addEventListener("click", () => {
+      const w = create(b.dataset.palAdd);
+      place(w, null);
+      if (ph) state.dashSel = null;
+      draw(); flash(w.id);
+    }));
+    if (!ph && state.dashSel) bindSettings(pane, state.dashSel, false);
+  };
+  // the settings of one widget, in the pane (desktop) or under its bar (phones)
+  const bindSettings = (host, id, inline) => {
+    const on = (sel, ev, fn) => host.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, () => fn(el)));
+    // an option change redraws the previews on desktop; on phones only the bar's name and line change,
+    // so the field being edited keeps focus
+    const refresh = () => {
+      if (!inline) { drawCanvas(); return; }
+      const t = canvas.querySelector(`[data-tile="${CSS.escape(id)}"]`), w = draftItem(id);
+      if (!t || !w) return;
+      t.querySelector(".tnm").textContent = widgetName(w);
+      t.querySelector(".tmeta").textContent = tileMeta(w);
+    };
     on("[data-pane-remove]", "click", () => remove(id));
-    on("[data-pal-add]", "click", (b) => { const w = create(b.dataset.palAdd); place(w, null); draw(); flash(w.id); });
     on("[data-pane-dup]", "click", () => { const w = create(null, draftItem(id)); place(w, id, true); state.dashSel = w.id; draw(); flash(w.id); });
-    // option changes redraw only the dashboard, so the field being edited keeps focus
-    on("[data-dash-title]", "input", (t) => { setWidgetOpt(id, "title", t.value.trim()); drawCanvas(); });
-    on("[data-dash-size]", "change", (s) => { setWidgetOpt(id, "size", s.value === "half" ? "half" : undefined); drawCanvas(); });
+    on("[data-dash-title]", "input", (t) => { setWidgetOpt(id, "title", t.value.trim()); refresh(); });
+    on("[data-dash-size]", "change", (sz) => { setWidgetOpt(id, "size", sz.value === "half" ? "half" : undefined); refresh(); });
     on("[data-dash-rows]", "change", (r) => {
       const def = widgetDef(draftItem(id).type), n = Math.min(50, Math.max(1, parseInt(r.value, 10) || def.rows));
       r.value = n;
       setWidgetOpt(id, "rows", n === def.rows ? undefined : n);
-      drawCanvas();
+      refresh();
     });
     // columns: the ticked ones, in list order; the default set is stored as "no override"
     const saveCols = (keys) => {
       const type = draftItem(id).type;
       setWidgetOpt(id, "columns", keys.join(",") === defaultCols(type).join(",") ? undefined : keys);
     };
-    const colKeys = (onlyOn) => [...pane.querySelectorAll(".colpick li")].filter((li) => !onlyOn || li.querySelector("[data-col-on]").checked).map((li) => li.dataset.col);
+    const colKeys = (onlyOn) => [...host.querySelectorAll(".colpick li")].filter((li) => !onlyOn || li.querySelector("[data-col-on]").checked).map((li) => li.dataset.col);
     on("[data-col-on]", "change", (c) => {
       const keys = colKeys(true);
       if (!keys.length) { c.checked = true; msg(__("Keep at least one column.")); return; }
       saveCols(keys);
-      drawCanvas();
+      refresh();
     });
     on("[data-col-move]", "click", (b) => {
       const li = b.closest("li"), dir = parseInt(b.dataset.colMove, 10), sib = dir < 0 ? li.previousElementSibling : li.nextElementSibling;
       if (!sib) return;
       // a hidden column moved above a shown one is placed among them, so keep the full list order
       if (dir < 0) sib.before(li); else sib.after(li);
-      const shown = colKeys(true);
-      saveCols(shown);
-      const scroll = pane.scrollTop;
-      drawCanvas(); drawPane();
-      pane.scrollTop = scroll;
-      const again = pane.querySelector(`.colpick li[data-col="${CSS.escape(li.dataset.col)}"] [data-col-move="${dir}"]`);
+      saveCols(colKeys(true));
+      let again;
+      if (inline) {
+        drawCanvas();
+        again = canvas.querySelector(`.tileset .colpick li[data-col="${CSS.escape(li.dataset.col)}"] [data-col-move="${dir}"]`);
+      } else {
+        const scroll = pane.scrollTop;
+        drawCanvas(); drawPane();
+        pane.scrollTop = scroll;
+        again = pane.querySelector(`.colpick li[data-col="${CSS.escape(li.dataset.col)}"] [data-col-move="${dir}"]`);
+      }
       if (again && !again.disabled) again.focus();
     });
     on("[data-dash-inc]", "change", (c) => {
-      const boxes = [...pane.querySelectorAll("[data-dash-inc]")], picked = boxes.filter((b) => b.checked).map((b) => b.value);
+      const boxes = [...host.querySelectorAll("[data-dash-inc]")], picked = boxes.filter((b) => b.checked).map((b) => b.value);
       if (!picked.length) { c.checked = true; msg(__("Keep at least one item, or remove the widget.")); return; }
       setWidgetOpt(id, "include", picked.length === boxes.length ? undefined : picked);
-      drawCanvas();
+      refresh();
     });
   };
   const draw = () => { drawCanvas(); drawPane(); };
@@ -585,13 +639,13 @@ function screenDashboardEditor(v) {
   const onUp = (e) => { if (pd && e.pointerId === pd.pid) endDrag(e.type === "pointerup"); };
   const onKey = (e) => { if (e.key === "Escape") endDrag(false); };
   editor.addEventListener("pointerdown", (e) => {
-    if (pd || e.button !== 0) return;
+    if (pd || e.button !== 0 || phone()) return; // phones use the buttons only
     const src = e.target.closest("[data-tile],[data-pal]");
     if (!src || e.target.closest("input,select,textarea,[data-tile-move],[data-tile-remove],.iconbtn[data-tile-edit],[data-pal-add]")) return;
     const handle = e.target.closest(".grip");
     if (e.pointerType !== "mouse" && !handle) return;
     if (handle) e.preventDefault(); // no text selection or long-press menu from the handle
-    pd = { id: src.dataset.tile || src.dataset.pal, from: src.dataset.tile ? "canvas" : "palette", src, pid: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, name: src.dataset.pal ? widgetLabel(src.dataset.pal) : src.querySelector(".tname").textContent };
+    pd = { id: src.dataset.tile || src.dataset.pal, from: src.dataset.tile ? "canvas" : "palette", src, pid: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, name: src.dataset.pal ? widgetLabel(src.dataset.pal) : src.querySelector(".tnm").textContent };
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
