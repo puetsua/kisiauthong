@@ -1,0 +1,146 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# An installable Android APK of the Tauri app (apps/tauri, ADR 0020) on demand
+# (Actions → Android → Run workflow), on pull requests and on main, uploaded as
+# the workflow artifact "android-apk". It is the release build type for arm64
+# phones, signed with the release key when the secrets ANDROID_KEYSTORE_BASE64
+# and ANDROID_KEYSTORE_PASSWORD are available (never for pull requests from
+# forks), otherwise with a throwaway key made for this run only.
+#
+# It has no release trigger on purpose: release.yml builds the signed APK and
+# attaches it to the release itself (kisiauthong-app-<tag>-android.apk, which
+# the in-app updater looks for by name, with its SHA256SUMS line). This
+# workflow never creates a tag or a release and never uploads release assets.
+name: Android
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["apps/tauri/**", ".github/workflows/android.yml"]
+  push:
+    branches: [main]
+    paths: ["apps/tauri/**", ".github/workflows/android.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/tauri
+    steps:
+      - uses: actions/checkout@v7
+      - name: JDK and NDK
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+      - name: Signing key
+        id: key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          # gen/android reads keystore.properties (git-ignored) for the release signing config
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ "$FORK" != "true" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/android.jks"
+            password="$KEYSTORE_PASSWORD"
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+          else
+            # a key for this run only: installable, but not the release key
+            password=$(openssl rand -hex 24)
+            echo "::add-mask::$password"
+            keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/android.jks" -storetype PKCS12 \
+              -alias kisiauthong -keyalg RSA -keysize 3072 -validity 3650 \
+              -storepass "$password" -keypass "$password" \
+              -dname "CN=KiSiauThong CI throwaway key (not the release key)"
+            echo "mode=throwaway" >> "$GITHUB_OUTPUT"
+          fi
+          # a .properties value: escape backslashes and a leading space
+          escaped=$(printf '%s' "$password" | sed -e 's/\\/\\\\/g' -e 's/^ /\\ /')
+          printf 'storeFile=%s\npassword=%s\nkeyAlias=kisiauthong\n' "$RUNNER_TEMP/android.jks" "$escaped" > src-tauri/gen/android/keystore.properties
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/tauri/package-lock.json
+      - name: Rust
+        run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          rustup target add aarch64-linux-android
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            apps/tauri/src-tauri/target
+          key: tauri-android-${{ hashFiles('apps/tauri/src-tauri/Cargo.lock') }}
+          restore-keys: tauri-android-
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('apps/tauri/src-tauri/gen/android/**/*.gradle*', 'apps/tauri/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties', 'apps/tauri/src-tauri/gen/android/buildSrc/**') }}
+          restore-keys: gradle-android-
+      - name: Tauri CLI
+        run: npm ci
+      - name: Build (release, arm64)
+        run: npx tauri android build --apk --target aarch64
+      - name: Check, name and describe the APK
+        env:
+          MODE: ${{ steps.key.outputs.mode }}
+        run: |
+          mapfile -t apks < <(find src-tauri/gen/android/app/build/outputs/apk -name '*-release*.apk')
+          if [ "${#apks[@]}" -ne 1 ]; then echo "::error::Expected one release APK, found ${#apks[@]}: ${apks[*]}"; exit 1; fi
+          version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
+          out="$GITHUB_WORKSPACE/dist-android/kisiauthong-android-$version-$MODE.apk"
+          mkdir -p "$(dirname "$out")"
+          cp "${apks[0]}" "$out"
+          unzip -l "$out" > "$RUNNER_TEMP/contents.txt"
+          grep -q ' AndroidManifest.xml$' "$RUNNER_TEMP/contents.txt" || { echo "::error::No AndroidManifest.xml in the APK"; exit 1; }
+          grep -q ' lib/arm64-v8a/.*\.so$' "$RUNNER_TEMP/contents.txt" || { echo "::error::No arm64-v8a library in the APK"; exit 1; }
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$apksigner" verify --verbose --print-certs "$out" > "$RUNNER_TEMP/signing.txt"
+          cat "$RUNNER_TEMP/signing.txt"
+          size=$(stat -c %s "$out")
+          sum=$(sha256sum "$out" | cut -d' ' -f1)
+          cert=$(grep -m1 'certificate SHA-256 digest' "$RUNNER_TEMP/signing.txt" | sed 's/.*digest: //')
+          {
+            echo "## Android APK"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| File (artifact \`android-apk\`) | \`$(basename "$out")\` |"
+            echo "| Version | \`$version\` |"
+            echo "| Signing | **$MODE** |"
+            echo "| Size | $size bytes ($(numfmt --to=iec-i --suffix=B "$size")) |"
+            echo "| SHA-256 | \`$sum\` |"
+            echo "| Signing certificate SHA-256 | \`$cert\` |"
+            echo "| ABIs | $(grep -o ' lib/[^/]*/' "$RUNNER_TEMP/contents.txt" | sort -u | sed 's| lib/||; s|/$||' | paste -sd, -) |"
+            echo
+            echo '```'
+            grep -E '^(Verifies|Verified using|Number of signers)' "$RUNNER_TEMP/signing.txt"
+            echo '```'
+            if [ "$MODE" = "throwaway" ]; then
+              echo
+              echo "> [!WARNING]"
+              echo "> Signed with a throwaway key made for this run, **not the release key**. Android only updates an app with an APK signed by the same key: an app installed from this APK cannot be updated by a release APK (the in-app updater refuses it as well), and a release-signed app cannot be replaced by this APK. Uninstall the other one first; this deletes the app's data on the phone (saved servers and sign-in, not your books, which stay on the server)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-apk
+          path: dist-android/*.apk
+          if-no-files-found: error
+      - name: Remove the signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/android.jks" src-tauri/gen/android/keystore.properties

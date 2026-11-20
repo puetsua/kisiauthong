@@ -155,6 +155,50 @@ release must use the same key, or installed apps cannot update. The release
 workflow builds the APK when the secrets `ANDROID_KEYSTORE_BASE64` (the `.jks`
 file, base64) and `ANDROID_KEYSTORE_PASSWORD` are set.
 
+#### Getting the APK without building it
+
+- **From a release:** the asset `kisiauthong-app-<version>-android.apk`,
+  signed with the release key, when the release workflow had the signing
+  secrets. Once installed, it updates itself (Settings → About → Check for
+  updates).
+- **From GitHub Actions:** the *Android* workflow (`.github/workflows/android.yml`)
+  builds the APK on every pull request and push to `main` that touches
+  `apps/tauri`, and on demand: Actions → Android → Run workflow, pick the
+  branch. Open the finished run; the APK is the artifact `android-apk` (a zip
+  holding `kisiauthong-android-<version>-<signing>.apk`). The run's summary
+  shows the signing mode, the size, the SHA-256 and the signing certificate.
+  It is the release build type for arm64 phones (almost every phone since
+  2017); artifacts are kept for the repository's retention period (90 days by
+  default).
+
+Installing on a phone: copy the `.apk` to the phone (or `adb install
+kisiauthong-android-….apk`), open it from the file manager or the browser's
+downloads, allow *Install unknown apps* for that app when Android asks, and
+tap Install.
+
+**Signing in CI.** Android installs only signed APKs, and updates an app only
+with an APK signed by the same key. Both workflows read the repository
+secrets `ANDROID_KEYSTORE_BASE64` (the `.jks` keystore, base64-encoded) and
+`ANDROID_KEYSTORE_PASSWORD` (its store and key password); the key alias is
+`kisiauthong`. To create the key once and keep it backed up outside the repo:
+
+```sh
+keytool -genkeypair -keystore kisiauthong.jks -storetype PKCS12 -alias kisiauthong \
+  -keyalg RSA -keysize 3072 -validity 10000 -dname "CN=KiSiauThong"
+base64 < kisiauthong.jks | tr -d '\n'   # the value of ANDROID_KEYSTORE_BASE64
+```
+
+With the secrets, the *Android* workflow signs with the release key (never
+for pull requests from forks, which get no secrets). Without them, it signs
+with a **throwaway key** made for that run, and the summary says so. Such an
+APK installs and runs like a release one, but it is not the release key: an
+app installed from it cannot be updated by a release APK or by the in-app
+updater (Android refuses another key), nor by another CI run's APK, and an
+app installed from a release cannot be replaced by it. Uninstall the other
+one first; that deletes the app's data on the phone (the saved servers and
+sign-in, not your books, which stay on the server). The release workflow
+never uses a throwaway key: without the secrets the release has no APK.
+
 To test updates without a release, a **debug** build reads `update-source.txt`
 in the app data folder (`/data/user/0/io.github.puetsua.kisiauthong/`): line 1
 is the release JSON URL, line 2 the prefix downloads must start with. Serve a
