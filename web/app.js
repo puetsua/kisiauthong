@@ -2104,7 +2104,7 @@ function openTagDialog(kind, editId) {
   const sync = () => {
     const budget = el.role.value === "budget", pre = el.preset.value;
     // hidden fields are disabled too, so they are neither validated nor submitted
-    const show = (cls, on) => form.querySelectorAll(cls).forEach((x) => { x.hidden = !on; x.querySelectorAll("input,select").forEach((c) => { c.disabled = !on; }); });
+    const show = (cls, on) => form.querySelectorAll(cls).forEach((x) => { x.hidden = !on; x.querySelectorAll("input,select,textarea").forEach((c) => { c.disabled = !on; }); });
     show(".f-name,.f-note", !newBudget || !el.catId.value);
     show(".f-budget", budget);
     show(".f-custom", budget && pre === "custom");
