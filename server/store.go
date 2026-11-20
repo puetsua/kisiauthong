@@ -27,7 +27,7 @@ const dataTables = `
 CREATE TABLE IF NOT EXISTS accounts%[1]s (
   user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, icon TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL,
   opening_balance_minor INTEGER NOT NULL DEFAULT 0, allow_negative INTEGER NOT NULL DEFAULT 0,
-  credit_limit_minor INTEGER, statement_close_day INTEGER, payment_due_day INTEGER,
+  credit_limit_minor INTEGER, statement_close_day INTEGER, payment_due_day INTEGER, memo TEXT NOT NULL DEFAULT '',
   PRIMARY KEY(user_id, id));
 CREATE TABLE IF NOT EXISTS transactions%[1]s (
   user_id TEXT NOT NULL, id TEXT NOT NULL, from_account_id TEXT NOT NULL DEFAULT '',
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS transactions%[1]s (
 CREATE TABLE IF NOT EXISTS tags%[1]s (
   user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, limit_minor INTEGER,
   cycle TEXT NOT NULL DEFAULT '', cycle_every INTEGER NOT NULL DEFAULT 0, cycle_start TEXT NOT NULL DEFAULT '',
-  cycle_end TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT '',
+  cycle_end TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '',
   PRIMARY KEY(user_id, id));
 CREATE TABLE IF NOT EXISTS transaction_tags%[1]s (
   user_id TEXT NOT NULL, transaction_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY(user_id, transaction_id, tag_id));
@@ -176,6 +176,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateTransactionCreatedAt,      // 13
 	migrateReserves,                  // 14
 	migrateTagMerges,                 // 15
+	migrateAccountTagMemo,            // 16
 }
 
 func (s *Store) migrate() error {
@@ -455,6 +456,22 @@ func migrateTagKinds(tx *sql.Tx) error {
 	return err
 }
 
+// Migration 16 (issue #42): accounts and tags get the user's own free-text note.
+func migrateAccountTagMemo(tx *sql.Tx) error {
+	for _, table := range []string{"accounts", "tags"} {
+		has, err := hasColumn(tx, table, "memo")
+		if err != nil {
+			return err
+		}
+		if !has {
+			if _, err := tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN memo TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Migration 3: transactions get a free-text memo beside the short title.
 func migrateAddTransactionMemo(tx *sql.Tx) error {
 	has, err := hasColumn(tx, "transactions", "memo")
@@ -552,7 +569,7 @@ func (b *Book) exec(q string, args ...interface{}) (sql.Result, error) {
 func (b *Book) reload() error {
 	db, uid := b.s.db, b.uid
 	d := &Data{Version: 1}
-	rows, err := db.Query(`SELECT id,name,kind,icon,currency,opening_balance_minor,credit_limit_minor,statement_close_day,payment_due_day FROM accounts WHERE user_id=? ORDER BY name`, uid)
+	rows, err := db.Query(`SELECT id,name,kind,icon,currency,opening_balance_minor,credit_limit_minor,statement_close_day,payment_due_day,memo FROM accounts WHERE user_id=? ORDER BY name`, uid)
 	if err != nil {
 		return err
 	}
@@ -561,7 +578,7 @@ func (b *Book) reload() error {
 		var a Account
 		var cl sql.NullInt64
 		var sc, pd sql.NullInt64
-		if err := rows.Scan(&a.ID, &a.Name, &a.Kind, &a.Icon, &a.Currency, &a.OpeningBalanceMinor, &cl, &sc, &pd); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Kind, &a.Icon, &a.Currency, &a.OpeningBalanceMinor, &cl, &sc, &pd, &a.Memo); err != nil {
 			return err
 		}
 		if cl.Valid {
@@ -595,7 +612,7 @@ func (b *Book) reload() error {
 		d.Transactions = append(d.Transactions, t)
 	}
 	tr.Close()
-	tg, err := db.Query(`SELECT id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency FROM tags WHERE user_id=? ORDER BY name`, uid)
+	tg, err := db.Query(`SELECT id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo FROM tags WHERE user_id=? ORDER BY name`, uid)
 	if err != nil {
 		return err
 	}
@@ -603,7 +620,7 @@ func (b *Book) reload() error {
 	for tg.Next() {
 		var t Tag
 		var lm sql.NullInt64
-		if err := tg.Scan(&t.ID, &t.Name, &lm, &t.Cycle, &t.CycleEvery, &t.CycleStart, &t.CycleEnd, &t.Currency); err != nil {
+		if err := tg.Scan(&t.ID, &t.Name, &lm, &t.Cycle, &t.CycleEvery, &t.CycleStart, &t.CycleEnd, &t.Currency, &t.Memo); err != nil {
 			return err
 		}
 		if lm.Valid {
@@ -781,13 +798,13 @@ func nullEmpty(s string) interface{} {
 }
 
 func (b *Book) insertAccount(a Account) error {
-	_, err := b.exec(`INSERT INTO accounts(user_id,id,name,kind,icon,currency,opening_balance_minor,credit_limit_minor,statement_close_day,payment_due_day) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		a.ID, a.Name, a.Kind, a.Icon, a.Currency, a.OpeningBalanceMinor, n64(a.LimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay))
+	_, err := b.exec(`INSERT INTO accounts(user_id,id,name,kind,icon,currency,opening_balance_minor,credit_limit_minor,statement_close_day,payment_due_day,memo) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		a.ID, a.Name, a.Kind, a.Icon, a.Currency, a.OpeningBalanceMinor, n64(a.LimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay), a.Memo)
 	return err
 }
 func (b *Book) insertTag(t Tag) error {
-	_, err := b.exec(`INSERT INTO tags(user_id,id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency) VALUES(?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency)
+	_, err := b.exec(`INSERT INTO tags(user_id,id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo)
 	return err
 }
 func (b *Book) insertReserve(r Reserve) error {
@@ -859,15 +876,15 @@ func (b *Book) setSetting(key, value string) error {
 }
 
 func (b *Book) updateAccount(a Account) error {
-	if _, err := b.s.db.Exec(`UPDATE accounts SET name=?,kind=?,icon=?,currency=?,opening_balance_minor=?,credit_limit_minor=?,statement_close_day=?,payment_due_day=? WHERE user_id=? AND id=?`,
-		a.Name, a.Kind, a.Icon, a.Currency, a.OpeningBalanceMinor, n64(a.LimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay), b.uid, a.ID); err != nil {
+	if _, err := b.s.db.Exec(`UPDATE accounts SET name=?,kind=?,icon=?,currency=?,opening_balance_minor=?,credit_limit_minor=?,statement_close_day=?,payment_due_day=?,memo=? WHERE user_id=? AND id=?`,
+		a.Name, a.Kind, a.Icon, a.Currency, a.OpeningBalanceMinor, n64(a.LimitMinor), nint(a.StatementCloseDay), nint(a.PaymentDueDay), a.Memo, b.uid, a.ID); err != nil {
 		return err
 	}
 	return b.reload()
 }
 func (b *Book) updateTag(t Tag) error {
-	if _, err := b.s.db.Exec(`UPDATE tags SET name=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=? WHERE user_id=? AND id=?`,
-		t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, b.uid, t.ID); err != nil {
+	if _, err := b.s.db.Exec(`UPDATE tags SET name=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,memo=? WHERE user_id=? AND id=?`,
+		t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo, b.uid, t.ID); err != nil {
 		return err
 	}
 	return b.reload()

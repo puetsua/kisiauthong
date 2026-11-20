@@ -69,11 +69,17 @@ func stateView(d *Data, today string) map[string]interface{} {
 				m["utilisation"] = float64(owed) / float64(*a.LimitMinor)
 			}
 		}
+		if a.Memo != "" {
+			m["memo"] = a.Memo // the user's own note (issue #42)
+		}
 		accounts = append(accounts, m)
 	}
 	tags := []map[string]interface{}{}
 	for _, t := range d.Tags {
 		m := map[string]interface{}{"id": t.ID, "name": t.Name, "currency": t.Currency}
+		if t.Memo != "" {
+			m["memo"] = t.Memo // the user's own note (issue #42)
+		}
 		if t.LimitMinor != nil {
 			start, end := BudgetPeriod(t, today)
 			spent := d.BudgetSpent(t.ID, start, end, today)

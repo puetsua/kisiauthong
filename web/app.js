@@ -1134,6 +1134,7 @@ function screenAcct(v) {
   const schedHTML = sched.length ? `<section class="panel feedpanel sched" aria-labelledby="acctSchedH"><h3 id="acctSchedH">${esc(__("Scheduled"))}</h3><ul class="feed">${sched.map((t) => feedRow(t, { sched: true, acct: a.id })).join("")}</ul></section>` : "";
   v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#accounts">‹ ${esc(__("Accounts"))}</a><button type="button" class="smallbtn" id="acctEdit">${esc(__("Edit"))}</button></div>
     <div class="acctpage${sched.length ? " withsched" : ""}"><div class="tgrid">${accountCard(a, { page: true })}</div>${schedHTML}</div>
+    ${notePanel(a.memo)}
     <section class="tsection">${periodBar(mode, p)}
     ${posted.length ? `<section class="panel feedpanel">${feedHTML(posted, Infinity, { acct: a.id })}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
   bindPeriodBar(v, mode, p, (m, at) => acctURL(a.id, m, at));
@@ -1247,6 +1248,7 @@ function screenTag(v) {
   v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#tags">‹ ${esc(__("Tags"))}</a><button type="button" class="smallbtn" id="tagEdit">${esc(__("Edit"))}</button></div>
     ${t.limitMinor !== undefined ? `<div class="tgrid tagbudget">${budgetCard(t)}</div>` : ""}
     <div class="totals">${tiles}</div>
+    ${notePanel(t.memo)}
     <section class="tsection">${periodBar(mode, p)}
     ${inP.length ? `<div class="psum"><span>${esc(__("{n} transaction(s)", { n: inP.length }))}</span><span class="amts">${totalsHTML(tagTotals(inP))}</span></div>
       <section class="panel feedpanel">${rows(inP)}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
@@ -2034,6 +2036,10 @@ function dialogForm(fields, submitLabel, extra = "") {
 const onDlg = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener("click", () => { $("#dialog").close(); fn(); }); };
 const iconPicker = (sel) => `<fieldset class="iconpick"><legend>${esc(__("Icon"))}</legend>${Object.entries(ACCOUNT_ICONS).map(([k, [label]]) =>
   `<label title="${esc(__(label))}"><input type="radio" name="icon" value="${k}" ${k === sel ? "checked" : ""} aria-label="${esc(__(label))}"><span class="aicon">${iconSvg(k, 20)}</span></label>`).join("")}</fieldset>`;
+// The user's own free-text note on an account or a tag (issue #42): plain text, up to 4000 characters
+// like a transaction note, edited in the form and shown read-only on the account or tag page.
+const noteField = (memo, placeholder, cls = "") => field("Note", `<textarea name="memo" rows="3" maxlength="4000" placeholder="${esc(placeholder)}">${esc(memo || "")}</textarea>`, ("wide " + cls).trim());
+const notePanel = (memo) => (memo ? `<section class="panel notepanel" aria-labelledby="noteH"><h3 id="noteH">${esc(__("Note"))}</h3><p class="notetext">${esc(memo)}</p></section>` : "");
 function openAccountDialog(editId, presetKind) {
   const a = editId ? accById(editId) : null, ext = a ? a.kind === "external" : presetKind === "external";
   openDialog(a ? __("Edit account") : ext ? __("New external account") : __("New account"), dialogForm(
@@ -2042,13 +2048,14 @@ function openAccountDialog(editId, presetKind) {
       field(N_("Opening balance"), `<input name="opening" type="number" step="any" value="${a ? decimal(a.openingBalanceMinor, a.currency) : "0"}">`) +
       // a card or a loan is an account that runs negative; its limit tracks how much is owed
       field(N_("Limit"), `<input name="limit" type="number" step="any" min="0.01" placeholder="${esc(__("Optional"))}" value="${a && a.limitMinor ? decimal(a.limitMinor, a.currency) : ""}">`)) +
-    iconPicker(iconName(a || { kind: ext ? "external" : "own" })),
+    iconPicker(iconName(a || { kind: ext ? "external" : "own" })) +
+    noteField(a && a.memo, ext ? __("What it is, account details, reminders…") : __("Account digits, what it is for, reminders…")),
     a ? __("Save changes") : __("Add account")));
   $("#dialogForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = (f.currency || "").toUpperCase();
-    const body = ext ? { name: f.name, kind: "external", icon: f.icon }
-      : { name: f.name, kind: "own", icon: f.icon, currency: cur, openingBalanceMinor: toMinor(f.opening, cur) };
+    const body = ext ? { name: f.name, kind: "external", icon: f.icon, memo: f.memo || "" }
+      : { name: f.name, kind: "own", icon: f.icon, currency: cur, openingBalanceMinor: toMinor(f.opening, cur), memo: f.memo || "" };
     if (!ext && a) { body.statementCloseDay = a.statementCloseDay; body.paymentDueDay = a.paymentDueDay; }
     if (!ext && f.limit) body.limitMinor = toMinor(f.limit, cur);
     try {
@@ -2090,14 +2097,15 @@ function openTagDialog(kind, editId) {
     field(N_("Every"), `<span class="moneyrow"><input name="every" type="number" min="1" max="99" value="${every}"><select name="unit">${enumOptions(CYCLE_UNIT_L, Object.keys(CYCLE_UNIT_L), cyc === "range" ? "monthly" : cyc)}</select></span>`, "f-budget f-custom") +
     field(N_("First period starts"), `<input name="anchor" type="date" value="${t && cyc !== "range" ? esc(t.cycleStart || "") : ""}">`, "f-budget f-anchor") +
     field(N_("From"), `<input name="rangeStart" type="date" value="${t && cyc === "range" ? esc(t.cycleStart || "") : ""}">`, "f-budget f-range") +
-    field(N_("To"), `<input name="rangeEnd" type="date" value="${t && cyc === "range" ? esc(t.cycleEnd || "") : ""}">`, "f-budget f-range"),
+    field(N_("To"), `<input name="rangeEnd" type="date" value="${t && cyc === "range" ? esc(t.cycleEnd || "") : ""}">`, "f-budget f-range") +
+    noteField(t && t.memo, __("What this category includes or leaves out…"), "f-note"),
     t ? __("Save changes") : newBudget ? __("Add budget") : __("Add category")));
   const form = $("#dialogForm"), el = form.elements;
   const sync = () => {
     const budget = el.role.value === "budget", pre = el.preset.value;
     // hidden fields are disabled too, so they are neither validated nor submitted
-    const show = (cls, on) => form.querySelectorAll(cls).forEach((x) => { x.hidden = !on; x.querySelectorAll("input,select").forEach((c) => { c.disabled = !on; }); });
-    show(".f-name", !newBudget || !el.catId.value);
+    const show = (cls, on) => form.querySelectorAll(cls).forEach((x) => { x.hidden = !on; x.querySelectorAll("input,select,textarea").forEach((c) => { c.disabled = !on; }); });
+    show(".f-name,.f-note", !newBudget || !el.catId.value);
     show(".f-budget", budget);
     show(".f-custom", budget && pre === "custom");
     show(".f-anchor", budget && pre !== "range");
@@ -2110,7 +2118,8 @@ function openTagDialog(kind, editId) {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries());
     const into = newBudget && f.catId ? free.find((x) => x.id === f.catId) : null; // a budget on an existing category
-    const body = { name: into ? into.name : f.name.trim() };
+    // a budget added to an existing category keeps that category's note (its field is hidden then)
+    const body = { name: into ? into.name : f.name.trim(), memo: into ? into.memo || "" : f.memo || "" };
     if (f.role === "budget") {
       body.currency = f.limitCur; body.limitMinor = toMinor(f.limit, f.limitCur);
       if (f.preset === "range") Object.assign(body, { cycle: "range", cycleStart: f.rangeStart, cycleEnd: f.rangeEnd });

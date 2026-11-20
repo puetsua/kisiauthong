@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -123,6 +123,65 @@ test("account page: unknown or external id goes back to Accounts", () => {
     t.screenAcct(view());
     assert.strictEqual(location.hash, "#accounts"); // replaced in history, not pushed
   }
+});
+
+test("notes (#42): a read-only panel on the account and tag pages, only when there is a note; lists unchanged", () => {
+  // the panel: escaped, line breaks kept by the CSS, nothing for an empty note
+  assert.strictEqual(t.notePanel(""), "");
+  assert.strictEqual(t.notePanel(undefined), "");
+  assert.strictEqual(t.notePanel("Ends in 0000 <fake>\nPayday 5th"),
+    '<section class="panel notepanel" aria-labelledby="noteH"><h3 id="noteH">Note</h3><p class="notetext">Ends in 0000 &lt;fake&gt;\nPayday 5th</p></section>');
+  // the account page: under the card, before the period's transactions
+  location.hash = "#acct?id=a1&range=month";
+  let v = view();
+  t.screenAcct(v);
+  assert.doesNotMatch(v.innerHTML, /notepanel/, "no note, no panel");
+  acc.memo = "Ends in 0000 (fake)\nPayday 5th";
+  v = view();
+  t.screenAcct(v);
+  const html = v.innerHTML;
+  assert.match(html, /<h3 id="noteH">Note<\/h3><p class="notetext">Ends in 0000 \(fake\)\nPayday 5th<\/p>/);
+  assert.ok(html.indexOf("acctpage") < html.indexOf("notepanel") && html.indexOf("notepanel") < html.indexOf("periodbar"), "under the card, above the transactions");
+  // the account list stays as it was
+  assert.doesNotMatch(t.accountCard(acc), /notepanel|Ends in|Payday/);
+  // the tag page: under the totals; the category card in the list shows nothing of it
+  const tag = { id: "g1", name: "Food", currency: "", memo: "Includes delivery apps" };
+  t.state.data.tags = [tag];
+  location.hash = "#tag?id=g1&range=month";
+  v = view();
+  t.screenTag(v);
+  assert.match(v.innerHTML, /<div class="totals">.*<\/div>\s*<section class="panel notepanel" aria-labelledby="noteH"><h3 id="noteH">Note<\/h3><p class="notetext">Includes delivery apps<\/p><\/section>/s);
+  assert.doesNotMatch(t.categoryCard(tag, t.periodFor("month", "2026-11-18")), /delivery|notepanel/);
+  tag.memo = "";
+  v = view();
+  t.screenTag(v);
+  assert.doesNotMatch(v.innerHTML, /notepanel/);
+  t.setLang("zh-TW");
+  assert.match(t.notePanel("x"), /<h3 id="noteH">備註<\/h3>/);
+  t.setLang("en");
+  t.state.data.tags = [];
+  delete acc.memo;
+});
+
+test("notes (#42): the account and tag forms have a Note field, 4000 characters at most", () => {
+  const body = () => $el("#dialogBody").innerHTML;
+  acc.memo = "Ends in 0000 & \"fake\"";
+  t.openAccountDialog("a1");
+  assert.match(body(), /<label class="wide"><span>Note<\/span><textarea name="memo" rows="3" maxlength="4000" placeholder="Account digits, what it is for, reminders…">Ends in 0000 &amp; &quot;fake&quot;<\/textarea><\/label><button class="primarybtn big" type="submit">/);
+  assert.ok(body().indexOf('class="iconpick"') < body().indexOf('name="memo"'), "after the icons");
+  delete acc.memo;
+  t.openAccountDialog(null, "external");
+  assert.match(body(), /placeholder="What it is, account details, reminders…"><\/textarea>/, "external accounts too, empty for a new one");
+  t.state.data.tags = [{ id: "g1", name: "Food", currency: "", memo: "Includes delivery apps" }];
+  t.openTagDialog(null, "g1");
+  assert.match(body(), /<label class="wide f-note"><span>Note<\/span><textarea name="memo" rows="3" maxlength="4000" placeholder="What this category includes or leaves out…">Includes delivery apps<\/textarea><\/label>/);
+  t.openTagDialog("budget");
+  assert.match(body(), /class="wide f-note"/, "a new budget can have a note; hidden when it goes on an existing category");
+  t.setLang("zh-TW");
+  t.openTagDialog("category");
+  assert.match(body(), /<span>備註<\/span><textarea name="memo" rows="3" maxlength="4000" placeholder="這個分類包含什麼、不包含什麼…">/);
+  t.setLang("en");
+  t.state.data.tags = [];
 });
 
 test("acct is a screen of its own", () => {

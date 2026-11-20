@@ -238,6 +238,14 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
       "+ type" buttons (`.palgrid` / `.paladd`). Every type stays there, so a
       type can be added again. A new widget goes to the bottom and flashes.
     - There are no grips and no dragging.
+- **Notes on accounts and tags** (issue #42): the user's own free text, edited
+  as the last field of the account or category/budget form (a `textarea`
+  labelled Note, 4000 characters, like a transaction note). The account page
+  (under its card) and the tag page (under its totals) show it read-only in a
+  `.panel.notepanel`, with line breaks kept, only when there is a note. Lists
+  and cards never show notes. External accounts have no page, so their note
+  lives in their form only. Merging tags keeps the kept tag's note; the merged
+  tags' notes go with them, and Undo brings them back.
 
 ## Popups
 

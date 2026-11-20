@@ -96,6 +96,9 @@ func BudgetPeriod(t Tag, ref string) (start, end string) {
 
 // normalizeTag validates a tag: a category, a budget when it has a limit (ADR 0004, 0013).
 func normalizeTag(t *Tag) error {
+	if err := validMemo(&t.Memo); err != nil {
+		return err
+	}
 	t.Currency = normCurrency(t.Currency)
 	{
 		if t.LimitMinor == nil {
