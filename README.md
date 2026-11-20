@@ -56,7 +56,7 @@ Settings (sidebar → Settings): language (English or 繁體中文（台灣）, 
 
 ### Releases and checks
 
-GitHub Actions run the tests (`ci.yml`) and vulnerability scans (`security.yml`: govulncheck, Trivy on the repository and the image, CodeQL) on every push and weekly. Pushing a version tag such as `0.1.0` (no `v`; `0.2.0-beta.1` for a pre-release) runs `release.yml`: tests, the downloads built by `scripts/build-release.sh`, the multi-platform image on `ghcr.io/puetsua/kisiauthong`, and the GitHub release.
+GitHub Actions run the tests (`ci.yml`) and vulnerability scans (`security.yml`: govulncheck, Trivy on the repository and the image, CodeQL) on every push and weekly. Pushing a version tag such as `0.1.0` (no `v`; `0.2.0-beta.1` for a pre-release) runs `release.yml`: tests, the downloads built by `scripts/build-release.sh`, the multi-platform image on `ghcr.io/puetsua/kisiauthong`, and the GitHub release. `app.yml` builds the macOS app and `android.yml` an installable Android APK (a workflow artifact; signed with the release key from the secrets when they are set, otherwise with a throwaway key) for changes to `apps/tauri`; see `apps/tauri/README.md`.
 
 ## Apps
 
