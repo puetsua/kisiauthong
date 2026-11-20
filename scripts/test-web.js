@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -274,6 +274,71 @@ test("sign-in card: the server row and Change server only inside the app, on eve
   t.setLang("en");
   delete sandbox.kisiauthongApp;
   delete location.host;
+});
+
+test("Customize dashboard on phones: tiles are bars, settings open under the bar, the add grid has no grips (#40)", () => {
+  // the sign-in tests leave no data (showAuth clears it); the desktop preview needs some
+  t.state.data = t.state.data || { today: "2026-11-18", serverToday: "2026-11-18", accounts: [], externals: [], allAccounts: [], transactions: [], tags: [], reserves: [], allocations: [], transactionTemplates: [] };
+  const items = [{ id: "a", type: "balances" }, { id: "b", type: "spending", size: "half", rows: 5 }, { id: "c", type: "recent" }];
+  const draft = { items };
+  t.state.dashSel = null;
+  const bar = t.dashTile(items[1], 1, draft, true);
+  assert.doesNotMatch(bar, /tilebody|tileset/, "a collapsed tile is only its bar");
+  assert.match(bar, /<span class="tnm">Spending this month<\/span><small class="tmeta">Half width · Rows: 5<\/small>/);
+  assert.match(bar, /data-tile-move="-1" aria-label="Move Spending this month earlier" >.*data-tile-move="1" aria-label="Move Spending this month later" >/s);
+  assert.match(bar, /data-tile-edit="b" aria-label="Settings for Spending this month" title="Settings" aria-expanded="false">/);
+  assert.match(bar, /data-tile-remove aria-label="Remove Spending this month"/);
+  assert.strictEqual(t.tileMeta(items[0]), "Full width", "no rows line for a widget without rows");
+  assert.strictEqual(t.tileMeta({ id: "x", type: "recent" }), "Full width · Rows: 6", "the default rows");
+  t.state.dashSel = "b";
+  const open = t.dashTile(items[1], 1, draft, true);
+  assert.match(open, /class="panel dw edit half sel"/);
+  assert.match(open, /aria-expanded="true"/);
+  assert.match(open, /<div class="tileset"><div class="paneform">.*data-dash-title value="".*data-dash-size.*<option value="half" selected>.*data-dash-rows min="1" max="50" value="5".*<div class="setrow tileacts"><button type="button" class="smallbtn" data-pane-dup>Duplicate<\/button><button type="button" class="smallbtn danger" data-pane-remove>Remove from dashboard<\/button><\/div><\/div><\/section>$/s);
+  assert.doesNotMatch(open, /data-pane-back|tilebody/, "no back link inline, no preview");
+  // the pane on phones only adds: every type, again and again (copies are allowed), as "+ type" buttons
+  const pane = t.dashPaneHTML(draft, true);
+  assert.strictEqual((pane.match(/class="paladd" data-pal-add=/g) || []).length, 6);
+  assert.match(pane, /^<h3>Add widget<\/h3>\s*<div class="palgrid"><button type="button" class="paladd" data-pal-add="balances" aria-label="Add Balances by currency"><span aria-hidden="true">\+<\/span>Balances by currency<\/button>/);
+  assert.doesNotMatch(pane, /grip|droptrash|data-pal="|data-pane-back|paneform/, "no drag handles, no drop zone, no settings in the pane");
+  // desktop stays as it was: previews, settings in the pane, the palette with grips
+  const desk = t.dashTile(items[2], 2, draft, false);
+  assert.match(desk, /<div class="tilebody" inert>/);
+  assert.doesNotMatch(desk, /tileset|aria-expanded/);
+  assert.match(t.dashPaneHTML(draft, false), /data-pane-back.*<h3>Spending this month<\/h3><div class="paneform">/s);
+  t.state.dashSel = null;
+  assert.match(t.dashPaneHTML(draft, false), /<ul class="palette"><li data-pal="balances"><span class="grip" aria-hidden="true">⠿<\/span>.*<div class="droptrash">/s);
+  t.setLang("zh-TW");
+  t.state.dashSel = "b";
+  assert.match(t.dashTile(items[1], 1, draft, true), /<small class="tmeta">半寬 · 5 列<\/small>.*複製.*從總覽移除/s);
+  assert.match(t.dashPaneHTML(draft, true), /<h3>加入小工具<\/h3>.*aria-label="加入「預算」"><span aria-hidden="true">\+<\/span>預算</s);
+  t.setLang("en");
+  t.state.dashSel = null;
+  // the phone CSS hides the grips and the drop zone, and keeps 40px touch targets
+  const css = fs.readFileSync(path.join(web, "style.css"), "utf8");
+  const phoneCss = css.slice(css.indexOf("customizing on phones (issue #40)") - 200, css.indexOf("customizing on phones (issue #40)") + 1400);
+  assert.match(phoneCss, /\.dasheditor \.grip,\.dasheditor \.droptrash\{display:none\}/);
+  assert.match(phoneCss, /\.tilebar \.iconbtn,\.colpick \.iconbtn\{min-width:40px;min-height:40px\}/);
+  assert.match(css, /\.paladd\{[^}]*min-height:48px/);
+});
+
+test("Customize dashboard on phones, the whole editor: bars only, then the add grid", () => {
+  const mq = sandbox.matchMedia;
+  sandbox.matchMedia = () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} });
+  t.state.dashDraft = JSON.parse(JSON.stringify(t.DASH_DEFAULT));
+  t.state.dashSel = null;
+  const v = { innerHTML: "", querySelector: () => element(), querySelectorAll: listStub };
+  t.screenDashboardEditor(v);
+  const canvas = $el("#dashCanvas").innerHTML, pane = $el("#dashPane").innerHTML;
+  assert.strictEqual((canvas.match(/data-tile="/g) || []).length, 6);
+  assert.doesNotMatch(canvas, /tilebody|tileset/);
+  assert.match(pane, /class="palgrid"/);
+  t.state.dashSel = "budgets";
+  t.screenDashboardEditor(v);
+  assert.strictEqual(($el("#dashCanvas").innerHTML.match(/class="tileset"/g) || []).length, 1, "one widget's settings, under its bar");
+  assert.match($el("#dashPane").innerHTML, /class="palgrid"/, "the pane keeps adding while a widget is open");
+  sandbox.matchMedia = mq;
+  t.state.dashSel = null; t.state.dashDraft = null;
 });
 
 // askConfirm is async; these run after the synchronous tests

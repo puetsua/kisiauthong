@@ -141,8 +141,8 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   gets a taller hit area through padding with a matching negative margin.
 - Nothing important is hover-only: a `title` tooltip is an extra, and
   whatever it says must also be visible or reachable by tapping.
-- No gestures the UI depends on (long-press, swipe); dashboard editing uses
-  grips and arrow buttons.
+- No gestures the UI depends on (long-press, swipe), and no dragging on
+  phones: dashboard editing there uses arrow buttons only (see Dashboard).
 - Use the right keyboard: amounts `type="number" inputmode="decimal"`,
   codes `inputmode="numeric" autocomplete="one-time-code"`.
 
@@ -225,6 +225,19 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   widget with columns shows its table on desktop and, through
   `phoneSwap(table, cards)`, the same cards as its full page on phones
   (budget cards, account cards, a spending list).
+  - **Customize dashboard, desktop:** the dashboard itself is edited, with
+    previews. The pane on the right lists the widget types to add, or the
+    settings of the selected widget. Widgets move by dragging (a mouse from
+    anywhere on the tile) or with ↑ ↓.
+  - **Customize dashboard, phones (issue #40):** each tile is only its bar.
+    The bar shows the name, a muted line with the width and rows
+    (`.tmeta`) and ↑ ↓ ⚙ ✕ (40px).
+    - ⚙ (or the name) opens that widget's settings under its bar
+      (`.tileset`, `aria-expanded` on ⚙), and tapping it again closes them.
+    - Below the last tile, **Add widget** is a two-column grid of
+      "+ type" buttons (`.palgrid` / `.paladd`). Every type stays there, so a
+      type can be added again. A new widget goes to the bottom and flashes.
+    - There are no grips and no dragging.
 
 ## Popups
 

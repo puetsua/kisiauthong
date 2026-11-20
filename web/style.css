@@ -107,6 +107,12 @@ a.smallbtn{text-decoration:none;display:inline-block}
 .tilebar .iconbtn{font-size:.95rem;padding:5px 7px;border-radius:6px;color:var(--muted);display:grid;place-items:center}
 .tilebar .iconbtn:hover:not(:disabled){background:var(--hover2);color:var(--accent)}
 .tilebar .iconbtn:disabled{opacity:.3;cursor:default}
+.tilebar .tmeta{display:none}
+.palgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.paladd{display:flex;align-items:center;gap:8px;min-height:48px;padding:8px 12px;border:1px dashed var(--line);border-radius:10px;background:transparent;font:inherit;font-weight:600;color:var(--accent);text-align:left;cursor:pointer}
+.paladd span{font-size:1.25rem;line-height:1;font-weight:400}
+.paladd:hover{border-color:var(--accent2);background:var(--accentsoft)}
+.paladd:focus-visible{outline:3px solid var(--accent2);outline-offset:2px}
 .tilebody{padding:14px 18px;max-height:260px;overflow:hidden;position:relative;pointer-events:none;-webkit-mask-image:linear-gradient(#000 75%,transparent);mask-image:linear-gradient(#000 75%,transparent)}
 .tilebody .cards{margin:0}
 .panel.dashpane{position:sticky;top:84px;margin:0;max-height:calc(100dvh - 104px);overflow-y:auto}
@@ -319,7 +325,25 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .topbar{padding:12px 14px}.topbar h1{font-size:1.2rem}
   .grid2{grid-template-columns:1fr}
   .dashgrid>.dw.half{grid-column:1/-1}
-  .dasheditor{grid-template-columns:minmax(0,1fr)}.dasheditor .grip{min-width:40px;min-height:40px;font-size:1.3rem}.tilebar .iconbtn,.colpick .iconbtn{min-width:40px;min-height:40px}.tilebar{padding:2px 4px}.palette li{padding:4px 8px 4px 2px}.panel.dashpane{position:static;max-height:none;order:-1}
+  .dasheditor{grid-template-columns:minmax(0,1fr);gap:10px}.tilebar .iconbtn,.colpick .iconbtn{min-width:40px;min-height:40px}
+  /* customizing on phones (issue #40): each tile is only its bar (name, a line with width and rows,
+     ↑ ↓ ⚙ ✕), the selected one holds its settings under the bar, the add grid follows the last tile,
+     and nothing is dragged */
+  .dasheditor .grip,.dasheditor .droptrash{display:none}
+  .dashcanvas{gap:8px}
+  .dw.edit{cursor:default;user-select:auto}
+  .dw.edit:hover{box-shadow:none}.dw.edit.sel{box-shadow:0 0 0 2px var(--accent)}
+  .dw.edit .tilebar{min-height:56px;padding:4px 4px 4px 10px;background:var(--panel);border-bottom:0}
+  .dw.edit.sel .tilebar{background:var(--soft);border-bottom:1px solid var(--rule)}
+  .dw.edit .tilebar .iconbtn[aria-expanded="true"]{color:var(--accent);background:var(--accentsoft)}
+  .tilebar .tname{white-space:normal;padding:6px 4px}
+  .tilebar .tnm{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tilebar .tmeta{display:block;font-size:.8rem;font-weight:400;color:var(--muted)}
+  .tileset{padding:2px 14px 14px}
+  .tileset .paneform{margin:8px 0 12px}
+  .tileset .tileacts{display:flex;gap:8px;flex-wrap:wrap}
+  .panel.dashpane{position:static;max-height:none;background:none;border:0;padding:0;margin:4px 0 0;overflow:visible}
+  .dashpane h3{font-family:inherit;font-size:.82rem;font-weight:600;color:var(--muted);letter-spacing:.04em;margin:6px 2px 8px}
   .notifpanel{left:12px;width:auto}
   .periodnav{margin-left:0;width:100%;justify-content:space-between}
   .plabel{min-width:0}
