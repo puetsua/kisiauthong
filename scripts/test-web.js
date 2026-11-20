@@ -284,12 +284,12 @@ test("Customize dashboard on phones: tiles are bars, settings open under the bar
   t.state.dashSel = null;
   const bar = t.dashTile(items[1], 1, draft, true);
   assert.doesNotMatch(bar, /tilebody|tileset/, "a collapsed tile is only its bar");
-  assert.match(bar, /<span class="tnm">Spending this month<\/span><small class="tmeta">Half width · 5 rows<\/small>/);
+  assert.match(bar, /<span class="tnm">Spending this month<\/span><small class="tmeta">Half width · Rows: 5<\/small>/);
   assert.match(bar, /data-tile-move="-1" aria-label="Move Spending this month earlier" >.*data-tile-move="1" aria-label="Move Spending this month later" >/s);
   assert.match(bar, /data-tile-edit="b" aria-label="Settings for Spending this month" title="Settings" aria-expanded="false">/);
   assert.match(bar, /data-tile-remove aria-label="Remove Spending this month"/);
   assert.strictEqual(t.tileMeta(items[0]), "Full width", "no rows line for a widget without rows");
-  assert.strictEqual(t.tileMeta({ id: "x", type: "recent" }), "Full width · 6 rows", "the default rows");
+  assert.strictEqual(t.tileMeta({ id: "x", type: "recent" }), "Full width · Rows: 6", "the default rows");
   t.state.dashSel = "b";
   const open = t.dashTile(items[1], 1, draft, true);
   assert.match(open, /class="panel dw edit half sel"/);

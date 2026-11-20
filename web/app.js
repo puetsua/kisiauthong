@@ -370,7 +370,7 @@ const UP = ARROW("M12 19V5M6 11l6-6 6 6"), DOWN = ARROW("M12 5v14M6 13l6 6 6-6")
 // The short line under a widget's name in a collapsed tile on phones: its width, and its rows when it has them.
 function tileMeta(w) {
   const def = widgetDef(w.type), parts = [__(w.size === "half" ? "Half width" : "Full width")];
-  if (def.rows) parts.push(__("{n} rows", { n: w.rows || def.rows }));
+  if (def.rows) parts.push(__("Rows: {n}", { n: w.rows || def.rows }));
   return parts.join(" · ");
 }
 // phone: on phones (issue #40) the tile is only its bar, and the selected one holds its settings
@@ -492,6 +492,7 @@ function screenDashboardEditor(v) {
   const drawPane = () => {
     const ph = phone();
     pane.innerHTML = dashPaneHTML(draft, ph);
+    pane.setAttribute("aria-label", ph ? __("Add widget") : __("Widgets"));
     pane.querySelectorAll("[data-pane-back]").forEach((b) => b.addEventListener("click", () => { state.dashSel = null; draw(); }));
     pane.querySelectorAll("[data-pal-add]").forEach((b) => b.addEventListener("click", () => {
       const w = create(b.dataset.palAdd);
@@ -512,9 +513,21 @@ function screenDashboardEditor(v) {
       if (!t || !w) return;
       t.querySelector(".tnm").textContent = widgetName(w);
       t.querySelector(".tmeta").textContent = tileMeta(w);
+      // the buttons' names follow a new title too
+      const name = widgetName(w);
+      t.querySelector('[data-tile-move="-1"]').setAttribute("aria-label", __("Move {widget} earlier", { widget: name }));
+      t.querySelector('[data-tile-move="1"]').setAttribute("aria-label", __("Move {widget} later", { widget: name }));
+      t.querySelector(".iconbtn[data-tile-edit]").setAttribute("aria-label", __("Settings for {widget}", { widget: name }));
+      t.querySelector("[data-tile-remove]").setAttribute("aria-label", __("Remove {widget}", { widget: name }));
     };
     on("[data-pane-remove]", "click", () => remove(id));
-    on("[data-pane-dup]", "click", () => { const w = create(null, draftItem(id)); place(w, id, true); state.dashSel = w.id; draw(); flash(w.id); });
+    on("[data-pane-dup]", "click", () => {
+      const w = create(null, draftItem(id));
+      place(w, id, true); state.dashSel = w.id; draw(); flash(w.id);
+      // the button pressed is gone: focus the copy's settings (inline) or its name (pane)
+      const f = inline ? canvas.querySelector(`[data-tile="${CSS.escape(w.id)}"] .iconbtn[data-tile-edit]`) : pane.querySelector("[data-dash-title]");
+      if (f) f.focus();
+    });
     on("[data-dash-title]", "input", (t) => { setWidgetOpt(id, "title", t.value.trim()); refresh(); });
     on("[data-dash-size]", "change", (sz) => { setWidgetOpt(id, "size", sz.value === "half" ? "half" : undefined); refresh(); });
     on("[data-dash-rows]", "change", (r) => {

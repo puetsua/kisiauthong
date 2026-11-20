@@ -333,7 +333,7 @@ dialog input,dialog select{width:100%;padding:10px;border:1px solid var(--line);
   .dashcanvas{gap:8px}
   .dw.edit{cursor:default;user-select:auto}
   .dw.edit:hover{box-shadow:none}.dw.edit.sel{box-shadow:0 0 0 2px var(--accent)}
-  .dw.edit .tilebar{min-height:56px;padding:4px 4px 4px 10px;background:#fff;border-bottom:0}
+  .dw.edit .tilebar{min-height:56px;padding:4px 4px 4px 10px;background:var(--panel);border-bottom:0}
   .dw.edit.sel .tilebar{background:var(--soft);border-bottom:1px solid var(--rule)}
   .dw.edit .tilebar .iconbtn[aria-expanded="true"]{color:var(--accent);background:var(--accentsoft)}
   .tilebar .tname{white-space:normal;padding:6px 4px}
