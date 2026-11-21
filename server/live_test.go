@@ -276,9 +276,9 @@ func TestLiveHub(t *testing.T) {
 		t.Fatalf("subscribe: %v %s %s", ok, rev, r0)
 	}
 	h.changed("u")
-	h.changed("u") // the stream has not read the first: no blocking, the newer one is dropped
-	if got := <-ch; got == r0 {
-		t.Fatalf("revision did not move: %s", got)
+	h.changed("u") // the stream has not read the first: no blocking, and the newest replaces it
+	if got := <-ch; got == r0 || got != h.revision("u") {
+		t.Fatalf("the queued notice is not the latest revision: %s (latest %s)", got, h.revision("u"))
 	}
 	select {
 	case got := <-ch:

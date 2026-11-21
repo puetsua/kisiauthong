@@ -55,8 +55,8 @@ func (h *liveHub) revision(uid string) string {
 }
 
 // changed counts a change to the user's books and tells their open streams.
-// It never blocks: a stream that has not taken the last notice yet keeps that
-// one, and the page fetches the latest books either way.
+// It never blocks: a stream that has not taken the last notice yet gets it
+// replaced by this newer one, so what it sends next is the latest revision.
 func (h *liveHub) changed(uid string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -64,10 +64,11 @@ func (h *liveHub) changed(uid string) {
 	h.rev[uid]++
 	rev := h.revLocked(uid)
 	for ch := range h.subs[uid] {
-		select {
-		case ch <- rev:
+		select { // drop an unread older notice (only this hub sends, under h.mu, so the send below cannot block)
+		case <-ch:
 		default:
 		}
+		ch <- rev
 	}
 }
 
