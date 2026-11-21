@@ -24,7 +24,7 @@ apps/tauri/
     capabilities/       the bundled screen's capability (saved servers get theirs at run time)
     permissions/app.toml  the "server-screen" and "bridge" permission sets
     Info.plist, Info.ios.plist  App Transport Security: https, except on the local network
-    gen/android/        the Android project (committed): UpdatePlugin.kt, manifest, release signing, icons
+    gen/android/        the Android project (committed): UpdatePlugin.kt, ProbePlugin.kt, manifest, release signing, icons
   test/cleartext-cases.json   where http:// is allowed; the same cases for connect.js and profiles.rs
 ```
 
@@ -214,13 +214,13 @@ Open points for Android:
   phone is Tailscale or a similar VPN. Not yet tried on a device: that a
   Tailscale `100.x.y.z` address is outside this protection. In the emulator,
   use `adb reverse` and `127.0.0.1`.
-- The server check uses rustls with the platform verifier on Android, which
-  needs `rustls_platform_verifier::android::init_hosted` called with the JNI
-  context at start-up (see the rustls-platform-verifier README); until then
-  the check cannot verify certificates.
-- `http://` on the local network needs cleartext traffic allowed in
-  `gen/android/app/src/main/AndroidManifest.xml` (the generated template allows
-  it only in debug builds); the app's own rule still blocks it off the local
-  network.
+- The server check runs in Kotlin on Android (`ProbePlugin.kt`, with
+  `HttpURLConnection`), so it trusts the certificates and follows the network
+  security policy the WebView does; the other platforms use reqwest
+  (`src/probe.rs`). Both answer in the shape `src/connect.js` reads.
+- Android allows cleartext traffic in every build (`usesCleartextTraffic` in
+  `gen/android/app/build.gradle.kts`; the generated template allowed it only in
+  debug builds, so a release could not open an `http://` server); the app's own
+  rule (ADR 0019) still blocks `http://` off the user's own network.
 - `src-tauri/gen/android` is committed (ADR 0020); `gen/apple` is still
   ignored until the iOS project is customised.
