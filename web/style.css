@@ -239,6 +239,16 @@ dialog textarea{width:100%;padding:10px;border:1px solid var(--line);border-radi
 .fday[open]>summary::before{transform:rotate(45deg)}
 .fday>summary:hover{color:var(--ink);background:var(--hover)}
 .fday>summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* ended budgets (issue #59): a section below the running budgets, closed unless left open */
+.endedsec{margin-top:14px}
+.endedsec>summary{list-style:none;display:inline-flex;align-items:center;gap:10px;min-height:40px;padding:6px 10px 6px 4px;font-size:.9rem;font-weight:600;color:var(--muted);cursor:pointer;border-radius:8px;user-select:none}
+.endedsec>summary::-webkit-details-marker{display:none}
+.endedsec>summary::before{content:"";flex:none;width:6px;height:6px;margin:0 4px 2px 2px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .15s}
+.endedsec[open]>summary::before{transform:rotate(45deg)}
+.endedsec>summary:hover{color:var(--ink);background:var(--hover)}
+.endedsec>summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.endedsec>summary+*{margin-top:8px}
+@media (prefers-reduced-motion:reduce){.endedsec>summary::before{transition:none}}
 .fcount{font-weight:400}
 .fday[open] .fcount{display:none}
 .fnet{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:500}

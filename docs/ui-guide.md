@@ -242,6 +242,12 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
       "+ type" buttons (`.palgrid` / `.paladd`). Every type stays there, so a
       type can be added again. A new widget goes to the bottom and flashes.
     - There are no grips and no dragging.
+- **Ended budgets** (issue #59): wherever budgets are listed (the Tags page,
+  the Budgets widget as table and as cards), a budget whose fixed date range
+  has passed (`today > periodEnd`) moves into a `details.endedsec` below the
+  running ones, summary "Ended (n)" (已結束 (n)), 40px tall. It is closed by
+  default; the browser remembers the last choice (`localStorage`) for every
+  such list. With no ended budget there is no section.
 - **Notes on accounts and tags** (issue #42): the user's own free text, edited
   as the last field of the account or category/budget form (a `textarea`
   labelled Note, 4000 characters, like a transaction note). The account page

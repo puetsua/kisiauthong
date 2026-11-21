@@ -300,6 +300,18 @@ function widgetCols(type, o) {
   return keys.map((k) => all.find((c) => c.key === k)).filter(Boolean);
 }
 // a widget's table on desktop and its cards on phones (CSS shows one), as the full pages do
+// Ended budgets (issue #59): a fixed-range budget after its last day, by the same "today" the budget card
+// says "Ended" by. Wherever budgets are listed they move into an "Ended (n)" section below the running ones,
+// closed unless this browser last left it open; opening it shows them as before.
+const ENDED_KEY = "kisiauthong.endedBudgetsOpen";
+const budgetEnded = (t) => t.limitMinor !== undefined && !!t.periodEnd && state.data.today > t.periodEnd;
+function endedOpen() { try { return localStorage.getItem(ENDED_KEY) === "1"; } catch (e) { return false; } }
+const endedSection = (n, inner) => (n ? `<details class="endedsec"${endedOpen() ? " open" : ""}><summary>${esc(__("Ended ({n})", { n }))}</summary>${inner}</details>` : "");
+// toggle does not bubble, so listen while it travels down; the choice applies to every list of budgets
+document.addEventListener("toggle", (e) => {
+  if (!e.target.matches || !e.target.matches("details.endedsec")) return;
+  try { localStorage.setItem(ENDED_KEY, e.target.open ? "1" : "0"); } catch (err) { /* a per-browser convenience only */ }
+}, true);
 const phoneSwap = (tableHTML, phoneHTML) => `<div class="wdesk">${tableHTML}</div><div class="wphone">${phoneHTML}</div>`;
 const colTable = (cols, xs) => table(cols.map((c) => ({ t: c.label, num: c.num })), xs.map((x) => row(cols.map((c) => ({ l: c.label, v: c.v(x), num: c.num })))).join(""));
 // The currency tab a Spending widget shows, per widget and per device: the one picked last while it still
@@ -331,7 +343,12 @@ function widgetBody(type, o) {
     }
     case "budgets": {
       const list = d.tags.filter((t) => t.limitMinor !== undefined && inc(t.id)).map((t) => ({ ...t, pct: t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0 }));
-      return list.length ? phoneSwap(colTable(widgetCols(type, o), list), `<div class="tgrid">${list.map(budgetCard).join("")}</div>`) : `<p class="muted">${esc(__("No budgets yet."))}</p>`;
+      if (!list.length) return `<p class="muted">${esc(__("No budgets yet."))}</p>`;
+      // running budgets first; ended ones in their own section below (#59), as a table or as cards
+      const running = list.filter((t) => !budgetEnded(t)), ended = list.filter(budgetEnded);
+      const desk = (xs) => colTable(widgetCols(type, o), xs), cards = (xs) => `<div class="tgrid">${xs.map(budgetCard).join("")}</div>`;
+      return phoneSwap((running.length ? desk(running) : "") + endedSection(ended.length, desk(ended)),
+        (running.length ? cards(running) : "") + endedSection(ended.length, cards(ended)));
     }
     case "spending": {
       // server returns rows grouped by currency, largest first; bars compare within one currency only,
@@ -1320,14 +1337,15 @@ function pagePeriod(params) {
 function screenTags(v) {
   if (state.tagPick) { screenTagPick(v); return; }
   const tags = state.data.tags;
-  const budgets = tags.filter((t) => t.limitMinor !== undefined);
+  const budgets = tags.filter((t) => t.limitMinor !== undefined && !budgetEnded(t)), ended = tags.filter(budgetEnded);
   const cats = tags.filter((t) => t.limitMinor === undefined);
   // each grid ends with its "add" tile; categories show what happened in the chosen period up to now
   const p = periodFor(tagRange(), state.data.today);
   const switcher = `<div class="seg pmodes" role="group" aria-label="${esc(__("Period"))}">${Object.keys(TAG_NOW_L).map((m) => `<button type="button" data-tag-range="${m}" class="${m === p.mode ? "on" : ""}" aria-pressed="${m === p.mode}">${esc(__(TAG_NOW_L[m]))}</button>`).join("")}</div>`;
-  const section = (title, list, card, tail, head = "") => `<section class="tsection"><div class="tsechead"><h3>${esc(title)}</h3>${head}</div>
-    <div class="tgrid">${list.map((t) => card(t, p)).join("")}${tail}</div></section>`;
-  v.innerHTML = section(__("Budgets"), budgets, budgetCard, addTile("newBudget", __("Add budget")))
+  const section = (title, list, card, tail, head = "", after = "") => `<section class="tsection"><div class="tsechead"><h3>${esc(title)}</h3>${head}</div>
+    <div class="tgrid">${list.map((t) => card(t, p)).join("")}${tail}</div>${after}</section>`;
+  v.innerHTML = section(__("Budgets"), budgets, budgetCard, addTile("newBudget", __("Add budget")), "",
+    endedSection(ended.length, `<div class="tgrid">${ended.map(budgetCard).join("")}</div>`))
     + section(__("Categories"), cats, categoryCard, addTile("newCategory", __("New category")), switcher);
   if (tags.length > 1) {
     v.insertAdjacentHTML("afterbegin", `<div class="pagebar"><span class="muted">${esc(__("{n} tags", { n: tags.length }))}</span><button type="button" class="smallbtn" id="tagMerge">${esc(__("Manage tags"))}</button></div>`);
