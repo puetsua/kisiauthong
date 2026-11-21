@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, tagNet, netHTML };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, tagNet, netHTML, budgetEnded, widgetBody, screenTags };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -195,6 +195,56 @@ test("category totals (#57): one net amount per currency, signed and colored, on
     assert.match(html, /<span class="lab">Received<\/span><b>TWD 11,340<\/b>/);
   } finally {
     data.tags = saved.tags; data.transactions = saved.transactions;
+  }
+});
+
+test("ended budgets (#59): below the running ones, in a closed Ended (n) section, on the Tags page and in the widget", () => {
+  const budget = (id, name, start, end, extra = {}) => ({ id, name, currency: "TWD", limitMinor: 800000, cycle: "range", cycleStart: start, cycleEnd: end,
+    periodStart: start, periodEnd: end, spentMinor: 100000, remainingMinor: 700000, ...extra });
+  const tags = [
+    budget("b-food", "Food", "2026-11-01", "2026-11-30", { cycle: "monthly", cycleStart: "", cycleEnd: "" }),
+    budget("b-trip", "Trip", "2026-04-01", "2026-04-20"),
+    budget("b-move", "Move", "2025-08-01", "2025-09-30"),
+    budget("b-last", "Last day", "2026-11-01", "2026-11-18"), // ends today: still running
+    { id: "c-misc", name: "Misc", currency: "" },
+  ];
+  const data = t.state.data, saved = data.tags, store = {};
+  const ls = sandbox.localStorage;
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
+  data.tags = tags;
+  try {
+    assert.deepStrictEqual(tags.map(t.budgetEnded), [false, true, true, false, false], "ended: the day after the last one; a category never");
+    const tagsPage = () => { const v = view(); v.insertAdjacentHTML = (where, h) => { v.innerHTML = h + v.innerHTML; }; t.screenTags(v); return v.innerHTML; };
+    let html = tagsPage();
+    const grid = html.slice(html.indexOf('<div class="tgrid">'), html.indexOf("</div><details"));
+    assert.match(grid, /Food[\s\S]*Last day/, "running budgets in the grid");
+    assert.doesNotMatch(grid, /Trip|Move/, "ended ones are not in the grid");
+    assert.match(html, /<details class="endedsec"><summary>Ended \(2\)<\/summary><div class="tgrid">[\s\S]*Trip[\s\S]*<\/div><\/details><\/section>/, "closed by default, below the grid, with the count");
+    assert.match(html.slice(html.indexOf("endedsec")), /Move/);
+    assert.ok(html.indexOf("endedsec") < html.indexOf("Categories"), "inside the Budgets section, above Categories");
+    store["kisiauthong.endedBudgetsOpen"] = "1";
+    assert.match(tagsPage(), /<details class="endedsec" open><summary>Ended \(2\)/, "open when this browser left it open");
+    // the dashboard widget: the same section after the running ones, for the table and for the cards
+    const widget = t.widgetBody("budgets", {});
+    const [desk, phone] = [widget.slice(0, widget.indexOf('<div class="wphone">')), widget.slice(widget.indexOf('<div class="wphone">'))];
+    for (const [where, part] of [["table", desk], ["cards", phone]]) {
+      const i = part.indexOf("<details");
+      assert.ok(i > 0, where + ": a section");
+      assert.doesNotMatch(part.slice(0, i), /Trip|Move/, where + ": ended ones not among the running");
+      assert.match(part.slice(i), /^<details class="endedsec" open><summary>Ended \(2\)<\/summary>[\s\S]*Trip[\s\S]*Move|^<details class="endedsec" open><summary>Ended \(2\)<\/summary>[\s\S]*Move[\s\S]*Trip/, where + ": both ended ones inside");
+    }
+    t.setLang("zh-TW");
+    assert.match(tagsPage(), /<summary>已結束 \(2\)<\/summary>/);
+    t.setLang("en");
+    // no ended budgets: no section anywhere
+    data.tags = tags.filter((x) => !t.budgetEnded(x));
+    assert.doesNotMatch(tagsPage() + t.widgetBody("budgets", {}), /endedsec/);
+    // only ended ones: the widget shows just the section
+    data.tags = tags.filter(t.budgetEnded);
+    assert.match(t.widgetBody("budgets", {}), /^<div class="wdesk"><details class="endedsec"/);
+  } finally {
+    data.tags = saved;
+    sandbox.localStorage = ls;
   }
 });
 
