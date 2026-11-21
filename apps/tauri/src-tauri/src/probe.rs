@@ -3,12 +3,16 @@
 //
 // One GET of <server>api/auth/status for the server screen. It reports what it
 // saw and nothing more: the screen's connect.js decides what that means, so the
-// rules live in one tested place (scripts/test-app.js).
+// rules live in one tested place (scripts/test-app.js). On Android the request
+// is made by ProbePlugin.kt with the system's trust store and answers in the
+// same shape; this file then only supplies the shape.
 
+#[cfg(not(target_os = "android"))]
 use std::time::Duration;
 
 use serde::Serialize;
 
+#[cfg(not(target_os = "android"))]
 const MAX_BODY: usize = 64 * 1024;
 
 #[derive(Debug, Default, Serialize)]
@@ -32,6 +36,7 @@ pub struct Probe {
     pub detail: Option<String>,
 }
 
+#[cfg(not(target_os = "android"))]
 pub async fn get(url: &str) -> Probe {
     let client = match reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(8))
@@ -71,11 +76,13 @@ pub async fn get(url: &str) -> Probe {
     p
 }
 
+#[cfg(not(target_os = "android"))]
 fn failed(kind: &'static str, e: &(dyn std::error::Error + 'static)) -> Probe {
     Probe { error: Some(kind), detail: Some(chain(e).join(": ")), ..Probe::default() }
 }
 
 /// Every message in an error's source chain.
+#[cfg(not(target_os = "android"))]
 fn chain(e: &(dyn std::error::Error + 'static)) -> Vec<String> {
     let mut out = vec![e.to_string()];
     let mut cur = e.source();
@@ -86,6 +93,7 @@ fn chain(e: &(dyn std::error::Error + 'static)) -> Vec<String> {
     out
 }
 
+#[cfg(not(target_os = "android"))]
 fn error_kind(e: &reqwest::Error) -> &'static str {
     if e.is_timeout() {
         "timeout"
@@ -101,7 +109,8 @@ fn error_kind(e: &reqwest::Error) -> &'static str {
 
 /// Whether an error chain is a failed TLS handshake or certificate check, as
 /// the system TLS libraries word it (Security.framework on Apple, SChannel on
-/// Windows, OpenSSL or rustls elsewhere).
+/// Windows, OpenSSL elsewhere).
+#[cfg(any(test, not(target_os = "android")))]
 pub fn is_tls(chain: &[String]) -> bool {
     const SIGNS: &[&str] = &[
         "certificate",
@@ -122,9 +131,29 @@ pub fn is_tls(chain: &[String]) -> bool {
     })
 }
 
+/// A kind of failure as ProbePlugin.kt names it; anything unexpected is "other".
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn kind(s: &str) -> &'static str {
+    match s {
+        "tls" => "tls",
+        "connect" => "connect",
+        "timeout" => "timeout",
+        _ => "other",
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::is_tls;
+    use super::{is_tls, kind};
+
+    #[test]
+    fn android_failure_kinds() {
+        for k in ["tls", "connect", "timeout", "other"] {
+            assert_eq!(kind(k), k);
+        }
+        assert_eq!(kind("TLS"), "other");
+        assert_eq!(kind(""), "other");
+    }
 
     fn c(msgs: &[&str]) -> Vec<String> {
         msgs.iter().map(|s| s.to_string()).collect()

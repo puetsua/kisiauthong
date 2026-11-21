@@ -28,8 +28,9 @@ sys-locale = "0.3"
 # release versions for app updates (src/update.rs)
 semver = "1"
 
-# The server check uses the system's TLS and trust store where it can, so it
-# trusts the certificates the system webview trusts.
+# The server check uses the system's TLS and trust store, so it trusts the
+# certificates the system webview trusts. On Android it is made in Kotlin
+# (ProbePlugin.kt), so no Rust HTTP or TLS stack is built in there.
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["native-tls-no-alpn", "system-proxy"] }
 
@@ -41,9 +42,6 @@ rfd = { version = "0.16", default-features = false, features = ["common-controls
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
-
-[target.'cfg(target_os = "android")'.dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 
 [profile.release]
 codegen-units = 1

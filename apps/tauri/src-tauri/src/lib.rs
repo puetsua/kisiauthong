@@ -9,7 +9,8 @@
 // things: the bundled server screen (../src) to enter or fix a server address,
 // the saved server list (profiles.rs), and a small bridge (bridge.js) through
 // which the server's Settings → Servers lists and manages that list. On
-// Android it can also update itself from the project's releases (update.rs).
+// Android it can also update itself from the project's releases (update.rs),
+// and the server check runs in Kotlin (ProbePlugin.kt).
 
 mod probe;
 mod profiles;
@@ -206,13 +207,19 @@ fn app_state(app: AppHandle, webview: Webview, shell: State<'_, Shell>) -> Resul
 }
 
 #[tauri::command]
-async fn probe(webview: Webview, url: String) -> Result<probe::Probe, String> {
+async fn probe(app: AppHandle, webview: Webview, url: String) -> Result<probe::Probe, String> {
     require_local(&webview)?;
     let u = parse(&url)?;
     if !matches!(u.scheme(), "http" | "https") {
         return Err("Only http:// and https:// addresses are supported.".into());
     }
-    Ok(probe::get(u.as_str()).await)
+    #[cfg(target_os = "android")]
+    return Ok(android::probe(&app, u.as_str()).await);
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(probe::get(u.as_str()).await)
+    }
 }
 
 /// Saves a checked address. connect: make it the server in use and open it;
@@ -446,7 +453,7 @@ fn confirm(_message: String, _ok: Option<String>, _cancel: Option<String>) -> Re
     Err("No native dialog on this platform yet.".into())
 }
 
-/* ---------- Android: the Kotlin side of updates (UpdatePlugin.kt) ---------- */
+/* ---------- Android: the Kotlin side of updates and the server check ---------- */
 
 #[cfg(target_os = "android")]
 mod android {
@@ -454,15 +461,21 @@ mod android {
     use tauri::plugin::PluginHandle;
     use tauri::{AppHandle, Manager, Wry};
 
+    use crate::probe::{self, Probe};
     use crate::update::{self, Update};
 
-    pub struct Handle(pub PluginHandle<Wry>);
+    /// UpdatePlugin.kt and ProbePlugin.kt
+    pub struct Handles {
+        update: PluginHandle<Wry>,
+        probe: PluginHandle<Wry>,
+    }
 
     pub fn plugin() -> tauri::plugin::TauriPlugin<Wry> {
-        tauri::plugin::Builder::new("appupdate")
+        tauri::plugin::Builder::new("appandroid")
             .setup(|app, api| {
-                let h = api.register_android_plugin("io.github.puetsua.kisiauthong", "UpdatePlugin")?;
-                app.manage(Handle(h));
+                let update = api.register_android_plugin("io.github.puetsua.kisiauthong", "UpdatePlugin")?;
+                let probe = api.register_android_plugin("io.github.puetsua.kisiauthong", "ProbePlugin")?;
+                app.manage(Handles { update, probe });
                 Ok(())
             })
             .build()
@@ -486,11 +499,11 @@ mod android {
     }
 
     fn call<T: serde::de::DeserializeOwned + Send + 'static>(
-        app: &AppHandle,
+        h: &PluginHandle<Wry>,
         cmd: &'static str,
         args: serde_json::Value,
     ) -> impl std::future::Future<Output = Result<T, String>> {
-        let h = app.state::<Handle>().0.clone();
+        let h = h.clone();
         async move {
             tauri::async_runtime::spawn_blocking(move || h.run_mobile_plugin::<T>(cmd, args))
                 .await
@@ -506,7 +519,7 @@ mod android {
             body: String,
         }
         let (api, downloads) = source(app);
-        let f: Fetched = call(app, "fetch", serde_json::json!({ "url": api }))
+        let f: Fetched = call(&app.state::<Handles>().update, "fetch", serde_json::json!({ "url": api }))
             .await
             .map_err(|e| if e.starts_with("badAnswer: ") { e } else { format!("unreachable: {e}") })?;
         match f.status {
@@ -521,13 +534,38 @@ mod android {
         struct Started {
             status: String,
         }
-        let r: Started = call(app, "install", serde_json::json!({ "url": u.url, "sha256": u.sha256, "size": u.size }))
+        let r: Started = call(&app.state::<Handles>().update, "install", serde_json::json!({ "url": u.url, "sha256": u.sha256, "size": u.size }))
             .await
             .map_err(|e| {
                 let coded = e == "checksum" || e.starts_with("download: ") || e.starts_with("installer: ");
                 if coded { e } else { format!("download: {e}") }
             })?;
         Ok(r.status)
+    }
+
+    /// The server check, as probe::get answers it elsewhere.
+    pub async fn probe(app: &AppHandle, url: &str) -> Probe {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Answer {
+            status: Option<u16>,
+            final_url: Option<String>,
+            content_type: Option<String>,
+            body: Option<String>,
+            error: Option<String>,
+            detail: Option<String>,
+        }
+        match call::<Answer>(&app.state::<Handles>().probe, "probe", serde_json::json!({ "url": url })).await {
+            Ok(a) => Probe {
+                status: a.status,
+                final_url: a.final_url,
+                content_type: a.content_type,
+                body: a.body,
+                error: a.error.as_deref().map(probe::kind),
+                detail: a.detail,
+            },
+            Err(e) => Probe { error: Some("other"), detail: Some(e), ..Probe::default() },
+        }
     }
 }
 
