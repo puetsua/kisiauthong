@@ -464,18 +464,26 @@ mod android {
     use crate::probe::{self, Probe};
     use crate::update::{self, Update};
 
-    /// UpdatePlugin.kt and ProbePlugin.kt
-    pub struct Handles {
-        update: PluginHandle<Wry>,
-        probe: PluginHandle<Wry>,
+    // One Tauri plugin per Kotlin class: Android keeps plugins by the Tauri
+    // plugin's name, so a second class under the same name would replace the first.
+    struct UpdateHandle(PluginHandle<Wry>);
+    struct ProbeHandle(PluginHandle<Wry>);
+
+    /// UpdatePlugin.kt
+    pub fn update_plugin() -> tauri::plugin::TauriPlugin<Wry> {
+        tauri::plugin::Builder::new("appupdate")
+            .setup(|app, api| {
+                app.manage(UpdateHandle(api.register_android_plugin("io.github.puetsua.kisiauthong", "UpdatePlugin")?));
+                Ok(())
+            })
+            .build()
     }
 
-    pub fn plugin() -> tauri::plugin::TauriPlugin<Wry> {
-        tauri::plugin::Builder::new("appandroid")
+    /// ProbePlugin.kt
+    pub fn probe_plugin() -> tauri::plugin::TauriPlugin<Wry> {
+        tauri::plugin::Builder::new("appprobe")
             .setup(|app, api| {
-                let update = api.register_android_plugin("io.github.puetsua.kisiauthong", "UpdatePlugin")?;
-                let probe = api.register_android_plugin("io.github.puetsua.kisiauthong", "ProbePlugin")?;
-                app.manage(Handles { update, probe });
+                app.manage(ProbeHandle(api.register_android_plugin("io.github.puetsua.kisiauthong", "ProbePlugin")?));
                 Ok(())
             })
             .build()
@@ -519,7 +527,7 @@ mod android {
             body: String,
         }
         let (api, downloads) = source(app);
-        let f: Fetched = call(&app.state::<Handles>().update, "fetch", serde_json::json!({ "url": api }))
+        let f: Fetched = call(&app.state::<UpdateHandle>().0, "fetch", serde_json::json!({ "url": api }))
             .await
             .map_err(|e| if e.starts_with("badAnswer: ") { e } else { format!("unreachable: {e}") })?;
         match f.status {
@@ -534,7 +542,7 @@ mod android {
         struct Started {
             status: String,
         }
-        let r: Started = call(&app.state::<Handles>().update, "install", serde_json::json!({ "url": u.url, "sha256": u.sha256, "size": u.size }))
+        let r: Started = call(&app.state::<UpdateHandle>().0, "install", serde_json::json!({ "url": u.url, "sha256": u.sha256, "size": u.size }))
             .await
             .map_err(|e| {
                 let coded = e == "checksum" || e.starts_with("download: ") || e.starts_with("installer: ");
@@ -555,7 +563,7 @@ mod android {
             error: Option<String>,
             detail: Option<String>,
         }
-        match call::<Answer>(&app.state::<Handles>().probe, "probe", serde_json::json!({ "url": url })).await {
+        match call::<Answer>(&app.state::<ProbeHandle>().0, "probe", serde_json::json!({ "url": url })).await {
             Ok(a) => Probe {
                 status: a.status,
                 final_url: a.final_url,
@@ -630,7 +638,7 @@ fn open_window(app: &AppHandle) -> tauri::Result<()> {
 pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(android::plugin());
+    let builder = builder.plugin(android::update_plugin()).plugin(android::probe_plugin());
     builder
         .invoke_handler(tauri::generate_handler![
             app_state,
