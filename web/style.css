@@ -451,7 +451,7 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .tfoot{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;font-weight:600;font-size:.92rem}
 .tfoot .neg{color:var(--red)}
 .ccard{gap:14px}
-.amts{display:flex;flex-wrap:wrap;gap:2px 10px}.amt{font-variant-numeric:tabular-nums;font-weight:600}.amt.in{color:var(--pos)}
+.amts{display:flex;flex-wrap:wrap;gap:2px 10px}.amt{font-variant-numeric:tabular-nums;font-weight:600}.amt.in{color:var(--pos)}.amt.zero{color:var(--muted)}
 .tsechead{flex-wrap:wrap}.tsechead .seg{margin:0}.tsechead .seg button{padding:5px 12px}
 /* a record's own page (a category): back link and actions, then figures, then lists */
 .pagebar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 16px}
