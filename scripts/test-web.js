@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -450,9 +450,38 @@ test("live updates (#55): one stream after sign-in, a refresh for a new revision
     assert.strictEqual(streams.length, 3);
     streams[2].on.ready({ data: '{"rev":"r-9"}' });
     assert.strictEqual(t.live.wait, 2000, "a working stream resets the wait");
+    // the writing page hears of its own write before its own fetch is back (the server announces before
+    // it answers): when the timer fires, that fetch has brought the revision in, and nothing is fetched again
+    const loads = [];
+    const realLoad = sandbox.load;
+    sandbox.load = () => { loads.push(1); return Promise.resolve(); };
+    try {
+      t.state.data = { rev: "r-9" };
+      timers.length = 0;
+      assert.strictEqual(t.liveOnChange('{"rev":"r-10"}'), true, "behind when the event arrives");
+      t.state.data = { rev: "r-10" }; // the page's own load() finished
+      assert.strictEqual(t.liveBehind(), false);
+      timers[0].fn();
+      assert.strictEqual(loads.length, 0, "its own write is not fetched twice");
+      // a change from elsewhere: the page is still behind when the timer fires, so it fetches
+      // (or waits while a form is open; the test DOM looks busy, so it waits and tries again)
+      timers.length = 0;
+      t.liveOnChange('{"rev":"r-11"}');
+      assert.strictEqual(t.liveBehind(), true);
+      timers[0].fn();
+      assert.ok(loads.length === 1 || timers.some((x) => x.ms === 1500), "fetches, or waits for the form");
+    } finally { sandbox.load = realLoad; }
+    // back after a long pause in the background: the stream is opened anew (it may look open but be dead)
+    const before = streams.length, old = t.live.es;
+    t.liveWake(false);
+    assert.strictEqual(streams.length, before, "a short wake keeps a working stream");
+    t.liveWake(true);
+    assert.strictEqual(streams.length, before + 1, "a stale wake reconnects");
+    assert.ok(old.closed, "the old stream is closed");
     // signing out closes the stream
+    const last = t.live.es;
     t.liveStop();
-    assert.ok(streams[2].closed);
+    assert.ok(last.closed);
     assert.strictEqual(t.live.es, null);
   } finally {
     t.liveStop();
