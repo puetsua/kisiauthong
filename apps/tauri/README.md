@@ -222,5 +222,8 @@ Open points for Android:
   `gen/android/app/build.gradle.kts`; the generated template allowed it only in
   debug builds, so a release could not open an `http://` server); the app's own
   rule (ADR 0019) still blocks `http://` off the user's own network.
+- The app is drawn edge to edge (Android enforces it from target SDK 35);
+  `MainActivity.kt` pads the content by the system bars, a display cutout and
+  the open keyboard, because the web UI does not lay out around them.
 - `src-tauri/gen/android` is committed (ADR 0020); `gen/apple` is still
   ignored until the iOS project is customised.
