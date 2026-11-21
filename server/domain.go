@@ -374,6 +374,11 @@ func (d *Data) existingOccurrence(tplID, date string) bool {
 // allocation, final at once because no money moves (ADR 0013).
 func (b *Book) GenerateDue(today string) (int, error) {
 	created := 0
+	defer func() {
+		if created > 0 {
+			b.s.live.changed(b.uid) // the books changed in place, without a reload: tell open pages (also after a later error)
+		}
+	}()
 	for _, tpl := range b.data.TransactionTemplates {
 		if !tpl.Enabled {
 			continue

@@ -2325,6 +2325,7 @@ async function boot() {
     $("#authScreen").hidden = true; $(".shell").hidden = false;
     renderUserBtn();
     await load();
+    liveStart();
   } catch (e) { msg(__("Failed to load: {message}", { message: e.message }), "error"); }
 }
 // Inside the app only (ADR 0019): the foot of every signed-out step names the server this sign-in
@@ -2343,6 +2344,7 @@ function bindAuthServer() {
 }
 // the sign-in screen replaces the app until someone is signed in
 function showAuth(mode) {
+  liveStop();
   state.me = null; state.data = null;
   msg("");
   $(".shell").hidden = true; $("#addBtn").hidden = true; showMore(false); $("#notifPanel").hidden = true; $("#userMenu").hidden = true;
@@ -2874,5 +2876,88 @@ async function load() {
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render();
 }
+/* ---------- live updates (issue #55, ADR 0023) ---------- */
+// After any write to these books (this page, another device, the API, an assistant over MCP, template
+// generation, an undo) the server sends a "change" event with the books' new revision. A revision other
+// than the one on screen means: fetch again, a moment later (a burst of writes is fetched once), and not
+// while the user is in the middle of a form. The browser reconnects a dropped stream by itself; one it
+// gives up on (a proxy's error page, a server restart) is retried here, waiting longer each time. Coming
+// back to a page that sat in the background (phones pause it) or back online also catches up.
+// rev: the newest revision the server announced; loading: a fetch is under way
+const live = { es: null, timer: 0, retry: 0, wait: 2000, hiddenAt: 0, rev: "", loading: false };
+// a form is open or being typed in: the refresh waits so nothing typed is lost
+function liveBusy() {
+  const a = document.activeElement;
+  return !!($("#dialog").open || !$("#drawer").hidden || state.customizing || state.tagPick
+    || (a && a.closest && a.closest("#view") && a.matches("input,textarea,select,[contenteditable=true]")));
+}
+function liveSchedule(delay = 400) {
+  clearTimeout(live.timer);
+  live.timer = setTimeout(liveRefresh, delay);
+}
+// whether the page is behind the newest announced revision. The server announces a write before it
+// answers it, so the writing page often hears of its own write while its own fetch is still running:
+// by the time the timer fires, that fetch has brought the revision in and nothing is left to do.
+const liveBehind = () => !(live.rev && state.data && live.rev === state.data.rev);
+async function liveRefresh() {
+  live.timer = 0;
+  if (!state.me || !state.data || !liveBehind()) return;
+  if (live.loading || liveBusy()) { liveSchedule(1500); return; } // a fetch is running, or a form is open
+  const y = window.scrollY;
+  live.loading = true;
+  try { await load(); window.scrollTo(0, y); } catch (e) { /* the next event or visit tries again */ }
+  finally { live.loading = false; }
+}
+// ready (on every (re)connect) and change events: fetch unless the page shows that revision already,
+// as after its own write
+function liveOnChange(data) {
+  let rev = "";
+  try { rev = JSON.parse(data).rev || ""; } catch (e) { /* no revision: fetch */ }
+  live.rev = rev;
+  if (!liveBehind()) return false;
+  liveSchedule();
+  return true;
+}
+function liveStart() {
+  if (live.es || !state.me || typeof EventSource === "undefined") return;
+  const es = new EventSource(rel("/api/events"));
+  live.es = es;
+  es.addEventListener("ready", (e) => { live.wait = 2000; liveOnChange(e.data); });
+  es.addEventListener("change", (e) => liveOnChange(e.data));
+  es.addEventListener("error", () => {
+    if (es.readyState !== 2) return; // CONNECTING: the browser retries by itself
+    es.close();
+    if (live.es !== es) return;
+    live.es = null;
+    clearTimeout(live.retry);
+    live.retry = setTimeout(liveStart, live.wait);
+    live.wait = Math.min(live.wait * 2, 60000);
+  });
+}
+function liveStop() {
+  clearTimeout(live.timer); clearTimeout(live.retry);
+  if (live.es) live.es.close();
+  Object.assign(live, { es: null, timer: 0, retry: 0, wait: 2000, rev: "" });
+}
+// back from the background, focus, or back online: reconnect if needed. After a long background pause
+// or a network change the stream may look open but be dead (phones), so it is opened anew; its ready
+// event says whether anything changed meanwhile.
+function liveWake(stale) {
+  if (!state.me || document.visibilityState === "hidden") return;
+  if (typeof EventSource === "undefined") { if (stale) { live.rev = ""; liveSchedule(); } return; }
+  if (live.es && !stale) return;
+  if (live.es) live.es.close();
+  live.es = null;
+  clearTimeout(live.retry);
+  live.wait = 2000;
+  liveStart();
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") live.hiddenAt = Date.now();
+  else liveWake(Date.now() - live.hiddenAt > 10000);
+});
+window.addEventListener("focus", () => liveWake(false));
+window.addEventListener("online", () => liveWake(true));
+
 setLang(pickLang(""));
 boot();

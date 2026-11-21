@@ -251,6 +251,12 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   lives in their form only. Merging tags keeps the kept tag's note; the merged
   tags' notes go with them, and Undo brings them back.
 
+- **Live updates** (ADR 0023): a page fetches the books again when they change
+  elsewhere and keeps its scroll position. It never redraws under an open
+  dialog, transaction panel, Customize dashboard or Manage tags, or a focused
+  field; it waits until they are closed or left. A new pattern with its own
+  form or editing mode must add itself to `liveBusy()` in `web/app.js`.
+
 ## Popups
 
 Open one popup at a time; the exception is a dialog opened from the
