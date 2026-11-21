@@ -302,6 +302,19 @@ function widgetCols(type, o) {
 // a widget's table on desktop and its cards on phones (CSS shows one), as the full pages do
 const phoneSwap = (tableHTML, phoneHTML) => `<div class="wdesk">${tableHTML}</div><div class="wphone">${phoneHTML}</div>`;
 const colTable = (cols, xs) => table(cols.map((c) => ({ t: c.label, num: c.num })), xs.map((x) => row(cols.map((c) => ({ l: c.label, v: c.v(x), num: c.num })))).join(""));
+// The currency tab a Spending widget shows, per widget and per device: the one picked last while it still
+// has spending this month, else the default currency, else the first.
+const SPEND_CUR_KEY = "kisiauthong.spendingCurrency";
+let spendCurs = {};
+try { spendCurs = JSON.parse(localStorage.getItem(SPEND_CUR_KEY) || "{}") || {}; } catch (e) { /* storage unavailable: defaults */ }
+function spendCur(id, curs) {
+  const picked = spendCurs[id || ""];
+  return curs.includes(picked) ? picked : curs.includes(defCur()) ? defCur() : curs[0];
+}
+function setSpendCur(id, cur) {
+  spendCurs[id || ""] = cur;
+  try { localStorage.setItem(SPEND_CUR_KEY, JSON.stringify(spendCurs)); } catch (e) { /* kept for this visit only */ }
+}
 function widgetBody(type, o) {
   const d = state.data, def = widgetDef(type), rows = o.rows || def.rows;
   const inc = (x) => !(o.include && o.include.length) || o.include.includes(x);
@@ -321,17 +334,21 @@ function widgetBody(type, o) {
       return list.length ? phoneSwap(colTable(widgetCols(type, o), list), `<div class="tgrid">${list.map(budgetCard).join("")}</div>`) : `<p class="muted">${esc(__("No budgets yet."))}</p>`;
     }
     case "spending": {
-      // server returns rows grouped by currency, largest first; bars compare within one currency only
+      // server returns rows grouped by currency, largest first; bars compare within one currency only,
+      // and with two or more currencies the widget shows one at a time behind currency tabs
       const byCur = {};
       (d.spendingThisMonth || []).forEach((x) => { (byCur[x.currency] = byCur[x.currency] || []).push(x); });
-      const list = Object.values(byCur).flatMap((xs) => {
-        const total = xs.reduce((n, x) => n + x.amountMinor, 0);
-        // share: against the largest category; pct: of all spending, both within one currency
-        return xs.slice(0, rows).map((x) => ({ ...x, share: xs[0].amountMinor ? x.amountMinor / xs[0].amountMinor * 100 : 0, pct: total ? x.amountMinor / total * 100 : 0 }));
-      });
+      const curs = Object.keys(byCur);
+      if (!curs.length) return `<p class="muted">${esc(__("No posted expenses this month."))}</p>`;
+      const cur = spendCur(o.id, curs), xs = byCur[cur];
+      const total = xs.reduce((n, x) => n + x.amountMinor, 0);
+      // share: against the largest category; pct: of all spending, both within one currency
+      const list = xs.slice(0, rows).map((x) => ({ ...x, share: xs[0].amountMinor ? x.amountMinor / xs[0].amountMinor * 100 : 0, pct: total ? x.amountMinor / total * 100 : 0 }));
       const name = WIDGET_COLS.spending[0].v;
       const rowsHTML = list.map((x) => `<li><span class="sptop">${name(x)}<b>${fmt(x.amountMinor, x.currency)}</b></span>${bar(x.share)}</li>`).join("");
-      return list.length ? phoneSwap(colTable(widgetCols(type, o), list), `<ul class="splist">${rowsHTML}</ul>`) : `<p class="muted">${esc(__("No posted expenses this month."))}</p>`;
+      const tabs = curs.length < 2 ? "" : `<div class="seg curtabs" role="group" aria-label="${esc(__("Currency"))}">${curs.map((c) =>
+        `<button type="button" data-spend-cur="${esc(c)}" data-widget="${esc(o.id || "")}" class="${c === cur ? "on" : ""}" aria-pressed="${c === cur}">${esc(c)}</button>`).join("")}</div>`;
+      return tabs + phoneSwap(colTable(widgetCols(type, o), list), `<ul class="splist">${rowsHTML}</ul>`);
     }
     case "reserves": {
       const list = d.reserves.filter((r) => inc(r.id));
@@ -686,6 +703,7 @@ function screenDashboard(v) {
     state.customizing = true;
     render();
   });
+  v.querySelectorAll("[data-spend-cur]").forEach((b) => b.addEventListener("click", () => { setSpendCur(b.dataset.widget, b.dataset.spendCur); render(); }));
   bindActions(v);
 }
 function bindActions(root) {

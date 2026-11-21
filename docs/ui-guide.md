@@ -224,7 +224,11 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   through Customize dashboard. A new widget must work at both widths. A
   widget with columns shows its table on desktop and, through
   `phoneSwap(table, cards)`, the same cards as its full page on phones
-  (budget cards, account cards, a spending list).
+  (budget cards, account cards, a spending list). A widget whose amounts
+  come in several currencies and are compared with each other (Spending)
+  shows one currency at a time behind `.seg.curtabs` currency tabs; the
+  picked tab is remembered per widget on the device, otherwise the default
+  currency is shown. Currencies are never mixed in one list.
   - **Customize dashboard, desktop:** the dashboard itself is edited, with
     previews. The pane on the right lists the widget types to add, or the
     settings of the selected widget. Widgets move by dragging (a mouse from
