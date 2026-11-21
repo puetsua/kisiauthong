@@ -33,7 +33,8 @@ Tags had four kinds: `category`, `goal`, `payee` and `label`.
 - Month-based periods keep the anchor's day of month and clamp it to the
   last day of shorter months (monthly from the 31st: Feb 28 → Mar 30).
 - Budget progress counts posted spending (own → external) linked to the
-  tag with a date inside the current period. Spending reports stay per
+  tag with a date inside the current period (since ADR 0021, minus income
+  linked to the tag). Spending reports stay per
   calendar month.
 - A category without a limit carries no currency or period. A tag that
   transactions or templates use switches between category and money box

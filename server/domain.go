@@ -205,10 +205,13 @@ func (d *Data) countsToward(tagID, cur string) bool {
 	return tag != nil && (tag.Currency == "" || tag.Currency == cur)
 }
 
-// BudgetSpent sums posted spending (own account -> external) in the tag's
-// currency linked to the tag, with a date in [start, end] (inclusive
-// YYYY-MM-DD; see BudgetPeriod). Scheduled spending (dated after today)
-// counts once it posts.
+// BudgetSpent is the net spending linked to the tag in the tag's currency,
+// with a date in [start, end] (inclusive YYYY-MM-DD; see BudgetPeriod):
+// posted spending (own account -> external) minus posted income (external
+// -> own account, e.g. a refund or a shared cost paid back) carrying the same
+// tag (ADR 0021). It is not floored, so more income than spending gives a
+// negative amount. Transfers between own accounts never count. Scheduled
+// transactions (dated after today) count once they post.
 func (d *Data) BudgetSpent(tagID, start, end, today string) int64 {
 	if today < end {
 		end = today
@@ -221,8 +224,14 @@ func (d *Data) BudgetSpent(tagID, start, end, today string) int64 {
 	}
 	var total int64
 	for _, t := range d.Transactions {
-		if t.State == "posted" && d.IsSpending(t) && linked[t.ID] && t.Date >= start && t.Date <= end && d.countsToward(tagID, t.Currency) {
+		if t.State != "posted" || !linked[t.ID] || t.Date < start || t.Date > end || !d.countsToward(tagID, t.Currency) {
+			continue
+		}
+		switch {
+		case d.IsSpending(t):
 			total += t.AmountMinor
+		case d.IsIncome(t):
+			total -= t.AmountMinor
 		}
 	}
 	return total
@@ -239,6 +248,7 @@ type TagSpend struct {
 // SpendingByCategory sums posted expenses in ref's calendar month per
 // (category tag, currency), largest first. Currencies are never mixed. An
 // expense linked to two category tags counts toward both, as in BudgetSpent.
+// Unlike BudgetSpent it is gross spending: income never reduces it (ADR 0021).
 // Scheduled expenses (dated after today) count once they post.
 func (d *Data) SpendingByCategory(ref, today string) []TagSpend {
 	month := ref[:7]

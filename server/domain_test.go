@@ -226,3 +226,62 @@ func TestTagCountsItsOwnCurrencyOnly(t *testing.T) {
 		t.Fatalf("the JPY account still earmarks it: %d", got)
 	}
 }
+
+// A budget counts net spending: tagged income (a refund, a shared cost paid
+// back) takes off its spending, in the budget's currency, without a floor
+// (ADR 0021). The spending report stays gross.
+func TestBudgetSpentNetsTaggedIncome(t *testing.T) {
+	d := sample()
+	d.Accounts = append(d.Accounts,
+		Account{ID: "card", Name: "Card", Currency: "TWD"},
+		Account{ID: "j", Name: "J", Currency: "JPY"},
+		Account{ID: "friend", Name: "Friend", Kind: "external"},
+		Account{ID: "airline", Name: "Airline", Kind: "external"},
+	)
+	d.Tags = append(d.Tags, Tag{ID: "trip", Name: "Trip", Currency: "TWD"}, Tag{ID: "shared", Name: "Shared", Currency: "TWD"})
+	txn := func(id, from, to, cur string, amt int64, date, state string) Transaction {
+		return Transaction{ID: id, FromAccountID: from, ToAccountID: to, Type: "transfer", State: state, Currency: cur, AmountMinor: amt, Date: date}
+	}
+	d.Transactions = []Transaction{
+		txn("ticket", "card", "airline", "TWD", 1200000, "2026-11-03", "posted"), // spending on a card
+		txn("share", "friend", "a", "TWD", 700000, "2026-11-04", "posted"),       // a friend pays back their share
+		txn("bag", "card", "airline", "TWD", 50000, "2026-11-10", "posted"),      // spending
+		txn("refund", "airline", "card", "TWD", 20000, "2026-11-12", "posted"),   // card refund: external -> card
+		txn("move", "a", "card", "TWD", 300000, "2026-11-12", "posted"),          // own -> own: never counts
+		txn("yen", "friend", "j", "JPY", 5000, "2026-11-12", "posted"),           // other currency: label only
+		txn("early", "friend", "a", "TWD", 90000, "2026-10-31", "posted"),        // before the period
+		txn("later", "friend", "a", "TWD", 80000, "2026-11-25", "posted"),        // scheduled: after today
+		txn("planned", "friend", "a", "TWD", 70000, "2026-11-13", "planned"),     // not confirmed yet
+		txn("untagged", "friend", "a", "TWD", 60000, "2026-11-13", "posted"),     // income without the tag
+	}
+	for _, id := range []string{"ticket", "share", "bag", "refund", "move", "yen", "early", "later", "planned"} {
+		d.TransactionTags = append(d.TransactionTags, TransactionTag{TransactionID: id, TagID: "trip"})
+	}
+	// income with two budget tags takes its full amount off each (ADR 0010)
+	d.TransactionTags = append(d.TransactionTags, TransactionTag{TransactionID: "share", TagID: "shared"})
+	const today = "2026-11-20"
+	if got := d.BudgetSpent("shared", "2026-11-01", "2026-11-30", today); got != -700000 {
+		t.Fatalf("second tag spent = %d, want -700000", got)
+	}
+	if got, want := d.BudgetSpent("trip", "2026-11-01", "2026-11-30", today), int64(1200000-700000+50000-20000); got != want {
+		t.Fatalf("spent = %d, want %d", got, want)
+	}
+	// once the scheduled payback posts, it counts too
+	if got, want := d.BudgetSpent("trip", "2026-11-01", "2026-11-30", "2026-11-25"), int64(1200000-700000+50000-20000-80000); got != want {
+		t.Fatalf("spent on the 25th = %d, want %d", got, want)
+	}
+	// income can outweigh spending: no floor at 0
+	if got := d.BudgetSpent("trip", "2026-10-01", "2026-10-31", today); got != -90000 {
+		t.Fatalf("October spent = %d, want -90000", got)
+	}
+	// the spending report stays gross
+	var gross int64 = -1
+	for _, s := range d.SpendingByCategory("2026-11-15", today) {
+		if s.TagID == "trip" && s.Currency == "TWD" {
+			gross = s.AmountMinor
+		}
+	}
+	if gross != 1200000+50000 {
+		t.Fatalf("spending report = %d, want gross %d", gross, 1200000+50000)
+	}
+}
