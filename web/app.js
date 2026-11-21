@@ -703,7 +703,14 @@ function screenDashboard(v) {
     state.customizing = true;
     render();
   });
-  v.querySelectorAll("[data-spend-cur]").forEach((b) => b.addEventListener("click", () => { setSpendCur(b.dataset.widget, b.dataset.spendCur); render(); }));
+  // re-render, then put focus back on the tab just picked so keyboard users stay in the widget
+  v.querySelectorAll("[data-spend-cur]").forEach((b) => b.addEventListener("click", () => {
+    const { widget, spendCur } = b.dataset;
+    setSpendCur(widget, spendCur);
+    render();
+    const again = document.querySelector(`[data-spend-cur="${CSS.escape(spendCur)}"][data-widget="${CSS.escape(widget)}"]`);
+    if (again) again.focus();
+  }));
   bindActions(v);
 }
 function bindActions(root) {

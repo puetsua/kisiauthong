@@ -228,7 +228,7 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   come in several currencies and are compared with each other (Spending)
   shows one currency at a time behind `.seg.curtabs` currency tabs; the
   picked tab is remembered per widget on the device, otherwise the default
-  currency is shown. Currencies are never mixed in one list.
+  currency is shown (or the first listed when it has no spending). Currencies are never mixed in one list.
   - **Customize dashboard, desktop:** the dashboard itself is edited, with
     previews. The pane on the right lists the widget types to add, or the
     settings of the selected widget. Widgets move by dragging (a mouse from
