@@ -269,6 +269,7 @@ dialog textarea{width:100%;padding:10px;border:1px solid var(--line);border-radi
 /* transaction period paging */
 .periodbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin:0 0 14px}
 .periodbar .seg{margin:0}
+.curtabs{margin:0 0 10px}.curtabs button{padding:5px 12px}
 .periodbar .seg button{padding:6px 14px}
 .prange{display:flex;align-items:center;gap:6px;color:var(--muted)}
 .prange input{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;font:inherit;color:var(--ink)}
