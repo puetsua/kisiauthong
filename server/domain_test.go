@@ -238,7 +238,7 @@ func TestBudgetSpentNetsTaggedIncome(t *testing.T) {
 		Account{ID: "friend", Name: "Friend", Kind: "external"},
 		Account{ID: "airline", Name: "Airline", Kind: "external"},
 	)
-	d.Tags = append(d.Tags, Tag{ID: "trip", Name: "Trip", Currency: "TWD"})
+	d.Tags = append(d.Tags, Tag{ID: "trip", Name: "Trip", Currency: "TWD"}, Tag{ID: "shared", Name: "Shared", Currency: "TWD"})
 	txn := func(id, from, to, cur string, amt int64, date, state string) Transaction {
 		return Transaction{ID: id, FromAccountID: from, ToAccountID: to, Type: "transfer", State: state, Currency: cur, AmountMinor: amt, Date: date}
 	}
@@ -257,7 +257,12 @@ func TestBudgetSpentNetsTaggedIncome(t *testing.T) {
 	for _, id := range []string{"ticket", "share", "bag", "refund", "move", "yen", "early", "later", "planned"} {
 		d.TransactionTags = append(d.TransactionTags, TransactionTag{TransactionID: id, TagID: "trip"})
 	}
+	// income with two budget tags takes its full amount off each (ADR 0010)
+	d.TransactionTags = append(d.TransactionTags, TransactionTag{TransactionID: "share", TagID: "shared"})
 	const today = "2026-11-20"
+	if got := d.BudgetSpent("shared", "2026-11-01", "2026-11-30", today); got != -700000 {
+		t.Fatalf("second tag spent = %d, want -700000", got)
+	}
 	if got, want := d.BudgetSpent("trip", "2026-11-01", "2026-11-30", today), int64(1200000-700000+50000-20000); got != want {
 		t.Fatalf("spent = %d, want %d", got, want)
 	}
