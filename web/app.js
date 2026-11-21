@@ -1180,7 +1180,7 @@ function screenTemplates(v) {
   bindDetails(v);
 }
 
-// One budget: how much of the limit is spent and what is left per day. While the period runs, the fill turns
+// One budget: how much of the limit is spent (net of tagged income, so it can be negative) and what is left per day. While the period runs, the fill turns
 // amber when spending is ahead of an even pace (a larger share spent than of the period gone), red when over.
 function budgetCard(t) {
   const today = state.data.today, p = t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0;
@@ -1196,7 +1196,7 @@ function budgetCard(t) {
   return `<button type="button" class="tcard bcard ${cls}" data-detail-tag="${esc(t.id)}">
     <span class="thead"><b>${esc(t.name)}</b><small>${esc(budgetPeriodText(t, true))}</small></span>
     <span class="bamount"><b>${fmt(t.spentMinor, t.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(t.limitMinor, t.currency) }))}</small></span>
-    <span class="bar"${ahead ? ` title="${esc(__("Spending faster than the period"))}"` : ""}><i class="${cls}" style="width:${Math.min(100, p)}%"></i></span>
+    <span class="bar"${ahead ? ` title="${esc(__("Spending faster than the period"))}"` : ""}><i class="${cls}" style="width:${Math.min(100, Math.max(0, p))}%"></i></span>
     <span class="tfoot"><span class="${t.remainingMinor < 0 ? "neg" : ""}">${esc(left)}</span><small>${esc(pace)}</small></span></button>`;
 }
 // spending this month per currency for one category, from the server's monthly summary
@@ -1377,7 +1377,9 @@ function openMergeDialog(ids) {
     const kept = b.outcome === "target" ? tagById(target) : b.outcome === "source" ? tagById(b.from) : null;
     let budgetHTML = "";
     if (kept) {
-      const spent = live.filter((t) => flow(t) === "expense" && t.currency === kept.currency && t.date >= kept.periodStart && t.date <= kept.periodEnd).reduce((n, t) => n + t.amountMinor, 0);
+      // net, as the server counts it: tagged income (a refund, a shared cost paid back) takes off spending (ADR 0021)
+      const spent = live.filter((t) => t.currency === kept.currency && t.date >= kept.periodStart && t.date <= kept.periodEnd)
+        .reduce((n, t) => n + (flow(t) === "expense" ? t.amountMinor : flow(t) === "income" ? -t.amountMinor : 0), 0);
       const pct = kept.limitMinor > 0 ? spent / kept.limitMinor * 100 : 0;
       budgetHTML = `<span class="bamount"><b>${fmt(spent, kept.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(kept.limitMinor, kept.currency) }))}</small></span>${bar(pct, barCls(pct))}<small>${esc(budgetPeriodText(kept, true))}</small>`;
     }

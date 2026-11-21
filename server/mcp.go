@@ -253,7 +253,7 @@ func init() {
 	mcpTools = []mcpToolDef{
 		{"list_accounts", "List own accounts with their balances, what they hold for reserves (reserved) and the rest (free), limits, and the external accounts (shops, employers) transactions can go to.", ScopeRead,
 			obj(map[string]interface{}{}), toolListAccounts},
-		{"list_tags", "List categories, with budget progress for the current period where a category has a budget.", ScopeRead,
+		{"list_tags", "List categories, with budget progress for the current period where a category has a budget (spent is spending minus income with the same category, and can be negative).", ScopeRead,
 			obj(map[string]interface{}{}), toolListTags},
 		{"list_reserves", "List reserves (money set aside for a purpose) with the amount saved, the optional target, and how much each account holds.", ScopeRead,
 			obj(map[string]interface{}{}), toolListReserves},
