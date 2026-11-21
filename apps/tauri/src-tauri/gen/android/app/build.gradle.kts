@@ -31,7 +31,10 @@ android {
     compileSdk = 37
     namespace = "io.github.puetsua.kisiauthong"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        // http:// is allowed by Android in every build; which servers may use it
+        // is the app's own rule (ADR 0019: only the user's own network, checked
+        // in connect.js and profiles::check_url), as on the other platforms.
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "io.github.puetsua.kisiauthong"
         minSdk = 29 // Android 10 (AGENTS.md §6)
         targetSdk = 37
@@ -50,7 +53,6 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false

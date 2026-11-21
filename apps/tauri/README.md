@@ -218,9 +218,9 @@ Open points for Android:
   `HttpURLConnection`), so it trusts the certificates and follows the network
   security policy the WebView does; the other platforms use reqwest
   (`src/probe.rs`). Both answer in the shape `src/connect.js` reads.
-- `http://` on the local network needs cleartext traffic allowed in
-  `gen/android/app/src/main/AndroidManifest.xml` (the generated template allows
-  it only in debug builds); the app's own rule still blocks it off the local
-  network.
+- Android allows cleartext traffic in every build (`usesCleartextTraffic` in
+  `gen/android/app/build.gradle.kts`; the generated template allowed it only in
+  debug builds, so a release could not open an `http://` server); the app's own
+  rule (ADR 0019) still blocks `http://` off the user's own network.
 - `src-tauri/gen/android` is committed (ADR 0020); `gen/apple` is still
   ignored until the iOS project is customised.
