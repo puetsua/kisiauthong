@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -398,6 +398,68 @@ test("Customize dashboard on phones, the whole editor: bars only, then the add g
   assert.match($el("#dashPane").innerHTML, /class="palgrid"/, "the pane keeps adding while a widget is open");
   sandbox.matchMedia = mq;
   t.state.dashSel = null; t.state.dashDraft = null;
+});
+
+test("live updates (#55): one stream after sign-in, a refresh for a new revision, retries, closed on sign-out", () => {
+  const streams = [];
+  sandbox.EventSource = class {
+    constructor(url) { this.url = url; this.on = {}; this.readyState = 0; streams.push(this); }
+    addEventListener(name, fn) { this.on[name] = fn; }
+    close() { this.closed = true; this.readyState = 2; }
+  };
+  const timers = [];
+  const realSet = sandbox.setTimeout, realClear = sandbox.clearTimeout;
+  sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  sandbox.clearTimeout = () => {};
+  const me = t.state.me, data = t.state.data;
+  try {
+    t.state.me = null;
+    t.liveStart();
+    assert.strictEqual(streams.length, 0, "signed out: no stream");
+    t.state.me = { id: "usr-x" };
+    t.state.data = { rev: "r-5" };
+    t.liveStart();
+    t.liveStart();
+    assert.strictEqual(streams.length, 1, "one stream per page");
+    const es = streams[0];
+    assert.strictEqual(es.url, "api/events", "relative, so it works under a base path");
+    // its own write, or a reconnect with nothing new: nothing to fetch
+    assert.strictEqual(t.liveOnChange('{"rev":"r-5"}'), false);
+    es.on.ready({ data: '{"rev":"r-5"}' });
+    assert.strictEqual(timers.length, 0);
+    // a change from elsewhere: one fetch, a moment later
+    es.on.change({ data: '{"rev":"r-6"}' });
+    assert.strictEqual(timers.length, 1);
+    assert.strictEqual(timers[0].ms, 400);
+    assert.strictEqual(t.liveOnChange("not json"), true, "no readable revision: fetch to be safe");
+    // the browser retries a dropped stream itself; one it gives up on is retried here, waiting longer each time
+    es.readyState = 0;
+    es.on.error();
+    assert.strictEqual(t.live.es, es, "still the same stream while the browser reconnects");
+    es.readyState = 2;
+    es.on.error();
+    assert.strictEqual(t.live.es, null);
+    const retry = timers[timers.length - 1];
+    assert.strictEqual(retry.ms, 2000);
+    retry.fn();
+    assert.strictEqual(streams.length, 2, "reconnected");
+    streams[1].readyState = 2;
+    streams[1].on.error();
+    assert.strictEqual(timers[timers.length - 1].ms, 4000, "the next wait is longer");
+    timers[timers.length - 1].fn(); // the second retry
+    assert.strictEqual(streams.length, 3);
+    streams[2].on.ready({ data: '{"rev":"r-9"}' });
+    assert.strictEqual(t.live.wait, 2000, "a working stream resets the wait");
+    // signing out closes the stream
+    t.liveStop();
+    assert.ok(streams[2].closed);
+    assert.strictEqual(t.live.es, null);
+  } finally {
+    t.liveStop();
+    sandbox.setTimeout = realSet; sandbox.clearTimeout = realClear;
+    delete sandbox.EventSource;
+    t.state.me = me; t.state.data = data;
+  }
 });
 
 // askConfirm is async; these run after the synchronous tests
