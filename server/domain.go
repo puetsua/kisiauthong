@@ -415,5 +415,8 @@ func (b *Book) GenerateDue(today string) (int, error) {
 			created++
 		}
 	}
+	if created > 0 {
+		b.s.live.changed(b.uid) // the books changed in place, without a reload: tell open pages
+	}
 	return created, nil
 }

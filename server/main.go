@@ -301,8 +301,11 @@ func newMux(webDir string) *http.ServeMux {
 	mux.HandleFunc("/api/settings", apiRW(ScopeSettings, handleSettings))
 	mux.HandleFunc("/api/export", api(ScopeRead, handleExport))
 	mux.HandleFunc("/api/state", api(ScopeRead, func(w http.ResponseWriter, r *http.Request, b *Book) {
-		writeJSON(w, 200, stateView(b.data, b.today()))
+		st := stateView(b.data, b.today())
+		st["rev"] = b.s.live.revision(b.uid) // what a page compares live change events with (issue #55)
+		writeJSON(w, 200, st)
 	}))
+	mux.HandleFunc("/api/events", handleEvents)
 	mux.HandleFunc("/api/accounts", api(ScopeAccounts, handleCreateAccount))
 	mux.HandleFunc("/api/accounts/", api(ScopeAccounts, handleUpdateAccount))
 	mux.HandleFunc("/api/tags", api(ScopeTags, handleCreateTag))

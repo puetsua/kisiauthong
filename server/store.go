@@ -120,6 +120,7 @@ type Store struct {
 	db    *sql.DB
 	path  string // database file, for the administration page
 	books map[string]*Data
+	live  liveHub // change notices for open pages (live.go)
 }
 
 func openStore(path string) (*Store, error) {
@@ -568,6 +569,7 @@ func (b *Book) exec(q string, args ...interface{}) (sql.Result, error) {
 
 func (b *Book) reload() error {
 	db, uid := b.s.db, b.uid
+	_, loaded := b.s.books[uid] // a reload of loaded books follows a write: open pages hear of it
 	d := &Data{Version: 1}
 	rows, err := db.Query(`SELECT id,name,kind,icon,currency,opening_balance_minor,credit_limit_minor,statement_close_day,payment_due_day,memo FROM accounts WHERE user_id=? ORDER BY name`, uid)
 	if err != nil {
@@ -707,6 +709,9 @@ func (b *Book) reload() error {
 	al.Close()
 	b.s.books[uid] = d
 	b.data = d
+	if loaded {
+		b.s.live.changed(uid)
+	}
 	return nil
 }
 
@@ -872,6 +877,9 @@ func (b *Book) getSetting(key string) (string, bool, error) {
 }
 func (b *Book) setSetting(key, value string) error {
 	_, err := b.exec(`INSERT INTO settings(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value`, key, value)
+	if err == nil {
+		b.s.live.changed(b.uid) // settings are not in the reloaded books, so announce them here
+	}
 	return err
 }
 
