@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "local",
-  "description": "The bundled server screen: every app command. Saved servers get only the bridge set, added at run time per server origin (src/lib.rs).",
+  "description": "The bundled server screen: every app command. Saved servers get only the bridge set, added at run time per server origin (src/lib.rs). The webview is \"main\" on iOS and Android and \"content\" on desktop, under the frame.",
   "local": true,
-  "windows": ["main"],
+  "webviews": ["main", "content"],
   "permissions": ["server-screen", "bridge"]
 }

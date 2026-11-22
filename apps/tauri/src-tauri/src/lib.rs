@@ -26,7 +26,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::ipc::CapabilityBuilder;
-use tauri::{AppHandle, Manager, State, Url, Webview, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, State, Url, Webview, WebviewUrl};
 use tauri_plugin_opener::OpenerExt;
 
 use profiles::{origin_of, Profile, Store};
@@ -149,7 +149,7 @@ fn grant(app: &AppHandle, server_url: &str) {
     let cap = CapabilityBuilder::new(format!("server-{}", granted.len() + 1))
         .remote(format!("{origin}/*"))
         .local(false)
-        .window(WINDOW)
+        .webview(CONTENT)
         .permission("bridge");
     match app.add_capability(cap) {
         Ok(()) => {
@@ -756,21 +756,33 @@ mod updates {
 
 /* ---------- the window ---------- */
 
-fn open_window(app: &AppHandle) -> tauri::Result<()> {
+/// The webview that shows the bundled screen and the servers' pages. On iOS
+/// and Android it is the whole window; on desktop it sits under the frame.
+#[cfg(mobile)]
+const CONTENT: &str = WINDOW;
+#[cfg(desktop)]
+const CONTENT: &str = "content";
+/// The desktop window frame (issue #32): a bundled page with the window
+/// buttons, in its own webview, so server pages never make room for it.
+#[cfg(desktop)]
+const FRAME: &str = "frame";
+#[cfg(windows)]
+const BAR: f64 = 32.0;
+#[cfg(all(desktop, not(windows)))]
+const BAR: f64 = 28.0;
+
+#[cfg(desktop)]
+fn content_builder(app: &AppHandle) -> tauri::webview::WebviewBuilder<tauri::Wry> {
     let nav = app.clone();
-    let builder = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("index.html".into()))
+    let builder = tauri::webview::WebviewBuilder::new(CONTENT, WebviewUrl::App("index.html".into()))
         .initialization_script(BRIDGE_JS)
         .on_navigation(move |url| allow_navigation(&nav, url));
-    #[cfg(desktop)]
     let builder = {
         use tauri::webview::{DownloadEvent, NewWindowResponse};
         let ext = app.clone();
         let dl = app.clone();
         let last = Mutex::new(None::<PathBuf>);
         builder
-            .title("記數通 KiSiauThong")
-            .inner_size(1180.0, 800.0)
-            .min_inner_size(360.0, 520.0)
             .on_new_window(move |url, _| {
                 open_outside(&ext, &url);
                 NewWindowResponse::Deny
@@ -789,8 +801,66 @@ fn open_window(app: &AppHandle) -> tauri::Result<()> {
                 true
             })
     };
-    builder.build()?;
+    builder
+}
+
+/// iOS and Android: the content webview is the whole window, as before.
+#[cfg(mobile)]
+fn open_window(app: &AppHandle) -> tauri::Result<()> {
+    let nav = app.clone();
+    tauri::webview::WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("index.html".into()))
+        .initialization_script(BRIDGE_JS)
+        .on_navigation(move |url| allow_navigation(&nav, url))
+        .build()?;
     Ok(())
+}
+
+/// Desktop: one window, the frame webview on top and the content below it.
+#[cfg(desktop)]
+fn open_window(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::{LogicalPosition, LogicalSize, WindowEvent};
+    let builder = tauri::window::WindowBuilder::new(app, WINDOW)
+        .title("記數通 KiSiauThong")
+        .inner_size(1180.0, 800.0)
+        .min_inner_size(360.0, 520.0);
+    #[cfg(target_os = "macos")]
+    let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+    let window = builder.build()?;
+    let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
+    let frame_nav = app.clone();
+    let frame = tauri::webview::WebviewBuilder::new(FRAME, WebviewUrl::App("frame.html".into()))
+        .on_navigation(move |url| {
+            let ok = is_local(url);
+            if !ok {
+                open_outside(&frame_nav, url);
+            }
+            ok
+        });
+    window.add_child(frame, LogicalPosition::new(0.0, 0.0), LogicalSize::new(size.width, BAR))?;
+    window.add_child(content_builder(app), LogicalPosition::new(0.0, BAR), LogicalSize::new(size.width, (size.height - BAR).max(0.0)))?;
+    // Windows: no system title bar. Turned off after the webviews exist, so
+    // Tauri adds its resize borders above them.
+    #[cfg(windows)]
+    window.set_decorations(false)?;
+    let w = window.clone();
+    window.on_window_event(move |e| {
+        if matches!(e, WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }) {
+            layout(&w);
+        }
+    });
+    Ok(())
+}
+
+#[cfg(desktop)]
+fn layout(window: &tauri::Window) {
+    use tauri::{LogicalPosition, LogicalSize};
+    let (Ok(size), Ok(scale)) = (window.inner_size(), window.scale_factor()) else { return };
+    let size = size.to_logical::<f64>(scale);
+    for wv in window.webviews() {
+        let (y, h) = if wv.label() == FRAME { (0.0, BAR) } else { (BAR, (size.height - BAR).max(0.0)) };
+        let _ = wv.set_position(LogicalPosition::new(0.0, y));
+        let _ = wv.set_size(LogicalSize::new(size.width, h));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

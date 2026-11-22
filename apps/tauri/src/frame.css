@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+:root{--bar:#2a1740;--ink:#e6dcf2;--muted:#b9a6d1;--hover:rgba(255,255,255,.1);--down:rgba(255,255,255,.18)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bar);color:var(--ink);font:12px/1 "Segoe UI",system-ui,"Microsoft JhengHei","PingFang TC",sans-serif;user-select:none;-webkit-user-select:none;cursor:default}
+.bar{display:flex;align-items:center;height:100%;padding-left:10px;gap:8px}
+.mac .bar{padding-left:78px}
+.ico{width:16px;height:16px;border-radius:4px}
+.name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.blur .name,body.blur .ico{opacity:.55}
+.ctl{display:flex;height:100%;margin-left:auto}
+.mac .ctl{display:none}
+.ctl button{width:46px;height:100%;border:0;margin:0;padding:0;background:none;color:inherit;display:grid;place-items:center}
+.ctl button:hover{background:var(--hover)}
+.ctl button:active{background:var(--down)}
+.ctl button.close:hover{background:#c42b1c;color:#fff}
+.ctl button:focus-visible{outline:2px solid var(--ink);outline-offset:-3px}
+.ctl svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1}
+@media (forced-colors:active){.bar{background:Canvas;color:CanvasText}.ctl button:hover{background:Highlight;color:HighlightText}}
