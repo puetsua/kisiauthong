@@ -3,8 +3,9 @@
 //
 // Checks for the Tauri apps' bundled server screen (apps/tauri/src, ADR 0019)
 // that need no GUI and no network: address normalisation, the http:// rule,
-// reading the server's answer, both languages, and that the screen's colours
-// still match web/style.css. Usage: node scripts/test-app.js
+// reading the server's answer, both languages, that the screen's colours
+// still match web/style.css, and the Android launcher icon's layers.
+// Usage: node scripts/test-app.js
 "use strict";
 const assert = require("assert");
 const fs = require("fs");
@@ -169,6 +170,74 @@ test("app updates: only the bundled screen may check and install (ADR 0020)", ()
     assert.ok(set("server-screen").includes(p), `server-screen has ${p}`);
     assert.ok(!set("bridge").includes(p), `bridge (saved servers' pages) must not have ${p}`);
   }
+});
+
+// The RGBA pixels of an 8-bit, non-interlaced RGBA PNG (what scripts/android-icons.py writes).
+function readPng(file) {
+  const buf = fs.readFileSync(file);
+  let pos = 8;
+  let width = 0, height = 0;
+  const idat = [];
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const type = buf.toString("latin1", pos + 4, pos + 8);
+    const data = buf.subarray(pos + 8, pos + 8 + len);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      assert.deepStrictEqual([data[8], data[9], data[12]], [8, 6, 0], `${file}: 8-bit RGBA, not interlaced`);
+    } else if (type === "IDAT") idat.push(data);
+    pos += 12 + len;
+  }
+  const raw = require("zlib").inflateSync(Buffer.concat(idat));
+  const stride = width * 4;
+  const px = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    for (let x = 0; x < stride; x++) {
+      const v = raw[y * (stride + 1) + 1 + x];
+      const a = x >= 4 ? px[y * stride + x - 4] : 0;
+      const b = y > 0 ? px[(y - 1) * stride + x] : 0;
+      const c = x >= 4 && y > 0 ? px[(y - 1) * stride + x - 4] : 0;
+      const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+      const pred = [0, a, b, (a + b) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? b : c][filter];
+      px[y * stride + x] = (v + pred) & 255;
+    }
+  }
+  return { width, height, alpha: (x, y) => px[(y * width + x) * 4 + 3] };
+}
+
+test("Android launcher icon: adaptive layers, artwork inside the 66dp safe zone (issue #54)", () => {
+  const icons = path.join(root, "apps", "tauri", "src-tauri", "icons", "android");
+  const res = path.join(root, "apps", "tauri", "src-tauri", "gen", "android", "app", "src", "main", "res");
+  const xml = fs.readFileSync(path.join(icons, "mipmap-anydpi-v26", "ic_launcher.xml"), "utf8");
+  for (const layer of ["background", "foreground", "monochrome"]) {
+    assert.ok(xml.includes(`<${layer} android:drawable="@mipmap/ic_launcher_${layer}"/>`), `ic_launcher.xml has the ${layer} layer`);
+  }
+  const files = ["mipmap-anydpi-v26/ic_launcher.xml"];
+  for (const [dpi, d] of Object.entries({ mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 })) {
+    const layer = Math.round(108 * d);
+    for (const name of ["background", "foreground", "monochrome"]) {
+      const file = `mipmap-${dpi}/ic_launcher_${name}.png`;
+      files.push(file);
+      const png = readPng(path.join(icons, file));
+      assert.deepStrictEqual([png.width, png.height], [layer, layer], `${file} is 108dp`);
+      // the background is full bleed; the other layers leave everything beyond 33dp from the centre transparent
+      const safe = 33 * d, mid = layer / 2;
+      for (let y = 0; y < layer; y++) {
+        for (let x = 0; x < layer; x++) {
+          const out = Math.hypot(x + 0.5 - mid, y + 0.5 - mid) > safe;
+          if (name === "background") assert.strictEqual(png.alpha(x, y), 255, `${file} is opaque at ${x},${y}`);
+          else if (out) assert.strictEqual(png.alpha(x, y), 0, `${file} is transparent outside the safe zone at ${x},${y}`);
+        }
+      }
+    }
+    for (const name of ["ic_launcher", "ic_launcher_round"]) files.push(`mipmap-${dpi}/${name}.png`);
+  }
+  for (const file of files) {
+    assert.ok(fs.readFileSync(path.join(icons, file)).equals(fs.readFileSync(path.join(res, file))), `gen/android has the same ${file}`);
+  }
+  assert.ok(!fs.existsSync(path.join(res, "values", "ic_launcher_background.xml")), "no plain colour background layer");
 });
 
 (async () => {
