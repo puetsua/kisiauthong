@@ -214,6 +214,15 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   host[:port] in mono ink (`.host`); right, a *Change server* `.linkbtn` whose
   `aria-label` includes the host. On narrow phones it wraps, the link staying
   on the right.
+- **Settings → About → App** (only inside the Tauri apps, ADR 0020, 0025): a
+  `.srow` with the app's version, then, when the app's check found a newer
+  one, a muted "Version X is available", then *Check for updates*
+  (`.smallbtn`) where the app can update itself. That muted text is the only
+  place an available update shows: no badge, dot or banner (ADR 0015).
+- **The apps' App updates screen** (`apps/tauri/src/`, `mode=update`): the
+  app's version, the status line, one primary button (Check → Download and
+  install / Update and restart), Back, then a plain checkbox *Check for
+  updates when the app opens* and a hint saying where updates come from.
 - **The apps' server screen** (`apps/tauri/src/`, outside the web UI): the
   brand panel with the large icon beside the form on desktop, a purple header
   above a white sheet on phones; one address field, a hint with an example,
