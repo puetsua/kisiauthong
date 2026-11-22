@@ -28,9 +28,10 @@ when it carries a valid signature from the updater key built into the app.
 - **No code signing yet.** There is no Authenticode certificate and no Apple
   Developer ID, so Windows SmartScreen warns once on install and macOS asks
   for *Open Anyway* in System Settings on first launch (the app is ad-hoc
-  signed, `signingIdentity: "-"`). Updates do not repeat these warnings,
-  because the updater downloads them itself. The release notes say how to get
-  past the warnings. Code signing is a follow-up.
+  signed, `signingIdentity: "-"`). Updates are expected not to repeat these
+  warnings, because the updater downloads them itself and they carry no
+  download mark (not yet verified on either system). The release notes say
+  how to get past the warnings. Code signing is a follow-up.
 - **Updates through Tauri's updater** (`tauri-plugin-updater`, desktop only):
   - **Signing.** The release signs the update packages (the setup `.exe`, and
     the macOS `.app.tar.gz`) with the updater key from the secrets
