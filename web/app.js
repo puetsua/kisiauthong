@@ -1663,7 +1663,18 @@ function openAllocDialog(reserveId, dir, editId) {
 // The version (issue #14, ADR 0018): under the licence line in the sidebar, at the foot of the More
 // sheet, and in Settings → About. The server sends what the build stamped; it is shown as is, never
 // with a "v" prefix: "0.2.0", "0.2.0-1118-c22ff51" (+ a nightly chip) or "dev".
+// Inside the app the foot shows the app's own version instead, the one the user installed and
+// updates; the server's is in Settings → About as "Server version" (issue #69).
 const verAbout = () => (state.about && state.about.version ? state.about : null);
+// what the app's bridge last said about the app (appInfo); null in a browser or an app without it
+let appInfoNow = null;
+async function loadAppInfo() {
+  const shell = appShell();
+  if (!shell || typeof shell.appInfo !== "function") return null;
+  try { appInfoNow = await shell.appInfo(); } catch (e) { appInfoNow = null; }
+  drawVersion();
+  return appInfoNow;
+}
 // the version text, plus a teal chip only for a nightly build
 const verHTML = (a) => `<span class="vertext">${esc(a.version)}</span>${a.nightly ? `<span class="verchip">${esc(__("nightly"))}</span>` : ""}`;
 // the build time as a clock in the display zone shows it, with that zone: "2026-11-18 11:00 (Asia/Taipei, UTC+8)"
@@ -1674,12 +1685,12 @@ function verBuilt(a) {
   return `${p.date} ${p.time} (${z.replace(/_/g, " ")}${off ? ", " + off : ""})`;
 }
 function drawVersion() {
-  const a = verAbout();
+  const a = verAbout(), app = appInfoNow && appInfoNow.version ? appInfoNow : null;
   for (const el of document.querySelectorAll(".sidefoot, #moreVer")) {
     let link = el.querySelector(".verfoot");
-    if (!a) { if (link) link.remove(); continue; }
+    if (!a && !app) { if (link) link.remove(); continue; }
     if (!link) { el.insertAdjacentHTML("beforeend", `<a class="verfoot" href="#settings" data-goabout></a>`); link = el.querySelector(".verfoot"); }
-    link.innerHTML = verHTML(a);
+    link.innerHTML = app ? `<span class="vertext">${esc(app.version)}</span>` : verHTML(a);
     link.title = __("Version details");
   }
 }
@@ -1694,7 +1705,8 @@ function verAboutRows(a, row, src) {
   const hash = `<code class="hash">${esc((a.commit || "").slice(0, 7))}</code>`;
   const link = src ? `<a href="${esc(src.replace(/\/$/, ""))}/commit/${esc(a.commit)}" target="_blank" rel="noopener">${hash}</a>` : hash;
   return [
-    row(__("Version"), `<div class="verline">${verHTML(a)}</div>${a.nightly ? `<div class="muted vernote">${esc(__("Nightly test build, built automatically every day"))}</div>` : ""}`),
+    // inside the app the first version row is the app's (#appAbout), so this one names the server
+    row(appShell() ? __("Server version") : __("Version"), `<div class="verline">${verHTML(a)}</div>${a.nightly ? `<div class="muted vernote">${esc(__("Nightly test build, built automatically every day"))}</div>` : ""}`),
     ...(a.buildTime ? [row(__("Build time"), esc(verBuilt(a)))] : []),
     ...(a.commit ? [row(__("Commit"), `<div class="verline">${link}<button type="button" class="smallbtn" id="copyCommit">${esc(__("Copy"))}</button></div>`)] : []),
   ];
@@ -1764,12 +1776,12 @@ async function drawAppServers() {
 async function drawAppAbout() {
   const shell = appShell(), slot = $("#appAbout");
   if (!slot || !shell || typeof shell.appInfo !== "function") return;
-  let info;
-  try { info = await shell.appInfo(); } catch (e) { return; }
+  const info = await loadAppInfo();
+  if (!info) return;
   if (!slot.isConnected) return; // Settings was drawn again meanwhile; that call fills the new slot
   const btn = info.updates && typeof shell.updates === "function" ? `<button type="button" class="smallbtn" id="appUpdates">${esc(__("Check for updates"))}</button>` : "";
   const avail = info.available ? `<span class="muted">${esc(__("Version {version} is available", { version: info.available }))}</span>` : "";
-  slot.outerHTML = `<div class="srow"><span class="sl">${esc(__("App"))}</span><div class="sc"><div class="verline"><span>${esc(info.version)}</span>${avail}${btn}</div></div></div>`;
+  slot.outerHTML = `<div class="srow"><span class="sl">${esc(__("App"))}</span><div class="sc"><div class="verline"><span class="vertext">${esc(info.version)}</span>${avail}${btn}</div></div></div>`;
   if ($("#appUpdates")) $("#appUpdates").addEventListener("click", () => shell.updates(LANG).catch((e) => msg(String((e && e.message) || e), "error")));
 }
 const setIcon = (k) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="${SET_ICON[k]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -1802,8 +1814,9 @@ function screenSettings(v) {
       `<div class="sabout"><span class="slogo" lang="nan-Hant-TW">記數通</span><span><b>KiSiauThong</b></span></div>`,
       row(__("License"), '<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0-or-later</a>'),
       row(__("Source"), src ? `<a href="${esc(src)}" target="_blank" rel="noopener">${esc(src)}</a>` : `<span class="muted">${esc(__("Set KISIAUTHONG_SOURCE_URL"))}</span>`),
-      ...verAboutRows(verAbout(), row, src),
+      // inside the app its own version comes first, then the server's (issue #69)
       ...(appShell() ? ['<div id="appAbout"></div>'] : []),
+      ...verAboutRows(verAbout(), row, src),
     ]],
   ];
   v.innerHTML = `<div class="settings">
@@ -3018,3 +3031,4 @@ window.addEventListener("online", () => liveWake(true));
 
 setLang(pickLang(""));
 boot();
+loadAppInfo(); // inside the app: its own version at the foot of the sidebar (issue #69)

@@ -2,7 +2,7 @@
 # 0018 — Showing the version, and where it comes from
 
 Date: 2026-11-19
-Status: accepted (issue #14)
+Status: accepted (issue #14); inside the app, amended by issue #69
 
 ## Context
 
@@ -24,6 +24,16 @@ to administrators on the Server page, and nightly builds were stamped
 
   The Build time and Commit rows appear only when the build stamped them.
   Nothing is suggested or highlighted beyond that chip (ADR 0015).
+- **Inside the app** (issue #69, ADR 0019, 0020): the version the user
+  installed and updates is the app's own, so it comes first.
+  - The foot of the sidebar and of the More sheet shows the app's version
+    (`kisiauthongApp.appInfo().version`), still linking to Settings → About.
+  - In About, the *App* row (version, and *Check for updates* where the app
+    can update itself) comes first. The server's row follows, labelled
+    *Server version*, with its Build time and Commit rows.
+  - An app without `appInfo` (older than 0.4.0) keeps the server's version at
+    the foot. In a browser nothing changes: there the server's version is the
+    only one, labelled *Version*.
 - **No `v` prefix** anywhere, as for tags (ADR 0009).
 - **The source of truth is the build.** It stamps four Go variables with
   `-ldflags -X`, and the server never derives them at run time:
