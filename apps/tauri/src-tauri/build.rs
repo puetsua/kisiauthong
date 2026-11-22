@@ -10,6 +10,7 @@ fn main() {
             "cancel_form",
             "update_check",
             "update_install",
+            "update_settings",
             "app_info",
             "open_updates",
             "servers",

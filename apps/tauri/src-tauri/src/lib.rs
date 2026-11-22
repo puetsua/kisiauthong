@@ -16,6 +16,7 @@
 
 mod probe;
 mod profiles;
+mod settings;
 mod update;
 
 use std::collections::HashSet;
@@ -40,6 +41,8 @@ struct Shell {
     granted: Mutex<HashSet<String>>,
     /// what the last update check found; install only ever uses this
     update: Mutex<Option<updates::Pending>>,
+    settings: Mutex<settings::Settings>,
+    settings_file: PathBuf,
     /// set when the user opens App updates: the screen's check on load may run
     /// once, and not again when Back returns to the screen (ADR 0020)
     update_asked: AtomicBool,
@@ -62,6 +65,8 @@ struct AppState {
     platform: &'static str,
     active: Option<String>,
     servers: Vec<Profile>,
+    /// whether the app checks for a newer version when it opens (ADR 0025)
+    check_updates_at_launch: bool,
 }
 
 #[derive(Serialize)]
@@ -72,6 +77,9 @@ struct AppInfo {
     platform: &'static str,
     /// whether the app can update itself (Android, Windows, macOS; ADR 0020, 0024)
     updates: bool,
+    /// a newer version the last check found (at launch or on the App updates
+    /// screen), shown in Settings → About; never a pop-up or badge (ADR 0025)
+    available: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -208,7 +216,43 @@ fn app_state(app: AppHandle, webview: Webview, shell: State<'_, Shell>) -> Resul
         platform: std::env::consts::OS,
         active: s.active.clone(),
         servers: s.servers.clone(),
+        check_updates_at_launch: shell.settings.lock().unwrap().check_updates_at_launch,
     })
+}
+
+/// The App updates screen's switch: check for a newer version when the app opens.
+#[tauri::command]
+fn update_settings(webview: Webview, shell: State<'_, Shell>, check_at_launch: bool) -> Result<(), String> {
+    require_local(&webview)?;
+    let mut s = shell.settings.lock().unwrap();
+    let next = settings::Settings { check_updates_at_launch: check_at_launch, ..s.clone() };
+    next.save(&shell.settings_file).map_err(|e| format!("Could not write {}: {e}", shell.settings_file.display()))?;
+    *s = next;
+    Ok(())
+}
+
+/// The check when the app opens (ADR 0025): quiet, the result only kept for
+/// Settings → About and the App updates screen; a failure is forgotten.
+fn check_at_launch(app: &AppHandle) {
+    let shell = app.state::<Shell>();
+    if !updates::SUPPORTED || !shell.settings.lock().unwrap().check_updates_at_launch {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let current = app.package_info().version.to_string();
+        match updates::check(&app, &current).await {
+            Ok(pending) => {
+                let shell = app.state::<Shell>();
+                let mut slot = shell.update.lock().unwrap();
+                // a check the user started meanwhile has the last word
+                if slot.is_none() {
+                    *slot = pending;
+                }
+            }
+            Err(e) => eprintln!("update check at launch failed: {}", e.split(':').next().unwrap_or("")),
+        }
+    });
 }
 
 #[tauri::command]
@@ -324,6 +368,7 @@ fn app_info(app: AppHandle, webview: Webview, shell: State<'_, Shell>) -> Result
         version: app.package_info().version.to_string(),
         platform: std::env::consts::OS,
         updates: updates::SUPPORTED,
+        available: shell.update.lock().unwrap().as_ref().map(|p| updates::found(p).version),
     })
 }
 
@@ -763,6 +808,7 @@ pub fn run() {
             cancel_form,
             update_check,
             update_install,
+            update_settings,
             app_info,
             open_updates,
             servers,
@@ -776,11 +822,22 @@ pub fn run() {
             let file = app.path().app_data_dir()?.join("servers.json");
             let store = Store::load(&file);
             let urls: Vec<String> = store.servers.iter().map(|p| p.url.clone()).collect();
-            app.manage(Shell { store: Mutex::new(store), file, granted: Mutex::new(HashSet::new()), update: Mutex::new(None), update_asked: AtomicBool::new(false) });
+            let settings_file = file.with_file_name("settings.json");
+            let settings = settings::Settings::load(&settings_file);
+            app.manage(Shell {
+                store: Mutex::new(store),
+                file,
+                granted: Mutex::new(HashSet::new()),
+                update: Mutex::new(None),
+                settings: Mutex::new(settings),
+                settings_file,
+                update_asked: AtomicBool::new(false),
+            });
             for u in &urls {
                 grant(app.handle(), u);
             }
             open_window(app.handle())?;
+            check_at_launch(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())

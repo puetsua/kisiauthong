@@ -28,7 +28,8 @@
       // a native yes/no dialog → Promise<boolean>; window.confirm() does nothing in
       // WKWebView (macOS, iOS) because the webview has no confirm panel
       confirm: function (message, ok, cancel) { return call("confirm", { message: String(message), ok: ok || null, cancel: cancel || null }); },
-      // → { version: "0.3.0", platform: "android" | "ios" | "macos" | "windows" | "linux", updates: boolean }
+      // → { version: "0.3.0", platform: "android" | "ios" | "macos" | "windows" | "linux", updates: boolean,
+      //     available?: "0.4.0" (a newer version found at launch or by a check; ADR 0025) }
       appInfo: function () { return call("app_info"); },
       // open the app's App updates screen, which checks at once (only where appInfo().updates)
       updates: function (lang) { return call("open_updates", { lang: lang || null }); },

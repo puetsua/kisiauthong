@@ -65,6 +65,11 @@ apps/tauri/
    `latest.json`, and *Update and restart* installs the package only when its
    signature matches the updater key built into the app. iOS updates come
    from the App Store.
+   Each time the app opens it also checks once, quietly
+   ([ADR 0025](../../docs/decisions/0025-update-check-at-launch.md)): a newer
+   version shows up only in Settings → About. The switch *Check for updates
+   when the app opens* on the App updates screen turns this off; it is kept in
+   `settings.json` next to `servers.json`.
 
 The bridge is reachable only from the bundled screen and from saved server
 origins: Tauri rejects app commands from remote pages unless a capability
