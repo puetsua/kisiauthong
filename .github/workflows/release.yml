@@ -271,8 +271,12 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          node scripts/updater-manifest.js "$TAG" dist > latest.json
-          if [ -s latest.json ]; then mv latest.json dist/; else rm latest.json; fi
+          # a broken manifest leaves desktop updates out; it never holds back the release
+          if ! node scripts/updater-manifest.js "$TAG" dist > latest.json; then
+            echo "::warning::Could not write latest.json; installed desktop apps get no update from this release."
+            rm -f latest.json
+          fi
+          if [ -s latest.json ]; then mv latest.json dist/; else rm -f latest.json; fi
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}

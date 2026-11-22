@@ -597,8 +597,16 @@ use android as updates;
 
 #[cfg(desktop)]
 mod desktop {
+    use std::time::Duration;
+
     use tauri::{AppHandle, Url};
     use tauri_plugin_updater::{Error, Update, UpdaterExt};
+
+    /// A stalled network (a captive portal, a half-open connection) must end in
+    /// an error, not a screen stuck on Checking… or Downloading…, as on Android.
+    const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+    /// The whole download; the packages are a few MB.
+    const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 
     use crate::update::{self, Found};
 
@@ -653,6 +661,7 @@ mod desktop {
             .endpoints(vec![url])
             .map_err(code)?
             .version_comparator(|current, remote| update::accept(&current, &remote.version))
+            .timeout(CHECK_TIMEOUT)
             .build()
             .map_err(code)?
             .check()
@@ -663,7 +672,8 @@ mod desktop {
     /// Downloads, checks the signature against the key built into the app, and
     /// installs. Windows runs the installer and quits; macOS replaces the app
     /// and restarts it here.
-    pub async fn install(app: &AppHandle, u: Update) -> Result<String, String> {
+    pub async fn install(app: &AppHandle, mut u: Update) -> Result<String, String> {
+        u.timeout = Some(DOWNLOAD_TIMEOUT);
         u.download_and_install(|_, _| {}, || {}).await.map_err(|e| match code(e) {
             c if c == "signature" || c.starts_with("unreachable") => c,
             c => format!("download: {c}"),
