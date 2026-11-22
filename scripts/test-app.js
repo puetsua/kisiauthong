@@ -226,14 +226,16 @@ test("Android launcher icon: adaptive layers, artwork inside the 66dp safe zone 
       assert.deepStrictEqual([png.width, png.height], [layer, layer], `${file} is 108dp`);
       // the background is full bleed; the other layers leave everything beyond 33dp from the centre transparent
       const safe = 33 * d, mid = layer / 2;
-      assert.strictEqual(png.alpha(Math.floor(mid), Math.floor(mid)), 255, `${file} has the artwork in the middle`);
+      let opaque = 0;
       for (let y = 0; y < layer; y++) {
         for (let x = 0; x < layer; x++) {
           const out = Math.hypot(x + 0.5 - mid, y + 0.5 - mid) > safe;
           if (name === "background") assert.strictEqual(png.alpha(x, y), 255, `${file} is opaque at ${x},${y}`);
           else if (out) assert.strictEqual(png.alpha(x, y), 0, `${file} is transparent outside the safe zone at ${x},${y}`);
+          else if (png.alpha(x, y) === 255) opaque++;
         }
       }
+      if (name !== "background") assert.ok(opaque > (layer * layer) / 40, `${file} has the artwork inside the safe zone`);
     }
     for (const name of ["ic_launcher", "ic_launcher_round"]) files.push(`mipmap-${dpi}/${name}.png`);
   }
