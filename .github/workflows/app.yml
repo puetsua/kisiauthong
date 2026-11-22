@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# The Tauri apps (apps/tauri, ADR 0019): Rust tests and an unsigned macOS debug
-# build, only when the app or what it checks changes. No signing, no release;
+# The Tauri apps (apps/tauri, ADR 0019): Rust tests, an unsigned macOS debug
+# build and a Windows debug installer (the NSIS bundle releases ship, ADR 0024),
+# only when the app or what it checks changes. No signing, no release;
 # release.yml does not depend on it.
 name: App
 
 on:
   push:
     branches: [main]
-    paths: ["apps/tauri/**", "scripts/test-app.js", "web/style.css", "web/icon-512.png", ".github/workflows/app.yml"]
+    paths: ["apps/tauri/**", "scripts/test-app.js", "scripts/updater-manifest.js", "web/style.css", "web/icon-512.png", ".github/workflows/app.yml"]
   pull_request:
-    paths: ["apps/tauri/**", "scripts/test-app.js", "web/style.css", "web/icon-512.png", ".github/workflows/app.yml"]
+    paths: ["apps/tauri/**", "scripts/test-app.js", "scripts/updater-manifest.js", "web/style.css", "web/icon-512.png", ".github/workflows/app.yml"]
   workflow_dispatch:
 
 permissions:
@@ -52,3 +53,37 @@ jobs:
         run: cargo test --locked
       - name: Build (debug, unsigned)
         run: npx tauri build --debug --bundles app -- --locked
+
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/tauri
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/tauri/package-lock.json
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            apps/tauri/src-tauri/target
+          key: tauri-windows-${{ hashFiles('apps/tauri/src-tauri/Cargo.lock') }}
+          restore-keys: tauri-windows-
+      - name: Tauri CLI
+        run: npm ci
+      - name: Rust tests
+        working-directory: apps/tauri/src-tauri
+        run: cargo test --locked
+      - name: Build (debug installer, unsigned)
+        run: |
+          npx tauri build --debug --bundles nsis -- --locked
+          ls -l src-tauri/target/debug/bundle/nsis/

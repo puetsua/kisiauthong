@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 kisiauthong contributors
 //
-// The app's App updates screen (ADR 0020), opened with mode=update from
-// Settings → About → Check for updates (Android only for now). It checks at
+// The app's App updates screen (ADR 0020, 0024), opened with mode=update from
+// Settings → About → Check for updates (Android, Windows, macOS). It checks at
 // once, because the user just asked to; installing needs a second tap. The
 // shell picks what to install (src-tauri/src/update.rs); this page only shows
 // what it found and passes no address or version back.
@@ -19,7 +19,9 @@
   const fill = (text, vars) => text.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
   const mb = (bytes) => (bytes / 1048576).toFixed(1) + " MB";
   const reason = (e) => String(e && e.message ? e.message : e);
-  let S = window.KstStrings.en, found = null, busy = false;
+  let S = window.KstStrings.en, found = null, busy = false, android = true;
+  // Android hands the APK to the system installer; Windows and macOS install and restart
+  const installLabel = () => (android ? S.updInstall : S.updRestart);
 
   function setButton(label, disabled) {
     $("updGo").textContent = label;
@@ -33,6 +35,7 @@
       unreachable: S.updErrUnreachable, status: S.updErrStatus, badAnswer: S.updErrBadAnswer, badVersion: S.updErrBadVersion, noApk: S.updErrNoApk,
       elsewhere: bad, noChecksum: bad, empty: bad, checksum: S.updErrChecksum, download: S.updErrDownload, installer: S.updErrInstaller,
       checkFirst: S.updErrCheckFirst, unsupported: S.updErrUnsupported,
+      noRelease: S.updErrNoRelease, noBuild: S.updErrNoBuild, signature: S.updErrSignature, other: S.updErrOther,
     };
     return m && words[m[1]] ? fill(words[m[1]], { detail: m[2] || "" }) : raw;
   }
@@ -54,12 +57,13 @@
       const r = await call("update_check", { onLoad: !!onLoad });
       $("updVersion").textContent = fill(S.updVersion, { version: r.current });
       found = r.update || null;
-      if (r.checked) $("updStatus").textContent = found ? fill(S.updFound, { version: found.version, size: mb(found.size) }) : S.updLatest;
+      const avail = found && (found.size ? fill(S.updFound, { version: found.version, size: mb(found.size) }) : fill(S.updFoundNoSize, { version: found.version }));
+      if (r.checked) $("updStatus").textContent = found ? avail : S.updLatest;
     } catch (e) {
       showError(S.updCheckFailed, describe(e));
     }
     busy = false;
-    setButton(found ? S.updInstall : S.updCheck);
+    setButton(found ? installLabel() : S.updCheck);
   }
 
   async function install() {
@@ -67,22 +71,26 @@
     $("updErr").hidden = true;
     setButton(S.updDownloading, true);
     $("updBack").disabled = true; // stay until the installer opens or an error shows
+    if (!android) $("updStatus").textContent = S.updRestarting;
     try {
+      // on Windows and macOS this only returns on an error: the app quits and restarts
       const status = await call("update_install");
       $("updStatus").textContent = status === "permission" ? S.updPermission : S.updStarted;
     } catch (e) {
+      $("updStatus").textContent = "";
       showError(S.updInstallFailed, describe(e));
     }
     busy = false;
     $("updBack").disabled = false;
     // still enabled after the installer opened: each download is a new file, so a retry is safe
-    setButton(S.updInstall);
+    setButton(installLabel());
   }
 
   async function init() {
     $("form").hidden = true; // before the first await, so the server form never flashes
-    let st = { locale: "", version: "" };
+    let st = { locale: "", version: "", platform: "" };
     try { st = await call("app_state"); } catch (e) { /* a plain browser */ }
+    android = st.platform === "android";
     const lang = pickLang([q.get("lang"), st.locale, ...(navigator.languages || [])].filter(Boolean));
     S = window.KstStrings[lang];
     document.documentElement.lang = lang === "zh-TW" ? "zh-Hant-TW" : "en";

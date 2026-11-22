@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 kisiauthong contributors
 //
-// App updates (ADR 0020). On Android the app can update itself from the
+// App updates (ADR 0020, 0024). On Android the app can update itself from the
 // project's GitHub releases: it reads the latest release, picks the app's APK,
-// and hands it to the system installer after checking its SHA-256. This file
-// holds the rules, with no network and no platform code, so they are tested
-// on every platform. The check runs only when the user asks for it; it is the
-// app's one request to somewhere other than the user's own server.
+// and hands it to the system installer after checking its SHA-256. Windows and
+// macOS use Tauri's updater with the release's latest.json, signed with the
+// updater key. This file holds the rules, with no network and no platform
+// code, so they are tested on every platform. Asking GitHub is the app's one
+// request to somewhere other than the user's own server.
 
 // Errors are "code" or "code: detail"; the App updates screen (update.js)
 // puts the code into words in the user's language.
 
-// Only the Android shell calls these; elsewhere only the tests do.
+// The APK rules are only called by the Android shell; elsewhere only the tests do.
 #![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
 use semver::Version;
@@ -22,12 +23,32 @@ pub const RELEASES_API: &str = "https://api.github.com/repos/puetsua/kisiauthong
 /// Where release downloads live; the download must start with this and the tag.
 pub const DOWNLOADS: &str = "https://github.com/puetsua/kisiauthong/releases/download/";
 
+/// The desktop apps' update manifest in the latest final release (never a
+/// pre-release: GitHub's `latest` skips them), made by scripts/updater-manifest.js.
+#[cfg_attr(mobile, allow(dead_code))]
+pub const DESKTOP_MANIFEST: &str = "https://github.com/puetsua/kisiauthong/releases/latest/download/latest.json";
+
 /// The Android app in a release: kisiauthong-app-<version>-android.apk.
 pub fn asset_name(version: &str) -> String {
     format!("kisiauthong-app-{version}-android.apk")
 }
 
-/// An update the app found and may install.
+/// What the App updates screen is told about a found update.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Found {
+    pub version: String,
+    /// bytes, when the release says (the APK); the desktop manifest does not
+    pub size: Option<u64>,
+}
+
+/// Whether a release may replace the installed app: newer, and a final
+/// release. A pre-release never reaches an installed app, even when it is
+/// marked as the latest by mistake.
+pub fn accept(current: &Version, remote: &Version) -> bool {
+    remote > current && remote.pre.is_empty()
+}
+
+/// An Android update the app found and may install.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Update {
@@ -58,13 +79,6 @@ struct Asset {
     digest: Option<String>,
 }
 
-/// Whether `latest` is a newer version than `current`. Tags have no "v" (ADR 0009).
-pub fn is_newer(current: &str, latest: &str) -> Result<bool, String> {
-    let c = Version::parse(current).map_err(|e| format!("badVersion: {current}: {e}"))?;
-    let l = Version::parse(latest).map_err(|e| format!("badAnswer: the release tag {latest:?}: {e}"))?;
-    Ok(l > c)
-}
-
 fn sha256_of(digest: Option<&str>) -> Option<String> {
     let hex = digest?.strip_prefix("sha256:")?;
     (hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())).then(|| hex.to_ascii_lowercase())
@@ -78,10 +92,9 @@ pub fn pick(json: &str, current: &str, downloads: &str) -> Result<Option<Update>
     if r.draft || r.prerelease {
         return Ok(None);
     }
-    if !is_newer(current, &r.tag_name)? {
-        return Ok(None);
-    }
-    if !Version::parse(&r.tag_name).map(|v| v.pre.is_empty()).unwrap_or(false) {
+    let c = Version::parse(current).map_err(|e| format!("badVersion: {current}: {e}"))?;
+    let l = Version::parse(&r.tag_name).map_err(|e| format!("badAnswer: the release tag {:?}: {e}", r.tag_name))?;
+    if !accept(&c, &l) {
         return Ok(None);
     }
     let name = asset_name(&r.tag_name);
@@ -118,14 +131,14 @@ mod tests {
     }
 
     #[test]
-    fn versions_compare_as_semver() {
-        assert!(is_newer("0.3.0", "0.4.0").unwrap());
-        assert!(is_newer("0.3.0", "0.3.1").unwrap());
-        assert!(is_newer("0.9.0", "0.10.0").unwrap(), "numeric, not text");
-        assert!(is_newer("1.0.0-beta.1", "1.0.0").unwrap());
-        assert!(!is_newer("0.4.0", "0.4.0").unwrap());
-        assert!(!is_newer("0.4.0", "0.3.9").unwrap());
-        assert!(is_newer("0.3.0", "v0.4.0").is_err(), "tags have no v");
+    fn only_newer_final_releases_are_accepted() {
+        let v = |s| Version::parse(s).unwrap();
+        assert!(accept(&v("0.5.0"), &v("0.6.0")));
+        assert!(accept(&v("0.9.0"), &v("0.10.0")));
+        assert!(accept(&v("1.0.0-beta.1"), &v("1.0.0")));
+        assert!(!accept(&v("0.5.0"), &v("0.5.0")));
+        assert!(!accept(&v("0.6.0"), &v("0.5.0")), "never a downgrade");
+        assert!(!accept(&v("0.5.0"), &v("0.6.0-beta.1")), "never a pre-release");
     }
 
     #[test]
@@ -181,5 +194,7 @@ mod tests {
         assert_eq!(pick(&empty, "0.3.0", DOWNLOADS).unwrap_err(), "empty: 0.4.0");
         assert!(pick("not json", "0.3.0", DOWNLOADS).unwrap_err().starts_with("badAnswer: "));
         assert!(pick(&release("latest", ""), "0.3.0", DOWNLOADS).unwrap_err().starts_with("badAnswer: "));
+        assert!(pick(&release("v0.4.0", ""), "0.3.0", DOWNLOADS).unwrap_err().starts_with("badAnswer: "), "tags have no v");
+        assert!(pick(&release("0.4.0", ""), "x", DOWNLOADS).unwrap_err().starts_with("badVersion: "));
     }
 }
