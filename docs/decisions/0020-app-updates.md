@@ -2,7 +2,8 @@
 # 0020 — App updates (Android first)
 
 Date: 2026-11-19
-Status: accepted (issue #34); desktop updates: ADR 0024
+Status: accepted (issue #34); desktop updates: ADR 0024; a check when the
+app opens: ADR 0025
 
 ## Context
 

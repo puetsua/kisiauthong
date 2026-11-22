@@ -99,6 +99,16 @@
     $("updVersion").textContent = st.version ? fill(S.updVersion, { version: st.version }) : "";
     $("updBack").textContent = S.updBack;
     $("updHint").textContent = S.updHint;
+    // whether the app checks GitHub when it opens (ADR 0025); the shell keeps it in settings.json
+    $("updAutoLabel").textContent = S.updAuto;
+    $("updAuto").checked = st.checkUpdatesAtLaunch !== false;
+    $("updAuto").addEventListener("change", (e) => {
+      const on = e.target.checked;
+      call("update_settings", { checkAtLaunch: on }).catch((err) => {
+        e.target.checked = !on;
+        showError(fill(S.updAutoFailed, { detail: reason(err) }), "");
+      });
+    });
     $("updGo").addEventListener("click", () => { if (!busy) (found ? install() : check(false)); });
     // back to Settings → About of the server that opened this screen; the shell checks it is a saved one
     $("updBack").addEventListener("click", () => { call("cancel_form", { back: q.get("back") }).catch(() => history.back()); });

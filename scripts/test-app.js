@@ -166,7 +166,7 @@ test("app updates: only the bundled screen may check and install (ADR 0020)", ()
     assert.ok(m, id);
     return m[1];
   };
-  for (const p of ["allow-update-check", "allow-update-install"]) {
+  for (const p of ["allow-update-check", "allow-update-install", "allow-update-settings"]) {
     assert.ok(set("server-screen").includes(p), `server-screen has ${p}`);
     assert.ok(!set("bridge").includes(p), `bridge (saved servers' pages) must not have ${p}`);
   }

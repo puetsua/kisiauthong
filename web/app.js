@@ -1757,8 +1757,10 @@ async function drawAppServers() {
       .then((yes) => yes && shell.remove(s.id).then(drawAppServers)).catch(fail);
   }));
 }
-// Settings → About → App: the app's own version, and on Android a way to update it (ADR 0020).
-// Older apps have no appInfo, and in a browser there is no app, so nothing shows.
+// Settings → About → App: the app's own version, and where it can update itself a way to do so
+// (ADR 0020, 0024). When the app's check at launch found a newer version it says so here, and
+// only here: no pop-up, badge or banner (ADR 0025). Older apps have no appInfo, and in a
+// browser there is no app, so nothing shows.
 async function drawAppAbout() {
   const shell = appShell(), slot = $("#appAbout");
   if (!slot || !shell || typeof shell.appInfo !== "function") return;
@@ -1766,7 +1768,8 @@ async function drawAppAbout() {
   try { info = await shell.appInfo(); } catch (e) { return; }
   if (!slot.isConnected) return; // Settings was drawn again meanwhile; that call fills the new slot
   const btn = info.updates && typeof shell.updates === "function" ? `<button type="button" class="smallbtn" id="appUpdates">${esc(__("Check for updates"))}</button>` : "";
-  slot.outerHTML = `<div class="srow"><span class="sl">${esc(__("App"))}</span><div class="sc"><div class="verline"><span>${esc(info.version)}</span>${btn}</div></div></div>`;
+  const avail = info.available ? `<span class="muted">${esc(__("Version {version} is available", { version: info.available }))}</span>` : "";
+  slot.outerHTML = `<div class="srow"><span class="sl">${esc(__("App"))}</span><div class="sc"><div class="verline"><span>${esc(info.version)}</span>${avail}${btn}</div></div></div>`;
   if ($("#appUpdates")) $("#appUpdates").addEventListener("click", () => shell.updates(LANG).catch((e) => msg(String((e && e.message) || e), "error")));
 }
 const setIcon = (k) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="${SET_ICON[k]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
