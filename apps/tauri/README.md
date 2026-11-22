@@ -148,6 +148,14 @@ npx tauri android dev          # src-tauri/gen/android is committed; do not run 
 npx tauri android build --apk
 ```
 
+**Launcher icon.** An adaptive icon in three layers (`mipmap-*/ic_launcher_background`,
+`_foreground` and `_monochrome`, the last for Android 13 themed icons), drawn
+from the shapes of `web/icon.svg` by `python3 scripts/android-icons.py` (needs
+Pillow) into `src-tauri/icons/android/` and `src-tauri/gen/android/`. The page
+and the coin stay inside the 66dp safe zone, so no launcher mask crops them;
+`node scripts/test-app.js` checks that. Do not use `tauri icon` for Android: it
+puts the whole square icon in the foreground on a white background (issue #54).
+
 Release builds are signed with the key named in `src-tauri/gen/android/keystore.properties`
 (`storeFile=<path to .jks>`, `password=…`, `keyAlias=kisiauthong`), which git
 ignores; keep the key and its password outside the repo, backed up. Every
