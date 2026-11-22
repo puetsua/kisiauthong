@@ -172,6 +172,45 @@ test("app updates: only the bundled screen may check and install (ADR 0020)", ()
   }
 });
 
+test("desktop updates: latest.json lists each signed build (ADR 0024)", () => {
+  const { manifest } = require(path.join(root, "scripts", "updater-manifest.js"));
+  const os = require("os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kst-manifest-"));
+  try {
+    const put = (name, text) => fs.writeFileSync(path.join(dir, name), text);
+    const when = new Date("2026-11-22T10:00:00.123Z");
+    assert.strictEqual(manifest("0.6.0", dir, "o/r", when), null, "nothing signed: no manifest");
+    put("kisiauthong-app-0.6.0-windows-x64-setup.exe", "exe");
+    assert.strictEqual(manifest("0.6.0", dir, "o/r", when), null, "an unsigned build is left out");
+    put("kisiauthong-app-0.6.0-windows-x64-setup.exe.sig", "U0lHLVdJTg==\n");
+    put("kisiauthong-app-0.6.0-macos.app.tar.gz", "tgz");
+    put("kisiauthong-app-0.6.0-macos.app.tar.gz.sig", "U0lHLU1BQw==");
+    const m = manifest("0.6.0", dir, "o/r", when);
+    assert.strictEqual(m.version, "0.6.0");
+    assert.strictEqual(m.pub_date, "2026-11-22T10:00:00Z");
+    assert.deepStrictEqual(Object.keys(m.platforms).sort(), ["darwin-aarch64", "darwin-x86_64", "windows-x86_64"]);
+    assert.deepStrictEqual(m.platforms["windows-x86_64"], { signature: "U0lHLVdJTg==", url: "https://github.com/o/r/releases/download/0.6.0/kisiauthong-app-0.6.0-windows-x64-setup.exe" });
+    assert.strictEqual(m.platforms["darwin-x86_64"].url, m.platforms["darwin-aarch64"].url, "one universal macOS app");
+    assert.throws(() => manifest("v0.6.0", dir, "o/r"), /not a release tag/, "tags have no v");
+    put("kisiauthong-app-0.6.0-macos.app.tar.gz.sig", "");
+    assert.throws(() => manifest("0.6.0", dir, "o/r"), /empty/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("desktop updates: the updater runs only in Rust, never from a page (ADR 0024)", () => {
+  const caps = path.join(root, "apps", "tauri", "src-tauri", "capabilities");
+  for (const f of fs.readdirSync(caps)) assert.ok(!/updater:/.test(fs.readFileSync(path.join(caps, f), "utf8")), `${f} grants no updater permission`);
+  const toml = fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "permissions", "app.toml"), "utf8");
+  assert.ok(!/updater:/.test(toml), "no permission set includes the updater plugin");
+  const conf = JSON.parse(fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "tauri.conf.json"), "utf8"));
+  const u = conf.plugins.updater;
+  assert.ok(u.requireSignedVersion, "the signature must name the version it was signed for");
+  assert.ok(!u.dangerousInsecureTransportProtocol && !u.allowDowngrades, "https only, no downgrades");
+  assert.ok(!(conf.bundle && conf.bundle.createUpdaterArtifacts), "signed builds only in release.yml, so local builds need no key");
+});
+
 // The RGBA pixels of an 8-bit, non-interlaced RGBA PNG (what scripts/android-icons.py writes).
 function readPng(file) {
   const buf = fs.readFileSync(file);

@@ -43,6 +43,11 @@ rfd = { version = "0.16", default-features = false, features = ["common-controls
 [target.'cfg(target_os = "linux")'.dependencies]
 rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
 
+# Desktop updates from the release's latest.json, signed with the updater key
+# (ADR 0024); Android and iOS update another way (ADR 0020).
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-updater = "2"
+
 [profile.release]
 codegen-units = 1
 lto = true

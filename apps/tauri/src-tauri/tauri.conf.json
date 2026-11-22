@@ -25,6 +25,14 @@
     "android": {
       "minSdkVersion": 29
     },
+    "macOS": {
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -32,5 +40,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFBNDJGMEQ2RDk2RkY3ODcKUldTSDkyL1oxdkJDR2lsaWNPVGVaeWlNVklWK2FHYUFURzQ1T0h2aDFJSDVuQVM2eVIrM3JjZDkK",
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

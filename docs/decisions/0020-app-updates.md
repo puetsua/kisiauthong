@@ -2,7 +2,7 @@
 # 0020 — App updates (Android first)
 
 Date: 2026-11-19
-Status: accepted (issue #34); desktop updates are issue #33
+Status: accepted (issue #34); desktop updates: ADR 0024
 
 ## Context
 
@@ -79,7 +79,7 @@ check has to ask somewhere else.
   prefix. This lets a local server stand in for GitHub. Release builds ignore
   the file (`cfg(debug_assertions)`).
 - **iOS:** no updates from inside the app; the App Store or TestFlight
-  updates it once it is published there. **Desktop:** issue #33 (Tauri
+  updates it once it is published there. **Desktop:** ADR 0024 (Tauri
   updater).
 
 ## Consequences

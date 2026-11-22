@@ -13,13 +13,13 @@ apps/tauri/
     connect.js          pure rules: normalise an address, the http:// rule, read the check's answer
     strings.js          English and zh-TW strings of the screen
     first-run.js        the screen's behaviour
-    update.js           the App updates screen (mode=update; Android)
+    update.js           the App updates screen (mode=update; Android, Windows, macOS)
     style.css           tokens copied from web/style.css (checked by scripts/test-app.js)
   src-tauri/
     src/lib.rs          window, navigation guard, commands, per-server capabilities
     src/profiles.rs     servers.json: saved servers and the one in use
     src/probe.rs        GET <server>api/auth/status with the system TLS stack
-    src/update.rs       app updates: pick a newer release's APK (ADR 0020)
+    src/update.rs       app updates: which release may be installed, pick its APK (ADR 0020, 0024)
     src/bridge.js       injected into every page: window.kisiauthongApp, links to the system browser
     capabilities/       the bundled screen's capability (saved servers get theirs at run time)
     permissions/app.toml  the "server-screen" and "bridge" permission sets
@@ -60,7 +60,11 @@ apps/tauri/
    only then, and installs `kisiauthong-app-<version>-android.apk` only after
    the user taps *Download and install*. The download must match the size and
    SHA-256 in the release, and Android's installer requires the same signing
-   key. Desktop updates are #33; iOS updates come from the App Store.
+   key. On Windows and macOS ([ADR 0024](../../docs/decisions/0024-desktop-apps-and-updates.md))
+   the same screen uses Tauri's updater: it reads the latest release's
+   `latest.json`, and *Update and restart* installs the package only when its
+   signature matches the updater key built into the app. iOS updates come
+   from the App Store.
 
 The bridge is reachable only from the bundled screen and from saved server
 origins: Tauri rejects app commands from remote pages unless a capability
@@ -114,8 +118,39 @@ cd src-tauri && cargo test     # Rust unit tests (profiles, origins, TLS errors)
 node ../../scripts/test-app.js # the screen's rules, strings and tokens
 ```
 
-Windows: the same `npx tauri build` on Windows gives `.msi` and `.exe`
-installers (WebView2 is part of Windows 10/11).
+Windows: `npx tauri build --bundles nsis` gives the setup `.exe` that
+releases ship (WebView2 is part of Windows 10/11). macOS releases are
+universal: `npx tauri build --target universal-apple-darwin --bundles app,dmg`
+(after `rustup target add aarch64-apple-darwin x86_64-apple-darwin`).
+
+### Desktop updates (Windows, macOS)
+
+Releases sign the update packages with the **updater key** (ADR 0024). Create
+it once, keep it and its password backed up outside the repo (losing either
+means installed desktop apps can no longer update), and put it in the
+repository secrets:
+
+```powershell
+npx tauri signer generate -w "$HOME\.tauri\kisiauthong-updater.key"
+Get-Content -Raw "$HOME\.tauri\kisiauthong-updater.key" | gh secret set TAURI_SIGNING_PRIVATE_KEY
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+```
+
+The public key (`kisiauthong-updater.key.pub`) is `plugins.updater.pubkey` in
+`tauri.conf.json`. Local builds make no update packages and need no key;
+`release.yml` adds `bundle.createUpdaterArtifacts` when the secret is set, and
+`scripts/updater-manifest.js` writes `latest.json` from what it signed.
+
+To try an update without a release, build two **debug** installers with a
+throwaway key (`npx tauri signer generate --ci -p test -w test.key`, then
+`npx tauri build --debug --bundles nsis --config` with `version`,
+`bundle.createUpdaterArtifacts: true` and that key's
+`plugins.updater.pubkey`, and `TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)` set).
+Install the lower version, serve the higher one with a `latest.json` from
+`scripts/updater-manifest.js` (its URLs pointed at the local server) on
+`127.0.0.1`, and put that `latest.json` URL on the first line of
+`update-source.txt` in the app data folder
+(`%APPDATA%\io.github.puetsua.kisiauthong\`). Release builds ignore the file.
 
 A server to try against: `cd server && PORT=9728 go run .` and enter
 `http://127.0.0.1:9728/` (loopback may use `http://`).

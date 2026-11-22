@@ -8,9 +8,11 @@
 // calls and base path work exactly as in a browser. The shell adds three
 // things: the bundled server screen (../src) to enter or fix a server address,
 // the saved server list (profiles.rs), and a small bridge (bridge.js) through
-// which the server's Settings → Servers lists and manages that list. On
-// Android it can also update itself from the project's releases (update.rs),
-// and the server check runs in Kotlin (ProbePlugin.kt).
+// which the server's Settings → Servers lists and manages that list. It can
+// also update itself from the project's releases: Android through the system
+// installer (update.rs, UpdatePlugin.kt; ADR 0020), Windows and macOS through
+// Tauri's updater (ADR 0024). On Android the server check runs in Kotlin
+// (ProbePlugin.kt).
 
 mod probe;
 mod profiles;
@@ -37,7 +39,7 @@ struct Shell {
     /// origins that already have a remote capability for the bridge
     granted: Mutex<HashSet<String>>,
     /// what the last update check found; install only ever uses this
-    update: Mutex<Option<update::Update>>,
+    update: Mutex<Option<updates::Pending>>,
     /// set when the user opens App updates: the screen's check on load may run
     /// once, and not again when Back returns to the screen (ADR 0020)
     update_asked: AtomicBool,
@@ -56,6 +58,8 @@ struct AppState {
     locale: String,
     /// this app's version, such as 0.3.0
     version: String,
+    /// android, ios, macos, windows, linux
+    platform: &'static str,
     active: Option<String>,
     servers: Vec<Profile>,
 }
@@ -66,14 +70,14 @@ struct AppInfo {
     version: String,
     /// android, ios, macos, windows, linux
     platform: &'static str,
-    /// whether the app can update itself (Android only for now; ADR 0020)
+    /// whether the app can update itself (Android, Windows, macOS; ADR 0020, 0024)
     updates: bool,
 }
 
 #[derive(Serialize)]
 struct UpdateCheck {
     current: String,
-    update: Option<update::Update>,
+    update: Option<update::Found>,
     /// false: GitHub was not asked (the screen loaded without the user asking)
     checked: bool,
 }
@@ -201,6 +205,7 @@ fn app_state(app: AppHandle, webview: Webview, shell: State<'_, Shell>) -> Resul
     Ok(AppState {
         locale: sys_locale::get_locale().unwrap_or_default(),
         version: app.package_info().version.to_string(),
+        platform: std::env::consts::OS,
         active: s.active.clone(),
         servers: s.servers.clone(),
     })
@@ -295,8 +300,9 @@ async fn update_check(app: AppHandle, webview: Webview, on_load: Option<bool>) -
     if !may_check(&app.state::<Shell>().update_asked, on_load.unwrap_or(false)) {
         return Ok(UpdateCheck { current, update: None, checked: false });
     }
-    let found = android::check(&app, &current).await?;
-    *app.state::<Shell>().update.lock().unwrap() = found.clone();
+    let pending = updates::check(&app, &current).await?;
+    let found = pending.as_ref().map(updates::found);
+    *app.state::<Shell>().update.lock().unwrap() = pending;
     Ok(UpdateCheck { current, update: found, checked: true })
 }
 
@@ -304,9 +310,9 @@ async fn update_check(app: AppHandle, webview: Webview, on_load: Option<bool>) -
 #[tauri::command]
 async fn update_install(app: AppHandle, webview: Webview) -> Result<String, String> {
     require_local(&webview)?;
-    let found = app.state::<Shell>().update.lock().unwrap().clone();
-    let u = found.ok_or("checkFirst")?;
-    android::install(&app, u).await
+    let pending = app.state::<Shell>().update.lock().unwrap().clone();
+    let u = pending.ok_or("checkFirst")?;
+    updates::install(&app, u).await
 }
 
 /* ---------- the bridge: also from saved servers' pages ---------- */
@@ -317,7 +323,7 @@ fn app_info(app: AppHandle, webview: Webview, shell: State<'_, Shell>) -> Result
     Ok(AppInfo {
         version: app.package_info().version.to_string(),
         platform: std::env::consts::OS,
-        updates: cfg!(target_os = "android"),
+        updates: updates::SUPPORTED,
     })
 }
 
@@ -462,7 +468,14 @@ mod android {
     use tauri::{AppHandle, Manager, Wry};
 
     use crate::probe::{self, Probe};
-    use crate::update::{self, Update};
+    use crate::update::{self, Found, Update};
+
+    pub const SUPPORTED: bool = true;
+    pub type Pending = Update;
+
+    pub fn found(u: &Update) -> Found {
+        Found { version: u.version.clone(), size: Some(u.size) }
+    }
 
     // One Tauri plugin per Kotlin class: Android keeps plugins by the Tauri
     // plugin's name, so a second class under the same name would replace the first.
@@ -577,20 +590,111 @@ mod android {
     }
 }
 
-/// Desktop updates are #33; iOS updates come from the App Store.
-#[cfg(not(target_os = "android"))]
-mod android {
+#[cfg(target_os = "android")]
+use android as updates;
+
+/* ---------- Windows and macOS: Tauri's updater (ADR 0024) ---------- */
+
+#[cfg(desktop)]
+mod desktop {
+    use tauri::{AppHandle, Url};
+    use tauri_plugin_updater::{Error, Update, UpdaterExt};
+
+    use crate::update::{self, Found};
+
+    /// Linux is not built or released yet (ADR 0019).
+    pub const SUPPORTED: bool = cfg!(any(windows, target_os = "macos"));
+    pub type Pending = Update;
+
+    pub fn found(u: &Update) -> Found {
+        Found { version: u.version.clone(), size: None }
+    }
+
+    /// The release's update manifest. A debug build may read another one from
+    /// update-source.txt in the app data folder (first line), to test against a
+    /// local server; release builds always use GitHub.
+    fn endpoint(app: &AppHandle) -> String {
+        #[cfg(debug_assertions)]
+        {
+            use tauri::Manager;
+            if let Ok(dir) = app.path().app_data_dir() {
+                if let Ok(s) = std::fs::read_to_string(dir.join("update-source.txt")) {
+                    if let Some(l) = s.lines().map(str::trim).find(|l| !l.is_empty()) {
+                        return l.into();
+                    }
+                }
+            }
+        }
+        let _ = app;
+        update::DESKTOP_MANIFEST.into()
+    }
+
+    /// The updater's errors as the codes the App updates screen puts into words.
+    fn code(e: Error) -> String {
+        match e {
+            Error::Reqwest(e) => format!("unreachable: {e}"),
+            Error::Network(e) => format!("unreachable: {e}"),
+            Error::ReleaseNotFound => "noRelease".into(),
+            Error::TargetNotFound(_) | Error::TargetsNotFound(_) => "noBuild".into(),
+            Error::Serialization(e) => format!("badAnswer: {e}"),
+            Error::Semver(e) => format!("badAnswer: {e}"),
+            Error::Minisign(_)
+            | Error::Base64(_)
+            | Error::SignatureUtf8(_)
+            | Error::SignedVersionMismatch { .. }
+            | Error::MissingSignedVersion => "signature".into(),
+            e => format!("other: {e}"),
+        }
+    }
+
+    pub async fn check(app: &AppHandle, _current: &str) -> Result<Option<Update>, String> {
+        let url = Url::parse(&endpoint(app)).map_err(|e| format!("other: {e}"))?;
+        app.updater_builder()
+            .endpoints(vec![url])
+            .map_err(code)?
+            .version_comparator(|current, remote| update::accept(&current, &remote.version))
+            .build()
+            .map_err(code)?
+            .check()
+            .await
+            .map_err(code)
+    }
+
+    /// Downloads, checks the signature against the key built into the app, and
+    /// installs. Windows runs the installer and quits; macOS replaces the app
+    /// and restarts it here.
+    pub async fn install(app: &AppHandle, u: Update) -> Result<String, String> {
+        u.download_and_install(|_, _| {}, || {}).await.map_err(|e| match code(e) {
+            c if c == "signature" || c.starts_with("unreachable") => c,
+            c => format!("download: {c}"),
+        })?;
+        app.restart()
+    }
+}
+
+#[cfg(desktop)]
+use desktop as updates;
+
+/// iOS apps are updated by the App Store (ADR 0020).
+#[cfg(target_os = "ios")]
+mod updates {
     use tauri::AppHandle;
 
-    use crate::update::Update;
+    use crate::update::Found;
 
+    pub const SUPPORTED: bool = false;
     const NOT_HERE: &str = "unsupported";
+    pub type Pending = ();
 
-    pub async fn check(_app: &AppHandle, _current: &str) -> Result<Option<Update>, String> {
+    pub fn found(_: &()) -> Found {
+        unreachable!("iOS never finds an update")
+    }
+
+    pub async fn check(_app: &AppHandle, _current: &str) -> Result<Option<()>, String> {
         Err(NOT_HERE.into())
     }
 
-    pub async fn install(_app: &AppHandle, _u: Update) -> Result<String, String> {
+    pub async fn install(_app: &AppHandle, _u: ()) -> Result<String, String> {
         Err(NOT_HERE.into())
     }
 }
@@ -637,6 +741,8 @@ fn open_window(app: &AppHandle) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(target_os = "android")]
     let builder = builder.plugin(android::update_plugin()).plugin(android::probe_plugin());
     builder
