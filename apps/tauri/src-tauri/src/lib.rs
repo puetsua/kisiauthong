@@ -848,6 +848,8 @@ fn open_window(app: &AppHandle) -> tauri::Result<()> {
             layout(&w);
         }
     });
+    // the window grew when its title bar went away, before this handler existed
+    layout(&window);
     Ok(())
 }
 
