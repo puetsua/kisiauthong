@@ -64,9 +64,13 @@ function writeInt(n) {
 // fmt(minor, currency, calc): "TWD 1,580" / "USD 12.50"; calc = a calculated figure, shown at full precision.
 // Built from integer minor units, so no floating point touches the digits.
 function fmt(minor, currency, calc = false) {
+  return (currency || "") + " " + fmtNum(minor, currency, calc);
+}
+// fmtNum: the same amount without its currency code ("1,580"), for layouts that show the code apart
+function fmtNum(minor, currency, calc = false) {
   const c = currency || defCur(), e = expOf(c), d = shownDigits(minor, c, calc);
   const m = Math.round(minor || 0), abs = Math.abs(m), unit = Math.pow(10, e);
-  return (currency || "") + " " + (m < 0 ? "-" : "") + AMT_OPEN + writeInt(Math.floor(abs / unit)) + (d ? "." + String(abs % unit).padStart(e, "0") : "") + AMT_CLOSE;
+  return (m < 0 ? "-" : "") + AMT_OPEN + writeInt(Math.floor(abs / unit)) + (d ? "." + String(abs % unit).padStart(e, "0") : "") + AMT_CLOSE;
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 // Hide amounts (header eye, per device): fmt() marks the digits of every amount with two
@@ -832,7 +836,8 @@ const schedToday = () => { const d = state.data; return d.serverToday && d.serve
 function dayNet(list) {
   const net = {};
   list.forEach((t) => { const k = flow(t); if (k === "income") net[t.currency] = (net[t.currency] || 0) + t.amountMinor; if (k === "expense") net[t.currency] = (net[t.currency] || 0) - t.amountMinor; });
-  return Object.entries(net).filter(([, v]) => v).map(([c, v]) => (v > 0 ? "+" : "−") + fmt(Math.abs(v), c)).join(" · ");
+  // one line in the day's header, in the same order as every other list of currencies (issue #62)
+  return curOrder(net).filter(([, v]) => v).map(([c, v]) => (v > 0 ? "+" : "−") + fmt(Math.abs(v), c)).join(" · ");
 }
 function feedRow(t, opts = {}) {
   // withDate: rows outside day sections (search results, expected) lead with their date
@@ -1265,7 +1270,8 @@ function tagTotals(list) {
   list.forEach((t) => { const k = flow(t), m = k === "expense" ? out : k === "income" ? inn : null; if (m) m[t.currency] = (m[t.currency] || 0) + t.amountMinor; });
   return { out, in: inn };
 }
-const sumParts = (m, sign, cls) => Object.entries(m).map(([c, v]) => `<span class="amt ${cls}">${sign}${esc(fmt(v, c))}</span>`);
+// a totals tile of amounts per currency (spent, received, put in…): nothing when there are none
+const moneyTile = (lab, m) => (Object.keys(m).length ? `<div class="totcard"><span class="lab">${esc(lab)}</span>${moneyBlock(m, { sign: "", cls: "tot" })}</div>` : "");
 // A category's money in one figure per currency (issue #57): what came in minus what went out, in minor
 // units, never converted (ADR 0011) — the way budgets count a category (ADR 0021). Transfers between own
 // accounts move nothing in or out, so they do not count.
@@ -1277,14 +1283,29 @@ function tagNet(list) {
   });
   return net;
 }
-// signed and colored like the rest: − out (ink), + in (green), 0 when they cancel out (muted)
-const netHTML = (net) => Object.entries(net).map(([c, v]) =>
-  `<span class="amt ${v < 0 ? "out" : v > 0 ? "in" : "zero"}">${v < 0 ? "−" : v > 0 ? "+" : ""}${esc(fmt(Math.abs(v), c))}</span>`).join(" ");
+// Amounts in several currencies (issue #62), never converted (ADR 0011): one fixed order, the default
+// currency (Settings) first and the others by code, whatever order the transactions came in.
+const curOrder = (m) => Object.entries(m).sort(([a], [b]) => (a === b ? 0 : a === defCur() ? -1 : b === defCur() ? 1 : a < b ? -1 : 1));
+// The first currency in that order is the large primary amount; the others sit below it, smaller, one per
+// line, each with its code as a small label apart from the digits. Spans only, so it fits inside a button.
+// sign "net": signed and colored by value — − out (ink), + in (green), 0 when they cancel out (muted);
+// otherwise every amount gets that sign ("+", "−" or none) and the class cls.
+function moneyBlock(m, { sign = "net", cls = "" } = {}) {
+  const list = curOrder(m);
+  if (!list.length) return "";
+  const amt = ([c, v]) => {
+    const k = sign === "net" ? (v < 0 ? "out" : v > 0 ? "in" : "zero") : cls, s = sign === "net" ? (v < 0 ? "−" : v > 0 ? "+" : "") : sign;
+    return `<span class="ccode">${esc(c)}</span><span class="amt ${k}">${s}${esc(fmtNum(Math.abs(v), c))}</span>`;
+  };
+  const [first, ...rest] = list;
+  return `<span class="mamt"><span class="mprim">${amt(first)}</span>${rest.length ? `<span class="msec">${rest.map(amt).join("")}</span>` : ""}</span>`;
+}
+const netHTML = (net) => moneyBlock(net);
 function categoryCard(t, p) {
   const list = tagTxns(t.id, p);
   return `<button type="button" class="tcard ccard" data-detail-tag="${esc(t.id)}">
     <span class="thead"><b>${esc(t.name)}</b><small>${esc(__("{n} transaction(s)", { n: list.length }))}</small></span>
-    <span class="tfoot">${list.length ? `<span class="amts">${netHTML(tagNet(list))}</span>` : `<small>${esc(__("No transactions in this period."))}</small>`}</span></button>`;
+    <span class="tfoot">${list.length ? netHTML(tagNet(list)) : `<small>${esc(__("No transactions in this period."))}</small>`}</span></button>`;
 }
 const tagURL = (id, mode, at) => `#tag?${new URLSearchParams({ id, range: mode, ...(at ? { at } : {}) })}`;
 const plainDay = (iso) => { try { return new Intl.DateTimeFormat(LANG, { year: "numeric", month: "short", day: "numeric" }).format(parseDay(iso)); } catch (e) { return iso; } };
@@ -1296,16 +1317,15 @@ function screenTag(v) {
   $("#pageTitle").textContent = t.name;
   const all = tagTxns(t.id), sums = tagTotals(all), inP = tagTxns(t.id, p);
   const tile = (lab, val, sub) => `<div class="totcard"><span class="lab">${esc(lab)}</span><b>${val}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
-  const money = (m) => Object.entries(m).map(([c, n]) => esc(fmt(n, c))).join("<br>");
   const tiles = tile(__("Transactions"), esc(String(all.length)), all.length ? __("Since {date}", { date: plainDay(all[all.length - 1].date) }) : "")
-    + (Object.keys(sums.out).length ? tile(__("Spent"), money(sums.out)) : "") + (Object.keys(sums.in).length ? tile(__("Received"), money(sums.in)) : "");
+    + moneyTile(__("Spent"), sums.out) + moneyTile(__("Received"), sums.in);
   const rows = (list) => `<ul class="feed">${list.map((x) => feedRow(x, { withDate: true })).join("")}</ul>`;
   v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#tags">‹ ${esc(__("Tags"))}</a><button type="button" class="smallbtn" id="tagEdit">${esc(__("Edit"))}</button></div>
     ${t.limitMinor !== undefined ? `<div class="tgrid tagbudget">${budgetCard(t)}</div>` : ""}
     <div class="totals">${tiles}</div>
     ${notePanel(t.memo)}
     <section class="tsection">${periodBar(mode, p)}
-    ${inP.length ? `<div class="psum"><span>${esc(__("{n} transaction(s)", { n: inP.length }))}</span><span class="amts">${netHTML(tagNet(inP))}</span></div>
+    ${inP.length ? `<div class="psum"><span>${esc(__("{n} transaction(s)", { n: inP.length }))}</span>${netHTML(tagNet(inP))}</div>
       <section class="panel feedpanel">${rows(inP)}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
   bindPeriodBar(v, mode, p, (m, at) => tagURL(t.id, m, at));
   $("#tagEdit").addEventListener("click", () => openTagDialog(null, t.id));
@@ -1440,7 +1460,7 @@ function openMergeDialog(ids) {
       budgetHTML = `<span class="bamount"><b>${fmt(spent, kept.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(kept.limitMinor, kept.currency) }))}</small></span>${bar(pct, barCls(pct))}<small>${esc(budgetPeriodText(kept, true))}</small>`;
     }
     $("#mPreview").innerHTML = `<div class="tcard ccard mprev"><span class="thead"><b>${esc(name)}</b><small>${esc(__("{n} transaction(s) in all", { n: p.transactions }))}</small></span>${budgetHTML}
-      <span class="tfoot"><span class="amts">${netHTML(tagNet(inP))}</span><small>${esc(__(TAG_NOW_L[per.mode]))}</small></span></div>`;
+      <span class="tfoot">${netHTML(tagNet(inP))}<small>${esc(__(TAG_NOW_L[per.mode]))}</small></span></div>`;
   };
   const body = (dryRun) => ({ sourceIds: sources(), name: el.name.value.trim(), budgetFrom, dryRun });
   const refresh = async () => {
@@ -1517,7 +1537,7 @@ function resAllocs(id, p) {
   return state.data.allocations.filter((a) => a.reserveId === id && (!p || (a.date >= p.start && a.date <= p.end)))
     .sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")) || (b.createdAt || "").localeCompare(a.createdAt || ""));
 }
-// put in and taken out, per currency in minor units (shown with sumParts)
+// put in and taken out, per currency in minor units (shown with moneyBlock)
 function allocTotals(list) {
   const out = {}, inn = {};
   list.forEach((a) => { const m = a.amountMinor < 0 ? out : inn; m[a.currency] = (m[a.currency] || 0) + Math.abs(a.amountMinor); });
@@ -1538,15 +1558,18 @@ function screenReserve(v) {
   $("#pageTitle").textContent = r.name;
   const all = resAllocs(r.id), inP = resAllocs(r.id, p), sums = allocTotals(all), holds = (r.split || []).some((s) => s.amountMinor > 0);
   const tile = (lab, val, sub) => `<div class="totcard"><span class="lab">${esc(lab)}</span><b>${val}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
-  const money = (m) => Object.entries(m).map(([c, n]) => esc(fmt(n, c))).join("<br>");
   const tiles = tile(__("Allocations"), esc(String(all.length)), all.length ? __("Since {date}", { date: plainDay(all[all.length - 1].date) }) : "")
-    + (Object.keys(sums.in).length ? tile(__("Put in"), money(sums.in)) : "") + (Object.keys(sums.out).length ? tile(__("Taken out"), money(sums.out)) : "");
+    + moneyTile(__("Put in"), sums.in) + moneyTile(__("Taken out"), sums.out);
+  // the period line, like a category's: one net change per currency (put in minus taken out); the tiles keep both
+  const pt = allocTotals(inP), pnet = {};
+  Object.entries(pt.in).forEach(([c, v]) => { pnet[c] = (pnet[c] || 0) + v; });
+  Object.entries(pt.out).forEach(([c, v]) => { pnet[c] = (pnet[c] || 0) - v; });
   v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#reserves">‹ ${esc(__("Reserves"))}</a><button type="button" class="smallbtn" id="resEdit">${esc(__("Edit"))}</button></div>
     <div class="tgrid tagbudget">${reserveCard(r)}</div>
     <div class="resactions"><button type="button" class="primarybtn" id="resIn">${esc(__("Put in"))}</button><button type="button" class="smallbtn" id="resOut" ${holds ? "" : "disabled"}>${esc(__("Take out"))}</button></div>
     <div class="totals">${tiles}</div>
     <section class="tsection">${periodBar(mode, p)}
-    ${inP.length ? `<div class="psum"><span>${esc(__("{n} allocation(s)", { n: inP.length }))}</span><span class="amts">${[...sumParts(allocTotals(inP).in, "+", "move"), ...sumParts(allocTotals(inP).out, "−", "move")].join(" ")}</span></div>
+    ${inP.length ? `<div class="psum"><span>${esc(__("{n} allocation(s)", { n: inP.length }))}</span>${moneyBlock(pnet)}</div>
       <section class="panel feedpanel"><ul class="feed">${inP.map(allocRow).join("")}</ul></section>` : `<div class="empty">${esc(__("No allocations in this period."))}</div>`}</section>`;
   bindPeriodBar(v, mode, p, (m, at) => reserveURL(r.id, m, at));
   $("#resEdit").addEventListener("click", () => openReserveDialog(r.id));

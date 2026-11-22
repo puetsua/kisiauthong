@@ -461,7 +461,19 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .tfoot{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;font-weight:600;font-size:.92rem}
 .tfoot .neg{color:var(--red)}
 .ccard{gap:14px}
-.amts{display:flex;flex-wrap:wrap;gap:2px 10px}.amt{font-variant-numeric:tabular-nums;font-weight:600}.amt.in{color:var(--pos)}.amt.zero{color:var(--muted)}
+.amt{font-variant-numeric:tabular-nums;font-weight:600}.amt.in{color:var(--pos)}.amt.zero{color:var(--muted)}
+/* amounts in several currencies (issue #62): the first (the default currency) large, the others smaller
+   below, one per line; the code is a small label apart from the digits. The UI font, not Georgia: its
+   old-style digits make a small amount such as −399 uneven, and the lines below share its figures. */
+.mamt{display:inline-flex;flex-direction:column;align-items:flex-start;min-width:0;max-width:100%}
+.mprim,.msec{display:grid;grid-template-columns:auto auto;align-items:baseline;justify-content:start;gap:0 8px}
+.ccode{font-size:.72rem;font-weight:700;letter-spacing:.06em;color:var(--muted)}
+.mprim .amt{font-size:1.3rem;font-weight:700;line-height:1.25;overflow-wrap:anywhere}
+.msec{gap:1px 8px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);align-self:stretch;font-size:.88rem}
+.msec .amt{font-weight:500;text-align:right}
+.msec .ccode{font-size:.68rem}
+.totcard .mamt{margin-top:2px}.totcard .mprim .amt{font-size:1.6rem}.amt.tot{color:var(--accent)}
+.psum>.mamt{margin-left:auto}.psum .mamt{align-items:flex-end}.psum .mprim .amt{font-size:1.15rem}.psum .msec{justify-content:end}
 .tsechead{flex-wrap:wrap}.tsechead .seg{margin:0}.tsechead .seg button{padding:5px 12px}
 /* a record's own page (a category): back link and actions, then figures, then lists */
 .pagebar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 16px}

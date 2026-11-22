@@ -400,6 +400,17 @@ topmost popup only.
   seconds and never reaches the row or card around it. Text built for anything
   but the page (search, clipboard) must use `plainAmounts()` or skip amounts.
   Form inputs use `decimal()` and are never masked.
+- Amounts in several currencies (issue #62; a category's net, the Spent and
+  Received tiles, a reserve's Put in and Taken out, the period lines' net):
+  `moneyBlock(perCurrency)`, never one long line. The default currency
+  (Settings) is the large primary
+  amount; a list without it uses its first currency by code. The others sit
+  below it, smaller, one per line. Each code is a small label (`.ccode`)
+  apart from the digits (`fmtNum()`, which marks them like `fmt()`). The order
+  is always the default currency first, then by code (`curOrder()`), also in
+  one-line summaries such as a day's net. The figures use the UI font: Georgia's
+  old-style digits make small amounts such as −399 uneven. Amounts are never
+  converted (ADR 0011).
 - Number format (Settings): groups of three `1,074,958`, groups of four
   `107 4958` split by `FOUR_SEP` (a no-break space, so an amount never wraps
   inside its digits), or plain. Never parse displayed amounts back; a search

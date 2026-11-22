@@ -43,7 +43,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, tagNet, netHTML, budgetEnded, widgetBody, screenTags };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, fmtNum, fmt, dayNet };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -163,6 +163,8 @@ test("notes (#42): a read-only panel on the account and tag pages, only when the
   delete acc.memo;
 });
 
+// 交通's net: the default currency (TWD) is the large primary amount, JPY smaller below it (#62)
+const NET_TRANSIT = '<span class="mamt"><span class="mprim"><span class="ccode">TWD</span><span class="amt out">−14,850</span></span><span class="msec"><span class="ccode">JPY</span><span class="amt out">−21,730</span></span></span>';
 test("category totals (#57): one net amount per currency, signed and colored, on the card, the page and nowhere split", () => {
   const T = "g-transit", day = "2026-11-10";
   const mk = (id, from, to, amount, currency, tagIds = [T]) => ({ id, fromAccountId: from, toAccountId: to, type: "transfer", amountMinor: amount, currency, date: day, state: "posted", note: id, tagIds });
@@ -173,29 +175,65 @@ test("category totals (#57): one net amount per currency, signed and colored, on
     mk("move", "a1", "a2", 500000, "TWD"), // between own accounts: neither in nor out
   ];
   assert.deepStrictEqual({ ...t.tagNet(list) }, { JPY: -21730, TWD: -1485000 });
-  assert.strictEqual(strip(t.netHTML(t.tagNet(list))), '<span class="amt out">−JPY 21,730</span> <span class="amt out">−TWD 14,850</span>');
+  assert.strictEqual(strip(t.netHTML(t.tagNet(list))), NET_TRANSIT);
   // more in than out reads +, and an exact refund reads 0, muted
-  assert.strictEqual(strip(t.netHTML({ TWD: 50000 })), '<span class="amt in">+TWD 500</span>');
-  assert.strictEqual(strip(t.netHTML({ TWD: 0 })), '<span class="amt zero">TWD 0</span>');
+  assert.strictEqual(strip(t.netHTML({ TWD: 50000 })), '<span class="mamt"><span class="mprim"><span class="ccode">TWD</span><span class="amt in">+500</span></span></span>');
+  assert.strictEqual(strip(t.netHTML({ TWD: 0 })), '<span class="mamt"><span class="mprim"><span class="ccode">TWD</span><span class="amt zero">0</span></span></span>');
   // the card and the category page show the net, one figure per currency
   const data = t.state.data, saved = { tags: data.tags, transactions: data.transactions };
   data.tags = [{ id: T, name: "Transit", currency: "" }];
   data.transactions = [...saved.transactions, ...list];
   try {
     const card = strip(t.categoryCard(data.tags[0], t.periodFor("year", day)));
-    assert.match(card, /<span class="amts"><span class="amt out">−JPY 21,730<\/span> <span class="amt out">−TWD 14,850<\/span><\/span>/);
+    assert.ok(card.includes(`<span class="tfoot">${NET_TRANSIT}</span>`), card);
     assert.doesNotMatch(card, /\+TWD|26,190|11,340/, "no separate in and out for one currency");
     location.hash = "#tag?id=" + T + "&range=year&at=" + day;
     const v = view();
     t.screenTag(v);
     const html = strip(v.innerHTML);
-    assert.match(html, /<div class="psum">.*<span class="amts"><span class="amt out">−JPY 21,730<\/span> <span class="amt out">−TWD 14,850<\/span><\/span><\/div>/s);
+    assert.ok(html.includes(`</span>${NET_TRANSIT}</div>`), "the period line ends in the net amounts");
     // the all-time Spent and Received tiles are labelled, so they keep both sides
-    assert.match(html, /<span class="lab">Spent<\/span><b>JPY 21,730<br>TWD 26,190<\/b>|<span class="lab">Spent<\/span><b>TWD 26,190<br>JPY 21,730<\/b>/);
-    assert.match(html, /<span class="lab">Received<\/span><b>TWD 11,340<\/b>/);
+    assert.ok(html.includes('<span class="lab">Spent</span><span class="mamt"><span class="mprim"><span class="ccode">TWD</span><span class="amt tot">26,190</span></span><span class="msec"><span class="ccode">JPY</span><span class="amt tot">21,730</span></span></span>'), html);
+    assert.ok(html.includes('<span class="lab">Received</span><span class="mamt"><span class="mprim"><span class="ccode">TWD</span><span class="amt tot">11,340</span></span></span>'), html);
   } finally {
     data.tags = saved.tags; data.transactions = saved.transactions;
   }
+});
+
+test("amounts in several currencies (#62): default currency first and large, the others by code below it", () => {
+  const block = (m, o) => strip(t.moneyBlock(m, o));
+  const codes = (html) => [...html.matchAll(/<span class="ccode">(\w+)<\/span>/g)].map((x) => x[1]).join(",");
+  // one fixed order whatever order the amounts came in: the default currency, then by code
+  assert.strictEqual(t.curOrder({ USD: 1, JPY: 2, TWD: 3, EUR: 4 }).map(([c]) => c).join(), "TWD,EUR,JPY,USD");
+  const trip = block({ USD: -4250, JPY: -286400, TWD: -12845000 });
+  assert.strictEqual(codes(trip), "TWD,JPY,USD");
+  assert.match(trip, /^<span class="mamt"><span class="mprim"><span class="ccode">TWD<\/span><span class="amt out">−128,450<\/span><\/span><span class="msec">/);
+  // no default currency: the first by code is the primary
+  assert.match(block({ USD: -2397, JPY: -100 }), /^<span class="mamt"><span class="mprim"><span class="ccode">JPY<\/span><span class="amt out">−100<\/span><\/span><span class="msec"><span class="ccode">USD<\/span><span class="amt out">−23.97<\/span><\/span><\/span>$/);
+  // one currency: no secondary lines; none: nothing at all
+  assert.doesNotMatch(block({ USD: -2397 }), /msec/);
+  assert.strictEqual(t.moneyBlock({}), "");
+  assert.strictEqual(t.moneyTile("Spent", {}), "");
+  // mixed signs keep their own sign and color; a fixed sign and class for reserve moves and tiles
+  assert.strictEqual(codes(block({ JPY: -8500, USD: 0, TWD: 1200000 })), "TWD,JPY,USD");
+  assert.match(block({ JPY: -8500, USD: 0, TWD: 1200000 }), /class="amt in">\+12,000<.*class="amt out">−8,500<.*class="amt zero">0.00</);
+  assert.match(block({ TWD: 50000 }, { sign: "+", cls: "move" }), /<span class="amt move">\+500<\/span>/);
+  // the code sits apart from the digits; fmt() still writes the code in front, as before
+  assert.strictEqual(t.fmt(-1485000, "TWD"), "TWD " + t.fmtNum(-1485000, "TWD"));
+  const saved = t.state.general;
+  try {
+    // the default currency comes from Settings, and the number format applies (groups of four)
+    t.state.general = { defaultCurrency: "JPY", numberFormat: "four" };
+    const jp = block({ TWD: -1485000, JPY: -21730 });
+    assert.strictEqual(codes(jp), "JPY,TWD");
+    assert.ok(jp.includes('<span class="amt out">−2\u00A01730</span>') && jp.includes('<span class="amt out">−1\u00A04850</span>'), jp);
+    // the day header's one-line net uses the same order
+    const mk = (id, cur, amount) => ({ id, fromAccountId: "a1", toAccountId: "acc-external", type: "transfer", amountMinor: amount, currency: cur, date: "2026-11-10", state: "posted", tagIds: [] });
+    assert.match(strip(t.dayNet([mk("x", "USD", 100), mk("y", "TWD", 5000), mk("z", "JPY", 300)])), /^−JPY 300 · −TWD 50 · −USD 1.00$/);
+  } finally { t.state.general = saved; }
+  // the tiles' labels are translated, the amounts are not
+  t.setLang("zh-TW");
+  try { assert.match(strip(t.moneyTile(vm.runInContext('__("Spent")', sandbox), { TWD: 100 })), /<span class="lab">已花費<\/span><span class="mamt">/); } finally { t.setLang("en"); }
 });
 
 test("ended budgets (#59): below the running ones, in a closed Ended (n) section, on the Tags page and in the widget", () => {
