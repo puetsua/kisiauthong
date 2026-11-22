@@ -189,11 +189,13 @@ function readPng(file) {
     } else if (type === "IDAT") idat.push(data);
     pos += 12 + len;
   }
+  assert.ok(width > 0 && height > 0, `${file}: has an IHDR chunk`);
   const raw = require("zlib").inflateSync(Buffer.concat(idat));
   const stride = width * 4;
   const px = Buffer.alloc(stride * height);
   for (let y = 0; y < height; y++) {
     const filter = raw[y * (stride + 1)];
+    assert.ok(filter <= 4, `${file}: PNG filter type ${filter}`);
     for (let x = 0; x < stride; x++) {
       const v = raw[y * (stride + 1) + 1 + x];
       const a = x >= 4 ? px[y * stride + x - 4] : 0;
@@ -224,6 +226,7 @@ test("Android launcher icon: adaptive layers, artwork inside the 66dp safe zone 
       assert.deepStrictEqual([png.width, png.height], [layer, layer], `${file} is 108dp`);
       // the background is full bleed; the other layers leave everything beyond 33dp from the centre transparent
       const safe = 33 * d, mid = layer / 2;
+      assert.strictEqual(png.alpha(Math.floor(mid), Math.floor(mid)), 255, `${file} has the artwork in the middle`);
       for (let y = 0; y < layer; y++) {
         for (let x = 0; x < layer; x++) {
           const out = Math.hypot(x + 0.5 - mid, y + 0.5 - mid) > safe;
