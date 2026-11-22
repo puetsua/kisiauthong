@@ -56,12 +56,16 @@ frame has two problems the issue names:
 
 - **Lost on Windows 11:** the Snap Layouts popup when hovering the maximize
   button, because Windows sees a page there, not a maximize button. Win+Z
-  shows the same layouts; dragging to a screen edge and Win+arrow keys still
-  snap. Right-clicking the bar shows no system menu; Alt+Space does.
+  should show the same layouts, and dragging to a screen edge should still
+  snap, since the bar moves the window with Windows' own drag (neither tried
+  yet). Right-clicking the bar shows nothing (the frame blocks the webview's
+  own menu); Alt+Space opens the system menu.
 - The frame buttons are reachable by mouse and touch. From the keyboard the
   system shortcuts do the same (Alt+F4, Win+arrow keys, Alt+Space).
 - Child webviews need Tauri's `unstable` feature (`Window::add_child`). A
   Tauri update may change that API; the build, not the user, finds out.
-- Verified on Windows 11 (resize borders, buttons, double-click, maximized
-  size, focus, and that a server page cannot move or close the window). macOS
-  is built by CI but not yet tried by hand.
+- Tried on Windows 11 at 100% scale, with the mouse: dragging the bar,
+  resizing from the right and top edges, double-click, the three buttons,
+  Win+Down, Alt+Space, the dimmed name when another window is active, and the
+  native question dialog. A server page calling the window commands is
+  refused. Not tried: other display scales, and macOS, which CI builds.

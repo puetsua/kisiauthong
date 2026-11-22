@@ -25,6 +25,8 @@
   document.getElementById("min").addEventListener("click", () => win("minimize"));
   max.addEventListener("click", () => win("toggle_maximize"));
   document.getElementById("close").addEventListener("click", () => win("close"));
+  // the webview's own menu (Back, Reload, Print…) makes no sense on a title bar
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
 
   window.kstFrame = {
     focus(on) { document.body.classList.toggle("blur", !on); },
