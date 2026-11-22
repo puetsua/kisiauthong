@@ -1,19 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 kisiauthong contributors
 //
-// The window frame's buttons (issue #32). Dragging and double-click to
-// maximize come from Tauri's data-tauri-drag-region. Only this bundled
-// webview has the window permissions; server pages have none.
+// The window frame's buttons (ADR 0026). Dragging and double-click to maximize
+// come from Tauri's data-tauri-drag-region. Only this bundled webview has the
+// window permissions; server pages have none.
+//
+// The shell calls kstFrame.focus() and kstFrame.max() when the window gains or
+// loses focus or changes size: this webview's own focus events only say
+// whether the frame or the page below it has the keyboard.
 "use strict";
 (function () {
   const t = window.__TAURI_INTERNALS__;
   if (!t) return;
   const label = t.metadata && t.metadata.currentWindow ? t.metadata.currentWindow.label : "main";
   const win = (cmd) => t.invoke("plugin:window|" + cmd, { label });
+  const S = window.KstStrings[window.KstConnect.pickLang(navigator.languages || [navigator.language])];
+  document.documentElement.lang = S === window.KstStrings["zh-TW"] ? "zh-Hant-TW" : "en";
   if (/Mac/.test(navigator.platform)) document.documentElement.classList.add("mac");
+
+  const max = document.getElementById("max");
+  const named = (el, text) => { el.setAttribute("aria-label", text); el.title = text; };
+  named(document.getElementById("min"), S.frameMinimize);
+  named(document.getElementById("close"), S.frameClose);
   document.getElementById("min").addEventListener("click", () => win("minimize"));
-  document.getElementById("max").addEventListener("click", () => win("toggle_maximize"));
+  max.addEventListener("click", () => win("toggle_maximize"));
   document.getElementById("close").addEventListener("click", () => win("close"));
-  window.addEventListener("focus", () => document.body.classList.remove("blur"));
-  window.addEventListener("blur", () => document.body.classList.add("blur"));
+
+  window.kstFrame = {
+    focus(on) { document.body.classList.toggle("blur", !on); },
+    max(on) {
+      document.body.classList.toggle("maxed", !!on);
+      named(max, on ? S.frameRestore : S.frameMaximize);
+    },
+  };
+  window.kstFrame.max(false);
 })();

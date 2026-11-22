@@ -14,5 +14,6 @@ body.blur .name,body.blur .ico{opacity:.55}
 .ctl button:active{background:var(--down)}
 .ctl button.close:hover{background:#c42b1c;color:#fff}
 .ctl button:focus-visible{outline:2px solid var(--ink);outline-offset:-3px}
+.maxed .up,body:not(.maxed) .down{display:none}
 .ctl svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1}
 @media (forced-colors:active){.bar{background:Canvas;color:CanvasText}.ctl button:hover{background:Highlight;color:HighlightText}}

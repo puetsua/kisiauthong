@@ -14,11 +14,13 @@
   <img class="ico" src="icon-512.png" alt="" data-tauri-drag-region>
   <span class="name" data-tauri-drag-region><span lang="nan-Hant-TW">記數通</span> KiSiauThong</span>
   <nav class="ctl" id="ctl">
-    <button type="button" id="min" aria-label="Minimize"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10"/></svg></button>
-    <button type="button" id="max" aria-label="Maximize"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M.5.5h9v9h-9z"/></svg></button>
-    <button type="button" id="close" class="close" aria-label="Close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
+    <button type="button" id="min"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10"/></svg></button>
+    <button type="button" id="max"><svg class="up" viewBox="0 0 10 10" aria-hidden="true"><path d="M.5.5h9v9h-9z"/></svg><svg class="down" viewBox="0 0 10 10" aria-hidden="true"><path d="M.5 2.5h7v7h-7zM2.5 2.5V.5h7v7h-2"/></svg></button>
+    <button type="button" id="close" class="close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
   </nav>
 </header>
+<script src="connect.js"></script>
+<script src="strings.js"></script>
 <script src="frame.js"></script>
 </body>
 </html>

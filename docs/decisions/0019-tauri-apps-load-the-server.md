@@ -3,8 +3,8 @@
 
 Date: 2026-11-19
 Status: accepted (issue #28), amended by issue #30 (questions before
-destructive actions go through the native dialog) and issue #35 (a way back to
-the server screen while signed out); supersedes the "desktop and mobile are
+destructive actions go through the native dialog), issue #35 (a way back to
+the server screen while signed out) and ADR 0026 (the desktop window frame); supersedes the "desktop and mobile are
 future plans" part of ADR 0001
 
 ## Context
@@ -90,7 +90,8 @@ How the web UI is loaded decides whether it works unchanged:
   undefined.
 - **The window stays on the server screen and the saved origins.** Any other
   navigation, every `target="_blank"` link and every `window.open` opens in the
-  system browser.
+  system browser. On the desktop the window also has its own frame above
+  these pages, in a webview of its own (ADR 0026).
 - **No nudging** (ADR 0015): no suggested servers, no prompts to add one, no
   highlighted choice.
 

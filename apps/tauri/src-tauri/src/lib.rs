@@ -843,14 +843,27 @@ fn open_window(app: &AppHandle) -> tauri::Result<()> {
     #[cfg(windows)]
     window.set_decorations(false)?;
     let w = window.clone();
-    window.on_window_event(move |e| {
-        if matches!(e, WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }) {
+    window.on_window_event(move |e| match e {
+        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
             layout(&w);
+            let max = w.is_maximized().unwrap_or(false);
+            tell_frame(&w, &format!("max({max})"));
         }
+        WindowEvent::Focused(on) => tell_frame(&w, &format!("focus({on})")),
+        _ => {}
     });
     // the window grew when its title bar went away, before this handler existed
     layout(&window);
     Ok(())
+}
+
+/// Window state the frame cannot see from inside its own webview (frame.js).
+/// The call is built here from a bool, never from page input.
+#[cfg(desktop)]
+fn tell_frame(window: &tauri::Window, call: &str) {
+    if let Some(frame) = window.get_webview(FRAME) {
+        let _ = frame.eval(format!("window.kstFrame && window.kstFrame.{call}"));
+    }
 }
 
 #[cfg(desktop)]
