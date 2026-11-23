@@ -115,6 +115,13 @@ func TestCurrencyOrderFollowsSettings(t *testing.T) {
 	if got := strings.Join(testBook.currencyOrder(), ","); got != "JPY,TWD,USD" {
 		t.Fatalf("order after a new default: %s", got)
 	}
+	// a row stored before the list was normalised reads as the web UI gets it: upper case, default first
+	if err := testBook.setSetting("general", `{"defaultCurrency":"usd","currencies":["jpy","USD","eur"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(testBook.currencyOrder(), ","); got != "USD,JPY,EUR" {
+		t.Fatalf("order from a raw stored row: %s", got)
+	}
 }
 
 func TestSettingsLanguage(t *testing.T) {
