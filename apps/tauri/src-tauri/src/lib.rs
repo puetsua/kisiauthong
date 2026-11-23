@@ -51,8 +51,8 @@ struct Shell {
     returning: Mutex<Option<Url>>,
     /// a server (or the server screen) the window is opening in place of
     /// another server: once it has loaded, Android forgets the pages before it
-    /// (issue #84)
-    fresh: Mutex<Option<Url>>,
+    /// (issue #84); true once that page has started loading
+    fresh: Mutex<Option<(Url, bool)>>,
 }
 
 impl Shell {
@@ -230,22 +230,27 @@ fn take_return(slot: &mut Option<Url>, page: &Url) -> Option<Url> {
     slot.take().filter(|to| same_origin(to, page))
 }
 
-/// Whether `page`, just loaded, is the one the window was opening in place of
-/// another server (issue #84): the server screen, or a page at or below the
-/// server's address. Takes the slot when it is.
+/// Whether `page` has finished loading as the one the window was opening in
+/// place of another server (issue #84): the server screen, or a page at or
+/// below the server's address. Takes the slot when it has. Its load must have
+/// started first (`finished` false): Android also reports a finished load for
+/// a hash change of the page still shown, which may be of the same origin.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-fn opened_fresh(slot: &mut Option<Url>, page: &Url) -> bool {
-    let hit = slot.as_ref().is_some_and(|to| {
-        if is_local(to) {
-            is_local(page)
-        } else {
-            same_origin(to, page) && page.path().starts_with(to.path())
-        }
-    });
-    if hit {
-        *slot = None;
+fn opened_fresh(slot: &mut Option<(Url, bool)>, page: &Url, finished: bool) -> bool {
+    let Some((to, started)) = slot.as_mut() else { return false };
+    let this = if is_local(to) { is_local(page) } else { same_origin(to, page) && page.path().starts_with(to.path()) };
+    if !this {
+        return false;
     }
-    hit
+    if !finished {
+        *started = true;
+        return false;
+    }
+    if !*started {
+        return false;
+    }
+    *slot = None;
+    true
 }
 
 /// Opens a server, or the server screen, in place of the server the window
@@ -254,7 +259,8 @@ fn opened_fresh(slot: &mut Option<Url>, page: &Url) -> bool {
 /// removed server's. Android forgets them once the page has loaded (see
 /// open_window); WKWebView and WebView2 have no call to clear their history.
 fn start_fresh(shell: &Shell, url: &Url) {
-    *shell.fresh.lock().unwrap() = Some(url.clone());
+    *shell.fresh.lock().unwrap() = Some((url.clone(), false));
+    *shell.returning.lock().unwrap() = None;
 }
 
 fn open_outside(app: &AppHandle, url: &Url) {
@@ -503,6 +509,7 @@ fn open_updates(webview: Webview, shell: State<'_, Shell>, lang: Option<String>)
     let mut back = webview.url().map_err(|e| e.to_string())?;
     back.set_fragment(Some("settings?about"));
     shell.update_asked.store(true, Ordering::SeqCst);
+    *shell.returning.lock().unwrap() = None;
     let mut params = vec![("mode", "update"), ("back", back.as_str())];
     if let Some(lang) = lang.as_deref() {
         params.push(("lang", lang));
@@ -573,6 +580,7 @@ fn open_server_form(
     lang: Option<String>,
 ) -> Result<(), String> {
     require_known(&webview, &shell)?;
+    *shell.returning.lock().unwrap() = None;
     let mut params = vec![("mode", if mode == "edit" { "edit" } else { "add" })];
     if let Some(id) = id.as_deref() {
         params.push(("id", id));
@@ -951,10 +959,8 @@ fn open_window(app: &AppHandle) -> tauri::Result<()> {
     // the app instead of walking into the previous server's pages (issue #84).
     #[cfg(target_os = "android")]
     let builder = builder.on_page_load(|webview, payload| {
-        if payload.event() != tauri::webview::PageLoadEvent::Finished {
-            return;
-        }
-        if !opened_fresh(&mut webview.state::<Shell>().fresh.lock().unwrap(), payload.url()) {
+        let finished = payload.event() == tauri::webview::PageLoadEvent::Finished;
+        if !opened_fresh(&mut webview.state::<Shell>().fresh.lock().unwrap(), payload.url(), finished) {
             return;
         }
         let _ = webview.with_webview(|w| {
@@ -1238,18 +1244,33 @@ mod tests {
     fn a_server_opened_in_place_of_another_starts_the_history() {
         // issue #84: Switch, Remove, Add server and connect
         let b = Url::parse("https://books.example.org/b/").unwrap();
-        let mut slot = Some(b.clone());
-        assert!(!opened_fresh(&mut slot, &Url::parse("https://books.example.org/a/#settings").unwrap()), "the previous server on the same host");
-        assert!(!opened_fresh(&mut slot, &Url::parse("https://other.example.org/b/").unwrap()));
-        assert!(!opened_fresh(&mut slot, &screen_url(&[])));
-        assert_eq!(slot.as_ref(), Some(&b), "still waiting for B");
-        assert!(opened_fresh(&mut slot, &Url::parse("https://books.example.org/b/#transactions").unwrap()));
+        let page = Url::parse("https://books.example.org/b/#transactions").unwrap();
+        let mut slot = Some((b.clone(), false));
+        for other in ["https://books.example.org/a/#settings", "https://other.example.org/b/"] {
+            let other = Url::parse(other).unwrap();
+            assert!(!opened_fresh(&mut slot, &other, false), "{other}");
+            assert!(!opened_fresh(&mut slot, &other, true), "{other}");
+        }
+        assert!(!opened_fresh(&mut slot, &screen_url(&[]), true));
+        assert!(!opened_fresh(&mut slot, &page, true), "a hash change of a page already shown, before B started loading");
+        assert_eq!(slot, Some((b.clone(), false)), "still waiting for B");
+        assert!(!opened_fresh(&mut slot, &b, false), "B starts loading");
+        assert!(opened_fresh(&mut slot, &page, true), "B has loaded");
         assert_eq!(slot, None);
-        assert!(!opened_fresh(&mut slot, &b), "once");
+        assert!(!opened_fresh(&mut slot, &b, false));
+        assert!(!opened_fresh(&mut slot, &b, true), "once");
+        // a server below another on the same origin: the previous one's late hash change does not count
+        let root = Url::parse("https://books.example.org/").unwrap();
+        let mut slot = Some((root.clone(), false));
+        assert!(!opened_fresh(&mut slot, &Url::parse("https://books.example.org/b/#settings").unwrap(), true));
+        assert!(!opened_fresh(&mut slot, &root, false));
+        assert!(opened_fresh(&mut slot, &root, true));
         // the last server removed: the server screen
-        let mut slot = Some(screen_url(&[]));
-        assert!(!opened_fresh(&mut slot, &b));
-        assert!(opened_fresh(&mut slot, &screen_url(&[])));
+        let mut slot = Some((screen_url(&[]), false));
+        assert!(!opened_fresh(&mut slot, &b, false));
+        assert!(!opened_fresh(&mut slot, &b, true));
+        assert!(!opened_fresh(&mut slot, &screen_url(&[]), false));
+        assert!(opened_fresh(&mut slot, &screen_url(&[]), true));
     }
 
     #[test]
