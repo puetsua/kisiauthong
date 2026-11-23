@@ -958,9 +958,9 @@ function filteredTxns() {
 }
 // A filter whose value is gone or unknown (a category merged away elsewhere, an old or shared link) would
 // match nothing while its dropdown, having no such option, shows "All …" (issue #79). Only load() drops such
-// values, from state.filter and from the address, since only with fresh data is a value known to be gone
-// rather than made elsewhere and not fetched yet. An address from before a merge (browser Back) then shows
-// everything: only a filter on screen follows a merge.
+// values, from state.filter and from the address, and only a fetch begun after the address named them: an
+// older one may not know a category made elsewhere yet. An address from before a merge (browser Back) then
+// shows everything: only a filter on screen follows a merge.
 function goneFilters(f) {
   const d = state.data;
   return ["tag", "account", "type"].filter((k) => f[k] && !(k === "tag" ? f.tag === "none" || d.tags.some((t) => t.id === f.tag)
@@ -976,9 +976,9 @@ function dropGoneFilters() {
   gone.forEach((k) => params.delete(k));
   history.replaceState(null, "", "#transactions" + (params.toString() ? "?" + params : "")); // render() follows
 }
-// fetches of the books, numbered as they begin; only one numbered above filterAfter may drop a value that
-// the address names (readTxnURL)
-const loads = { seq: 0, filterAfter: 0 };
+// fetches of the books, numbered as they begin. filterAfter: only a fetch numbered above it may drop the
+// unknown filter values the address named (asked: which ones, so a redraw does not move the mark again)
+const loads = { seq: 0, filterAfter: 0, asked: "" };
 // The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
 // search can be bookmarked, shared and reloaded. A bare #transactions keeps what is on screen.
 function readTxnURL() {
@@ -987,7 +987,11 @@ function readTxnURL() {
   state.filter = { q: qs.get("q") || "", account: qs.get("account") || "", type: qs.get("type") || "", tag: qs.get("tag") || "" };
   // a value this page does not know may be gone, or made elsewhere and not fetched yet: refresh, and let only
   // a fetch begun from now on decide; one under way may be older than the value (issue #79)
-  if (state.data && goneFilters(state.filter).length) { loads.filterAfter = loads.seq; live.rev = ""; liveSchedule(); }
+  const unknown = state.data ? goneFilters(state.filter).map((k) => k + "=" + state.filter[k]).join("&") : "";
+  if (unknown) {
+    if (unknown !== loads.asked) { loads.asked = unknown; loads.filterAfter = loads.seq; }
+    liveForce();
+  }
   state.searchPage = Math.max(0, (parseInt(qs.get("page"), 10) || 1) - 1);
   const per = parseInt(qs.get("per"), 10);
   if (PAGE_SIZES.includes(per)) state.pageSize = per;
@@ -1135,7 +1139,7 @@ function screenTransactions(v) {
   countF();
   drawResults();
   // a refresh while the search box or a filter has focus: the same fields stay (focus, caret, an open IME word),
-  // their options and values follow the new data and state.filter (a removed category's filter is cleared by load())
+  // their options and values follow the new data and state.filter (load() drops a value that is gone, issue #79)
   state.viewRedraw = { key: "transactions", fn: () => {
     const o = txnFilterOptions();
     ["account", "type", "tag"].forEach((k) => { const sel = $("#f" + k); sel.innerHTML = o[k]; sel.value = state.filter[k]; });
@@ -2991,8 +2995,9 @@ async function load() {
   } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
-  // e.g. a category merged away; before render(), which reads the address
-  if (seq > loads.filterAfter) dropGoneFilters();
+  // e.g. a category merged away; before render(), which reads the address. A fetch begun before the
+  // address named an unknown value cannot tell gone from new: the next one decides.
+  if (seq > loads.filterAfter) { dropGoneFilters(); loads.asked = ""; } else if (goneFilters(state.filter).length) liveForce();
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render(true);
@@ -3005,7 +3010,8 @@ async function load() {
 // gives up on (a proxy's error page, a server restart) is retried here, waiting longer each time. Coming
 // back to a page that sat in the background (phones pause it) or back online also catches up.
 // rev: the newest revision the server announced; loading: a fetch is under way
-const live = { es: null, timer: 0, retry: 0, wait: 2000, hiddenAt: 0, rev: "", loading: false };
+// force: fetch even when no newer revision was announced (an unknown filter value, issue #79)
+const live = { es: null, timer: 0, retry: 0, wait: 2000, hiddenAt: 0, rev: "", loading: false, force: false };
 // a form is open or being typed in: the refresh waits so nothing typed is lost. A focused search box or
 // filter (data-live-keep) does not count: render() redraws only what is under it (issue #77).
 function liveBusy() {
@@ -3018,17 +3024,18 @@ function liveSchedule(delay = 400) {
   clearTimeout(live.timer);
   live.timer = setTimeout(liveRefresh, delay);
 }
+function liveForce() { live.force = true; liveSchedule(); }
 // whether the page is behind the newest announced revision. The server announces a write before it
 // answers it, so the writing page often hears of its own write while its own fetch is still running:
 // by the time the timer fires, that fetch has brought the revision in and nothing is left to do.
 const liveBehind = () => !(live.rev && state.data && live.rev === state.data.rev);
 async function liveRefresh() {
   live.timer = 0;
-  if (!state.me || !state.data || !liveBehind()) return;
+  if (!state.me || !state.data || !(liveBehind() || live.force)) return;
   if (live.loading || liveBusy()) { liveSchedule(1500); return; } // a fetch is running, or a form is open
-  const y = window.scrollY;
-  live.loading = true;
-  try { await load(); window.scrollTo(0, y); } catch (e) { /* the next event or visit tries again */ }
+  const y = window.scrollY, forced = live.force;
+  live.loading = true; live.force = false;
+  try { await load(); window.scrollTo(0, y); } catch (e) { if (forced) live.force = true; /* the next event or visit tries again */ }
   finally { live.loading = false; }
 }
 // ready (on every (re)connect) and change events: fetch unless the page shows that revision already,
@@ -3037,7 +3044,7 @@ function liveOnChange(data) {
   let rev = "";
   try { rev = JSON.parse(data).rev || ""; } catch (e) { /* no revision: fetch */ }
   live.rev = rev;
-  if (!liveBehind()) return false;
+  if (!liveBehind() && !live.force) return false;
   liveSchedule();
   return true;
 }
@@ -3060,7 +3067,7 @@ function liveStart() {
 function liveStop() {
   clearTimeout(live.timer); clearTimeout(live.retry);
   if (live.es) live.es.close();
-  Object.assign(live, { es: null, timer: 0, retry: 0, wait: 2000, rev: "" });
+  Object.assign(live, { es: null, timer: 0, retry: 0, wait: 2000, rev: "", force: false });
 }
 // back from the background, focus, or back online: reconnect if needed. After a long background pause
 // or a network change the stream may look open but be dead (phones), so it is opened anew; its ready

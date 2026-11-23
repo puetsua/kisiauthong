@@ -738,13 +738,14 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
   const tags = [{ id: "g7", name: "Pets" }, { id: "g8", name: "Garden" }];
   const transactions = [spend("t7", "Bus fare", "2026-11-11", []), spend("t8", "Cat food", "2026-11-10", ["g7"]), spend("t9", "Seeds", "2026-11-09", ["g8"])];
   const books = (tg) => ({ ...was.data, accounts: [acc, other, ext], tags: tg, transactions, rev: "r-9" });
-  const held = []; // each /api/state answer waits here until the test gives it
-  sandbox.api = (url) => (url === "/api/state" ? new Promise((ok) => held.push(ok)) : Promise.resolve({ general: {}, about: {}, notifications: {} }));
+  const held = [], failing = []; // each /api/state answer waits in held until the test gives it
+  sandbox.api = (url) => (url === "/api/state" ? new Promise((ok, fail) => { held.push(ok); failing.push(fail); }) : Promise.resolve({ general: {}, about: {}, notifications: {} }));
   const timers = []; // timers still set (the live refresh's), fired by the test
   let ids = 0;
   sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms, id: ++ids }); return ids; };
   sandbox.clearTimeout = (id) => { const i = timers.findIndex((x) => x.id === id); if (i >= 0) timers.splice(i, 1); };
   const tick = () => new Promise((r) => realSet(r, 0));
+  sandbox.scrollY = 0; sandbox.scrollTo = () => {}; // liveRefresh keeps the scroll position
   const answer = async (i, tg) => { held[i](books(tg)); await tick(); };
   const shown = () => $el("#txnResults").innerHTML;
   const open = (hash) => { location.hash = hash; t.render({ type: "hashchange" }); };
@@ -784,6 +785,46 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     assert.strictEqual(location.hash, "#transactions?tag=g8");
     await refresh(tags);
     assert.match(shown(), /Seeds/);
+    // the same with the category dropdown focused: the redraw reads no address, the next refresh decides
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions");
+    done = sandbox.load();
+    open("#transactions?tag=g8");
+    docProps.activeElement = { closest: (sel) => (sel === "#view" ? {} : null), matches: (sel) => sel === "[data-live-keep]" || sel === "input,textarea,select,[contenteditable=true]" };
+    timers.length = 0;
+    await answer(held.length - 1, [{ id: "g7", name: "Pets" }]); await done;
+    assert.strictEqual(t.state.filter.tag, "g8");
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "the older answer asks for the next refresh");
+    await refresh(tags);
+    assert.match(shown(), /Seeds/);
+    docProps.activeElement = null;
+    // a redraw while the refresh is under way (same address) does not make that refresh too old to decide
+    open("#transactions?tag=g-zap");
+    const before = held.length;
+    done = timers.pop().fn(); await tick();
+    t.render({ type: "hashchange" });
+    timers.length = 0;
+    held[before](books(tags)); await done;
+    assert.strictEqual(location.hash, "#transactions", "decided by that one fetch");
+    assert.strictEqual(timers.length, 0, "with no other");
+    assert.strictEqual(held.length, before + 1);
+    // a live event announcing the revision already on screen does not cancel the refresh the link asked for
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions?tag=g8");
+    assert.strictEqual(t.liveOnChange('{"rev":"' + t.state.data.rev + '"}'), true);
+    await refresh(tags);
+    assert.match(shown(), /Seeds/);
+    // that refresh fails (offline): the next event tries again
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions?tag=g8");
+    let n2 = held.length;
+    done = timers.pop().fn(); await tick();
+    failing[n2](new Error("Failed to fetch")); await done;
+    assert.strictEqual(t.live.force, true, "still to do");
+    assert.strictEqual(t.liveOnChange('{"rev":"' + t.state.data.rev + '"}'), true, "back online, the stream's ready event fetches");
+    await refresh(tags);
+    assert.match(shown(), /Seeds/);
+    assert.strictEqual(t.live.force, false, "done");
     // an old or shared link with an unknown account or type, or a merged-away category: dropped by the refresh
     open("#transactions?account=acc-elsewhere&type=toString&tag=g-gone");
     await refresh(tags);
@@ -809,6 +850,7 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
   } finally {
     t.liveStop();
     sandbox.api = realApi; sandbox.render = realRender; sandbox.setTimeout = realSet; sandbox.clearTimeout = realClear;
+    delete sandbox.scrollY; delete sandbox.scrollTo;
     // load() also replaced the settings: put them back for the tests after this one
     Object.assign(t.state, { data: was.data, filter: was.filter, period: was.period, me: was.me, general: was.general, dashboard: was.dashboard, about: was.about, dismissed: was.dismissed });
     dialog.open = was.open; drawer.hidden = was.hidden;
