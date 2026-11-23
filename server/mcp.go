@@ -698,7 +698,7 @@ func toolSpending(b *Book, raw json.RawMessage) (map[string]interface{}, error) 
 		ref = q.Month + "-01"
 	}
 	rows := []map[string]interface{}{}
-	for _, s := range b.data.SpendingByCategory(ref, today) {
+	for _, s := range b.data.SpendingByCategory(ref, today, b.currencyOrder()) {
 		m := money(s.AmountMinor, s.Currency)
 		m["categoryId"] = s.TagID
 		if t := b.data.tagByID(s.TagID); t != nil {

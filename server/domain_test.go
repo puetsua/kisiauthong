@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // ext is the anonymous external account: income comes from it, spending goes to it.
 var ext = Account{ID: ExternalAccountID, Name: "External", Kind: "external"}
@@ -138,6 +141,41 @@ func TestNormalizeTag(t *testing.T) {
 	}
 }
 
+// Issue #71: rows come grouped in the user's currency order (frequently used
+// list, default first), then any other currency by code; largest first within one.
+func TestSpendingByCategoryCurrencyOrder(t *testing.T) {
+	spend := func(id, cur string, amt int64) Transaction {
+		return Transaction{ID: id, Type: "transfer", FromAccountID: strings.ToLower(cur), ToAccountID: ExternalAccountID, State: "posted", AmountMinor: amt, Currency: cur, Date: "2026-11-02"}
+	}
+	d := Data{
+		Accounts: []Account{{ID: "twd", Currency: "TWD"}, {ID: "jpy", Currency: "JPY"}, {ID: "usd", Currency: "USD"}, {ID: "eur", Currency: "EUR"}, {ID: "chf", Currency: "CHF"}, ext},
+		Transactions: []Transaction{
+			spend("1", "JPY", 1000), spend("2", "TWD", 300), spend("3", "USD", 50), spend("4", "EUR", 70), spend("5", "CHF", 90),
+		},
+	}
+	curs := func(order []string) string {
+		var out []string
+		for _, s := range d.SpendingByCategory("2026-11-15", "2026-11-30", order) {
+			out = append(out, s.Currency)
+		}
+		return strings.Join(out, ",")
+	}
+	for _, c := range []struct {
+		order []string
+		want  string
+	}{
+		{[]string{"TWD", "JPY", "USD"}, "TWD,JPY,USD,CHF,EUR"},
+		{[]string{"TWD", "USD", "JPY"}, "TWD,USD,JPY,CHF,EUR"},
+		{[]string{"USD"}, "USD,CHF,EUR,JPY,TWD"},
+		{[]string{"GBP", "TWD"}, "TWD,CHF,EUR,JPY,USD"}, // a listed currency without spending takes no row
+		{nil, "CHF,EUR,JPY,TWD,USD"},
+	} {
+		if got := curs(c.order); got != c.want {
+			t.Errorf("order %v: got %s, want %s", c.order, got, c.want)
+		}
+	}
+}
+
 func TestSpendingByCategoryPerCurrencyAndMonth(t *testing.T) {
 	spend := func(id, from string, amt int64, cur, date, state string) Transaction {
 		return Transaction{ID: id, Type: "transfer", FromAccountID: from, ToAccountID: ExternalAccountID, State: state, AmountMinor: amt, Currency: cur, Date: date}
@@ -162,7 +200,7 @@ func TestSpendingByCategoryPerCurrencyAndMonth(t *testing.T) {
 			{TransactionID: "8", TagID: "fun"}, {TransactionID: "8", TagID: "trip"}, {TransactionID: "9", TagID: "food"},
 		},
 	}
-	got := d.SpendingByCategory("2026-11-15", "2026-11-30")
+	got := d.SpendingByCategory("2026-11-15", "2026-11-30", nil)
 	want := []TagSpend{
 		{TagID: "food", Currency: "JPY", AmountMinor: 1000},
 		{TagID: "food", Currency: "TWD", AmountMinor: 800},
@@ -276,7 +314,7 @@ func TestBudgetSpentNetsTaggedIncome(t *testing.T) {
 	}
 	// the spending report stays gross
 	var gross int64 = -1
-	for _, s := range d.SpendingByCategory("2026-11-15", today) {
+	for _, s := range d.SpendingByCategory("2026-11-15", today, nil) {
 		if s.TagID == "trip" && s.Currency == "TWD" {
 			gross = s.AmountMinor
 		}

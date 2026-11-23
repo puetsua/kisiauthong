@@ -38,7 +38,7 @@ func newID(prefix string) string {
 }
 
 // stateView is everything the web client shows, as of today (the user's date, see Book.today).
-func stateView(d *Data, today string) map[string]interface{} {
+func stateView(d *Data, today string, curOrder []string) map[string]interface{} {
 	accounts := []map[string]interface{}{}
 	for _, a := range d.Accounts {
 		bal := d.Balance(a.ID, today)
@@ -134,7 +134,7 @@ func stateView(d *Data, today string) map[string]interface{} {
 		"accounts": accounts, "transactions": txns, "tags": tags,
 		"reserves": reserves, "allocations": allocs,
 		"transactionTags": links, "transactionTemplates": templates, "today": today,
-		"spendingThisMonth": d.SpendingByCategory(today, today),
+		"spendingThisMonth": d.SpendingByCategory(today, today, curOrder),
 	}
 }
 
@@ -301,7 +301,7 @@ func newMux(webDir string) *http.ServeMux {
 	mux.HandleFunc("/api/settings", apiRW(ScopeSettings, handleSettings))
 	mux.HandleFunc("/api/export", api(ScopeRead, handleExport))
 	mux.HandleFunc("/api/state", api(ScopeRead, func(w http.ResponseWriter, r *http.Request, b *Book) {
-		st := stateView(b.data, b.today())
+		st := stateView(b.data, b.today(), b.currencyOrder())
 		st["rev"] = b.s.live.revision(b.uid) // what a page compares live change events with (issue #55)
 		writeJSON(w, 200, st)
 	}))

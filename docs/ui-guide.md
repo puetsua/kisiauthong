@@ -248,9 +248,10 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   `phoneSwap(table, cards)`, the same cards as its full page on phones
   (budget cards, account cards, a spending list). A widget whose amounts
   come in several currencies and are compared with each other (Spending)
-  shows one currency at a time behind `.seg.curtabs` currency tabs; the
-  picked tab is remembered per widget on the device, otherwise the default
-  currency is shown (or the first listed when it has no spending). Currencies are never mixed in one list.
+  shows one currency at a time behind `.seg.curtabs` currency tabs, in the
+  currency order below; the
+  picked tab is remembered per widget on the device, otherwise the first tab
+  is shown (the default currency when it has spending). Currencies are never mixed in one list.
   - **Customize dashboard, desktop:** the dashboard itself is edited, with
     previews. The pane on the right lists the widget types to add, or the
     settings of the selected widget. Widgets move by dragging (a mouse from
@@ -426,15 +427,22 @@ topmost popup only.
   seconds and never reaches the row or card around it. Text built for anything
   but the page (search, clipboard) must use `plainAmounts()` or skip amounts.
   Form inputs use `decimal()` and are never masked.
+- Currency order (issue #71): wherever currencies are listed (amounts,
+  cards, tabs, checkboxes, pickers, and any future chart or series), they
+  follow Settings → Frequently used currencies in the order set there, so
+  the default currency first, then any other currency by code. Use
+  `curSort(codes)` or `curOrder(perCurrency)` (both on `curCmp()`), never
+  the data's own order or plain alphabetical; the server sorts its
+  per-currency rows the same way (`currencyLess()`). The only exception is a
+  list with its own order setting (the Frequently used chips themselves).
 - Amounts in several currencies (issue #62; a category's net, the Spent and
   Received tiles, a reserve's Put in and Taken out, the period lines' net):
-  `moneyBlock(perCurrency)`, never one long line. The default currency
-  (Settings) is the large primary
-  amount; a list without it uses its first currency by code. The others sit
+  `moneyBlock(perCurrency)`, never one long line. The first currency in the
+  currency order (the default currency when the list has it) is the large
+  primary amount. The others sit
   below it, smaller, one per line. Each code is a small label (`.ccode`)
-  apart from the digits (`fmtNum()`, which marks them like `fmt()`). The order
-  is always the default currency first, then by code (`curOrder()`), also in
-  one-line summaries such as a day's net. The figures use the UI font: Georgia's
+  apart from the digits (`fmtNum()`, which marks them like `fmt()`). One-line
+  summaries such as a day's net use the same order. The figures use the UI font: Georgia's
   old-style digits make small amounts such as −399 uneven. Amounts are never
   converted (ADR 0011).
 - Number format (Settings): groups of three `1,074,958`, groups of four

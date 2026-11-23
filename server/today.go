@@ -48,5 +48,17 @@ func (b *Book) userTZ() string {
 	return g.TimeZone
 }
 
+// currencyOrder is the user's frequently used currencies (Settings), default
+// first, the order every list of currencies follows (issue #71). It is the
+// same validated list GET /api/settings gives the web UI; when the stored
+// settings cannot be read, that falls back to the defaults as well.
+func (b *Book) currencyOrder() []string {
+	set, err := b.loadSettings()
+	if err != nil {
+		return defaultSettings().General.Currencies
+	}
+	return set.General.Currencies
+}
+
 // today is the user's local date now.
 func (b *Book) today() string { return todayAt(time.Now(), b.userTZ()) }

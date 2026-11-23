@@ -135,7 +135,7 @@ func TestScheduledAcrossMonthEnd(t *testing.T) {
 	if got := d.BudgetSpent("food", "2026-12-01", "2026-12-31", "2026-12-01"); got != 500 {
 		t.Fatalf("December budget on Dec 1: %d", got)
 	}
-	if got := d.SpendingByCategory("2026-12-01", today); len(got) != 0 {
+	if got := d.SpendingByCategory("2026-12-01", today, nil); len(got) != 0 {
 		t.Fatalf("December spending before December: %+v", got)
 	}
 }
@@ -153,7 +153,7 @@ func TestScheduledBudgetsCountOncePosted(t *testing.T) {
 	if got := d.BudgetSpent("food", "2026-11-01", "2026-11-30", "2026-11-25"); got != 180+900+400 {
 		t.Fatalf("budget on the 25th: %d", got)
 	}
-	if got := d.SpendingByCategory("2026-11-18", "2026-11-18"); len(got) != 1 || got[0].AmountMinor != 180 {
+	if got := d.SpendingByCategory("2026-11-18", "2026-11-18", nil); len(got) != 1 || got[0].AmountMinor != 180 {
 		t.Fatalf("spending on the 18th: %+v", got)
 	}
 	// spending from a card holds against it, like any own account
