@@ -51,7 +51,14 @@ apps/tauri/
    screen never stays behind a server page in the window's history: when it
    opens a server (at launch, or after saving one) the server takes the
    screen's place, so Android's Back walks back through the web UI's pages
-   without coming back to the screen (issue #67).
+   without coming back to the screen (issue #67). Edit server → Save and App
+   updates → Back also go back in history to Settings, which then shows the
+   edited list or About anew, so Settings is not in history twice (issue
+   #83). When the window opens another server (Switch, Remove of the server
+   in use, Add server, or the server screen once the last one is removed),
+   Android forgets the previous server's pages once the new page has loaded,
+   so Back on it leaves the app (issue #84); WKWebView and WebView2 have no
+   call to clear their history.
    Signed out, the sign-in card (sign in, two-step code, first-user setup)
    ends with a row naming the server's host and a **Change server** link to
    the same Add server form, so the server can be changed without signing in;

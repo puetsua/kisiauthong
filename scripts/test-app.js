@@ -135,7 +135,7 @@ test("the screen's colour tokens match web/style.css", () => {
 test("the bridge script is plain, valid JavaScript", () => {
   const src = fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "src", "bridge.js"), "utf8");
   new Function(src); // throws on a syntax error
-  for (const cmd of ["servers", "use_server", "remove_server", "open_server_form", "open_external", "confirm", "app_info", "open_updates"]) {
+  for (const cmd of ["returned", "servers", "use_server", "remove_server", "open_server_form", "open_external", "confirm", "app_info", "open_updates"]) {
     assert.ok(src.includes(`"${cmd}"`), cmd);
     assert.ok(fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "permissions", "app.toml"), "utf8").includes(`allow-${cmd.replace(/_/g, "-")}`), `bridge permission for ${cmd}`);
   }
@@ -144,7 +144,7 @@ test("the bridge script is plain, valid JavaScript", () => {
 test("the bridge passes confirm() to the shell's native dialog", async () => {
   const src = fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "src", "bridge.js"), "utf8");
   const calls = [];
-  const win = { __TAURI_INTERNALS__: { invoke: (cmd, args) => { calls.push([cmd, args]); return Promise.resolve(true); } } };
+  const win = { __TAURI_INTERNALS__: { invoke: (cmd, args) => { calls.push([cmd, args]); return Promise.resolve(true); } }, addEventListener: () => {} };
   win.top = win;
   const doc = { addEventListener: () => {} };
   new Function("window", "document", "location", src)(win, doc, { href: "https://books.example.org/" });
@@ -157,6 +157,34 @@ test("the bridge passes confirm() to the shell's native dialog", async () => {
   const frame = { top: {}, __TAURI_INTERNALS__: win.__TAURI_INTERNALS__ };
   new Function("window", "document", "location", src)(frame, doc, {});
   assert.strictEqual(frame.kisiauthongApp, undefined, "not in frames");
+});
+
+test("the bridge shows the page the app names after going back from the server screen (issue #83)", async () => {
+  const src = fs.readFileSync(path.join(root, "apps", "tauri", "src-tauri", "src", "bridge.js"), "utf8");
+  // one page: shown (fresh or from the back-forward cache) while the app answers `returned` with `to`
+  const show = async (href, persisted, to) => {
+    const done = [];
+    const on = {};
+    const win = { addEventListener: (type, fn) => { on[type] = fn; }, __TAURI_INTERNALS__: { invoke: (cmd) => {
+      done.push(cmd);
+      return cmd === "returned" ? Promise.resolve(to) : Promise.resolve(null);
+    } } };
+    win.top = win;
+    const loc = { href, replace: (u) => done.push("replace " + u), reload: () => done.push("reload") };
+    new Function("window", "document", "location", src)(win, { addEventListener: () => {} }, loc);
+    on.pageshow({ persisted });
+    await new Promise((r) => setTimeout(r, 0));
+    return done;
+  };
+  const settings = "https://books.example.org/kisiauthong/#settings";
+  const about = settings + "?about";
+  assert.deepStrictEqual(await show(settings, false, null), ["returned"], "every other page: nothing happens");
+  assert.deepStrictEqual(await show(settings, true, null), ["returned"], "Back as usual keeps the cached page");
+  assert.deepStrictEqual(await show(settings, false, settings), ["returned"], "Edit server → Save, page loaded anew: as it is");
+  assert.deepStrictEqual(await show(settings, true, settings), ["returned", "reload"], "Edit server → Save, cached page: loaded anew");
+  for (const persisted of [false, true]) {
+    assert.deepStrictEqual(await show(settings, persisted, about), ["returned", "replace " + about], "App updates → Back: About, in the same entry");
+  }
 });
 
 test("app updates: only the bundled screen may check and install (ADR 0020)", () => {

@@ -46,6 +46,13 @@ struct Shell {
     /// set when the user opens App updates: the screen's check on load may run
     /// once, and not again when Back returns to the screen (ADR 0020)
     update_asked: AtomicBool,
+    /// the page to show, fresh, where the bundled screen went back to in
+    /// history (issue #83); the next page shown takes it
+    returning: Mutex<Option<Url>>,
+    /// a server (or the server screen) the window is opening in place of
+    /// another server: once it has loaded, Android forgets the pages before it
+    /// (issue #84)
+    fresh: Mutex<Option<Url>>,
 }
 
 impl Shell {
@@ -179,8 +186,9 @@ fn require_known(w: &Webview, shell: &Shell) -> Result<(), String> {
     }
 }
 
-/// Opens `url` as a new history entry, so Back returns to the page that asked:
-/// a server page opening the bundled screen, or another saved server.
+/// Opens `url` as a new history entry: from a server page, the bundled screen,
+/// so Back returns to the page that asked; another saved server, or the server
+/// screen once the last is removed, also with start_fresh (issue #84).
 fn go(w: &Webview, url: Url) -> Result<(), String> {
     w.navigate(url).map_err(|e| e.to_string())
 }
@@ -203,11 +211,50 @@ fn replace_script(url: &Url) -> String {
     format!("location.replace({})", js_string(url))
 }
 
-/// Cancel and Back on the bundled screen: back to the server page that opened
-/// it, as the system Back does, instead of a new entry after the screen; to
-/// `fallback` in the screen's place when nothing is behind it.
+/// Cancel, Back and Save (of an edit) on the bundled screen: back to the server
+/// page that opened it, as the system Back does, instead of a new entry after
+/// the screen; to `fallback` in the screen's place when nothing is behind it.
 fn back_script(fallback: &Url) -> String {
     format!("if (history.length > 1) history.back(); else location.replace({})", js_string(fallback))
+}
+
+/// Whether two pages are of one origin (scheme, host and port), http(s) only.
+fn same_origin(a: &Url, b: &Url) -> bool {
+    matches!(a.scheme(), "http" | "https") && a.origin() == b.origin()
+}
+
+/// What the page shown after going back from the bundled screen is to show
+/// instead (issue #83): the edited server list or Settings → About, loaded
+/// anew. Taken by the first page shown; only a page of the same origin uses it.
+fn take_return(slot: &mut Option<Url>, page: &Url) -> Option<Url> {
+    slot.take().filter(|to| same_origin(to, page))
+}
+
+/// Whether `page`, just loaded, is the one the window was opening in place of
+/// another server (issue #84): the server screen, or a page at or below the
+/// server's address. Takes the slot when it is.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn opened_fresh(slot: &mut Option<Url>, page: &Url) -> bool {
+    let hit = slot.as_ref().is_some_and(|to| {
+        if is_local(to) {
+            is_local(page)
+        } else {
+            same_origin(to, page) && page.path().starts_with(to.path())
+        }
+    });
+    if hit {
+        *slot = None;
+    }
+    hit
+}
+
+/// Opens a server, or the server screen, in place of the server the window
+/// showed (issue #84): the previous server's pages must not stay behind it,
+/// where Android's Back (WebView.goBack) would walk into them, also into a
+/// removed server's. Android forgets them once the page has loaded (see
+/// open_window); WKWebView and WebView2 have no call to clear their history.
+fn start_fresh(shell: &Shell, url: &Url) {
+    *shell.fresh.lock().unwrap() = Some(url.clone());
 }
 
 fn open_outside(app: &AppHandle, url: &Url) {
@@ -298,8 +345,42 @@ async fn probe(app: AppHandle, webview: Webview, url: String) -> Result<probe::P
     }
 }
 
+/// Where Save on the bundled screen goes.
+#[derive(Debug, PartialEq)]
+enum Saved {
+    /// An edit: back in history to Settings, which opened the screen, shown
+    /// anew with the edited list (issue #83). A new entry, or the screen's
+    /// entry replaced, would put Settings twice in history.
+    Back(Url),
+    /// A server opened in the screen's place (#67): the one just added, or
+    /// the server in use when an edit moved it to another origin. It starts
+    /// the window's history (#84).
+    Open(Url),
+}
+
 /// Saves a checked address. connect: make it the server in use and open it;
 /// otherwise (an edit) go back to Settings of the server in use.
+fn save(s: &mut Store, id: Option<&str>, name: Option<&str>, url: &str, connect: bool) -> Result<Saved, String> {
+    let before = s.active_profile().and_then(|a| Url::parse(&a.url).ok());
+    let pid = s.upsert(id, name, url)?;
+    Ok(match (connect, s.active_profile()) {
+        (false, Some(a)) => {
+            let to = settings_of(a)?;
+            // the opener is a page of the server in use before the edit; when
+            // that origin is gone, going back would land on an unsaved server
+            if before.is_some_and(|b| same_origin(&b, &to)) {
+                Saved::Back(to)
+            } else {
+                Saved::Open(to)
+            }
+        }
+        _ => {
+            s.activate(&pid, profiles::now_iso());
+            Saved::Open(parse(url)?)
+        }
+    })
+}
+
 #[tauri::command]
 fn save_server(
     app: AppHandle,
@@ -312,21 +393,23 @@ fn save_server(
 ) -> Result<(), String> {
     require_local(&webview)?;
     let url = profiles::check_url(&url)?;
-    let target = {
+    let saved = {
         let mut s = shell.store.lock().unwrap();
-        let pid = s.upsert(id.as_deref(), name.as_deref(), &url)?;
-        let target = match (connect, s.active_profile()) {
-            (false, Some(a)) => settings_of(a)?,
-            _ => {
-                s.activate(&pid, profiles::now_iso());
-                parse(&url)?
-            }
-        };
+        let saved = save(&mut s, id.as_deref(), name.as_deref(), &url, connect)?;
         shell.persist(&s)?;
-        target
+        saved
     };
     grant(&app, &url);
-    leave(&webview, &target)
+    match saved {
+        Saved::Back(to) => {
+            *shell.returning.lock().unwrap() = Some(to.clone());
+            webview.eval(back_script(&to)).map_err(|e| e.to_string())
+        }
+        Saved::Open(to) => {
+            start_fresh(&shell, &to);
+            leave(&webview, &to)
+        }
+    }
 }
 
 /// Where Back from the bundled screen may go: `back` only when it is a page of
@@ -342,21 +425,26 @@ fn may_check(asked: &AtomicBool, on_load: bool) -> bool {
     !on_load || was_asked
 }
 
-/// How the bundled screen is left, never with a new entry after it (issue #67):
+/// How the bundled screen is left, never with a new entry after it (issues
+/// #67, #83): back in history to the server page that opened it, as the system
+/// Back does, or with nothing behind it to the fallback in the screen's place.
 /// - `back`, when it is a page of a saved server (the App updates screen passes
-///   Settings → About of the page that opened it), opens in the screen's place:
-///   the web UI drops `?about` from its own entry once it has scrolled, and a
-///   check may have changed what About shows, so it loads anew;
-/// - otherwise (Add/Edit server → Cancel) back in history to the server page
-///   that opened the screen, as the system Back does, or with nothing behind
-///   it the active server's Settings (the server screen with none saved).
-fn cancel_script(store: &Store, back: Option<&str>) -> Result<String, String> {
+///   Settings → About of the page that opened it), is also what that page then
+///   shows, anew (the second value, see take_return): the web UI drops `?about`
+///   from its own entry once it has scrolled, and a check may have changed
+///   what About shows;
+/// - otherwise (Add/Edit server → Cancel) the opener as it was; the fallback
+///   is the active server's Settings (the server screen with none saved).
+fn cancel_script(store: &Store, back: Option<&str>) -> Result<(String, Option<Url>), String> {
     Ok(match back_to(store, back) {
-        Some(u) => replace_script(&u),
-        None => back_script(&match store.active_profile() {
-            Some(a) => settings_of(a)?,
-            None => screen_url(&[]),
-        }),
+        Some(u) => (back_script(&u), Some(u)),
+        None => (
+            back_script(&match store.active_profile() {
+                Some(a) => settings_of(a)?,
+                None => screen_url(&[]),
+            }),
+            None,
+        ),
     })
 }
 
@@ -364,7 +452,8 @@ fn cancel_script(store: &Store, back: Option<&str>) -> Result<String, String> {
 #[tauri::command]
 fn cancel_form(webview: Webview, shell: State<'_, Shell>, back: Option<String>) -> Result<(), String> {
     require_local(&webview)?;
-    let script = cancel_script(&shell.store.lock().unwrap(), back.as_deref())?;
+    let (script, show) = cancel_script(&shell.store.lock().unwrap(), back.as_deref())?;
+    *shell.returning.lock().unwrap() = show;
     webview.eval(script).map_err(|e| e.to_string())
 }
 
@@ -421,6 +510,15 @@ fn open_updates(webview: Webview, shell: State<'_, Shell>, lang: Option<String>)
     go(&webview, screen_url(&params))
 }
 
+/// Asked by every page as it is shown (bridge.js, on pageshow): the page it is
+/// to show instead, after going back from the bundled screen (issue #83).
+#[tauri::command]
+fn returned(webview: Webview, shell: State<'_, Shell>) -> Result<Option<String>, String> {
+    require_known(&webview, &shell)?;
+    let page = webview.url().map_err(|e| e.to_string())?;
+    Ok(take_return(&mut shell.returning.lock().unwrap(), &page).map(String::from))
+}
+
 #[tauri::command]
 fn servers(webview: Webview, shell: State<'_, Shell>) -> Result<ServerList, String> {
     require_known(&webview, &shell)?;
@@ -437,6 +535,7 @@ fn use_server(webview: Webview, shell: State<'_, Shell>, id: String) -> Result<(
         shell.persist(&s)?;
         parse(&url)?
     };
+    start_fresh(&shell, &target);
     go(&webview, target)
 }
 
@@ -457,10 +556,12 @@ fn remove_server(webview: Webview, shell: State<'_, Shell>, id: String) -> Resul
     if !was_active {
         return Ok(());
     }
-    go(&webview, match next {
+    let target = match next {
         Some(u) => parse(&u)?,
         None => screen_url(&[]),
-    })
+    };
+    start_fresh(&shell, &target);
+    go(&webview, target)
 }
 
 #[tauri::command]
@@ -842,10 +943,29 @@ fn content_builder(app: &AppHandle) -> tauri::webview::WebviewBuilder<tauri::Wry
 #[cfg(mobile)]
 fn open_window(app: &AppHandle) -> tauri::Result<()> {
     let nav = app.clone();
-    tauri::webview::WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("index.html".into()))
+    let builder = tauri::webview::WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("index.html".into()))
         .initialization_script(BRIDGE_JS)
-        .on_navigation(move |url| allow_navigation(&nav, url))
-        .build()?;
+        .on_navigation(move |url| allow_navigation(&nav, url));
+    // Android: the server (or server screen) opened in place of another one has
+    // loaded, so WebView.clearHistory() leaves only it; Back on it then leaves
+    // the app instead of walking into the previous server's pages (issue #84).
+    #[cfg(target_os = "android")]
+    let builder = builder.on_page_load(|webview, payload| {
+        if payload.event() != tauri::webview::PageLoadEvent::Finished {
+            return;
+        }
+        if !opened_fresh(&mut webview.state::<Shell>().fresh.lock().unwrap(), payload.url()) {
+            return;
+        }
+        let _ = webview.with_webview(|w| {
+            w.jni_handle().exec(|env, _, view| {
+                if env.call_method(view, "clearHistory", "()V", &[]).is_err() {
+                    let _ = env.exception_clear();
+                }
+            })
+        });
+    });
+    builder.build()?;
     Ok(())
 }
 
@@ -930,6 +1050,7 @@ pub fn run() {
             update_settings,
             app_info,
             open_updates,
+            returned,
             servers,
             use_server,
             remove_server,
@@ -951,6 +1072,8 @@ pub fn run() {
                 settings: Mutex::new(settings),
                 settings_file,
                 update_asked: AtomicBool::new(false),
+                returning: Mutex::new(None),
+                fresh: Mutex::new(None),
             });
             for u in &urls {
                 grant(app.handle(), u);
@@ -1044,19 +1167,89 @@ mod tests {
         let back = "if (history.length > 1) history.back(); else location.replace(";
         let mut s = Store::default();
         // nothing saved: only the server screen itself is left
-        let start = cancel_script(&s, None).unwrap();
+        let (start, show) = cancel_script(&s, None).unwrap();
         assert_eq!(literal_in(&start, back), screen_url(&[]).as_str());
+        assert_eq!(show, None);
         let id = s.upsert(None, None, "https://books.example.org/kisiauthong/").unwrap();
         s.activate(&id, "2026-11-23T00:00:00Z".into());
-        // Add/Edit server → Cancel: the opener first, never a new entry after the screen
-        let cancel = cancel_script(&s, None).unwrap();
+        // Add/Edit server → Cancel: the opener as it was, never a new entry after the screen
+        let (cancel, show) = cancel_script(&s, None).unwrap();
         assert_eq!(literal_in(&cancel, back), "https://books.example.org/kisiauthong/#settings");
-        // App updates → Back: Settings → About of the opener, in the screen's place
+        assert_eq!(show, None, "nothing changed, the opener stays as it is");
+        // App updates → Back: back to the opener too (issue #83), which then shows Settings → About anew
         let about = "https://books.example.org/kisiauthong/#settings?about";
-        assert_eq!(literal_in(&cancel_script(&s, Some(about)).unwrap(), "location.replace("), about);
+        let (script, show) = cancel_script(&s, Some(about)).unwrap();
+        assert_eq!(literal_in(&script, back), about, "the screen's place only with nothing behind it");
+        assert_eq!(show.map(String::from).as_deref(), Some(about));
         // a `back` that is not a saved server's page is ignored
-        let other = cancel_script(&s, Some("https://evil.example/#settings")).unwrap();
+        let (other, show) = cancel_script(&s, Some("https://evil.example/#settings")).unwrap();
         assert_eq!(literal_in(&other, back), "https://books.example.org/kisiauthong/#settings");
+        assert_eq!(show, None);
+    }
+
+    #[test]
+    fn saving_an_edit_goes_back_to_settings_instead_of_adding_it_again() {
+        // issue #83: Settings → Edit server → Save left [… #settings, #settings]
+        let mut s = Store::default();
+        let a = s.upsert(None, Some("Home"), "https://books.example.org/kisiauthong/").unwrap();
+        s.activate(&a, "2026-11-23T00:00:00Z".into());
+        let b = s.upsert(None, Some("Office"), "http://192.168.1.20:8080/").unwrap();
+        let settings = Saved::Back(Url::parse("https://books.example.org/kisiauthong/#settings").unwrap());
+        // renaming the server in use, or another server: back to Settings of the server in use
+        assert_eq!(save(&mut s, Some(&a), Some("Books"), "https://books.example.org/kisiauthong/", false).unwrap(), settings);
+        assert_eq!(save(&mut s, Some(&b), Some("Work"), "http://192.168.1.21:8080/", false).unwrap(), settings);
+        assert_eq!(s.active.as_deref(), Some(a.as_str()), "an edit never switches servers");
+        // the server in use moved to another base path on its origin: its new Settings, shown on going back
+        assert_eq!(
+            save(&mut s, Some(&a), None, "https://books.example.org/kst/", false).unwrap(),
+            Saved::Back(Url::parse("https://books.example.org/kst/#settings").unwrap())
+        );
+        // … to another origin: the opener's origin is no longer saved, so the
+        // new address opens in the screen's place and starts the history (#84)
+        assert_eq!(
+            save(&mut s, Some(&a), None, "https://books.example.net/kst/", false).unwrap(),
+            Saved::Open(Url::parse("https://books.example.net/kst/#settings").unwrap())
+        );
+        // Add server (connect): the new server is used and opened
+        assert_eq!(
+            save(&mut s, None, None, "https://other.example.org/", true).unwrap(),
+            Saved::Open(Url::parse("https://other.example.org/").unwrap())
+        );
+        assert_eq!(s.active_profile().map(|p| p.url.as_str()), Some("https://other.example.org/"));
+    }
+
+    #[test]
+    fn the_page_gone_back_to_shows_what_the_screen_asked_once() {
+        let settings = Url::parse("https://books.example.org/kisiauthong/#settings").unwrap();
+        let about = Url::parse("https://books.example.org/kisiauthong/#settings?about").unwrap();
+        let mut slot = Some(about.clone());
+        assert_eq!(take_return(&mut slot, &settings), Some(about.clone()), "the opener shows Settings → About");
+        assert_eq!(take_return(&mut slot, &settings), None, "only once");
+        // a page of another origin is shown first (the back did not land on the opener): forgotten, not used
+        let mut slot = Some(about.clone());
+        assert_eq!(take_return(&mut slot, &Url::parse("https://other.example.org/#settings").unwrap()), None);
+        assert_eq!(slot, None);
+        let mut slot = Some(about);
+        assert_eq!(take_return(&mut slot, &screen_url(&[("mode", "update")])), None, "the server screen itself");
+        assert_eq!(slot, None);
+    }
+
+    #[test]
+    fn a_server_opened_in_place_of_another_starts_the_history() {
+        // issue #84: Switch, Remove, Add server and connect
+        let b = Url::parse("https://books.example.org/b/").unwrap();
+        let mut slot = Some(b.clone());
+        assert!(!opened_fresh(&mut slot, &Url::parse("https://books.example.org/a/#settings").unwrap()), "the previous server on the same host");
+        assert!(!opened_fresh(&mut slot, &Url::parse("https://other.example.org/b/").unwrap()));
+        assert!(!opened_fresh(&mut slot, &screen_url(&[])));
+        assert_eq!(slot.as_ref(), Some(&b), "still waiting for B");
+        assert!(opened_fresh(&mut slot, &Url::parse("https://books.example.org/b/#transactions").unwrap()));
+        assert_eq!(slot, None);
+        assert!(!opened_fresh(&mut slot, &b), "once");
+        // the last server removed: the server screen
+        let mut slot = Some(screen_url(&[]));
+        assert!(!opened_fresh(&mut slot, &b));
+        assert!(opened_fresh(&mut slot, &screen_url(&[])));
     }
 
     #[test]

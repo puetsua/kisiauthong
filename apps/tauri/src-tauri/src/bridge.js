@@ -35,6 +35,18 @@
       updates: function (lang) { return call("open_updates", { lang: lang || null }); },
     }),
   });
+  // Back from the app's server screen (Edit server → Save, App updates → Back)
+  // goes back in history to the page that opened it, and the app names the page
+  // to show there: the edited server list or Settings → About, loaded anew. A
+  // page restored from the back-forward cache would otherwise show what it
+  // showed before (issue #83).
+  window.addEventListener("pageshow", function (e) {
+    call("returned").then(function (to) {
+      if (!to) return;
+      if (to !== location.href) location.replace(to);
+      else if (e.persisted) location.reload();
+    }).catch(function () {});
+  });
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
     if (!a || a.target !== "_blank" || a.hasAttribute("download")) return;
