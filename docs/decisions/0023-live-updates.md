@@ -43,7 +43,9 @@ browsers that pause pages in the background.
   - It fetches again 0.4 s after a change, so a burst of writes is fetched once,
     and keeps the scroll position.
   - It waits while the user is in a form: the dialog, the transaction panel,
-    Customize dashboard, Manage tags, or a focused field in the page.
+    Customize dashboard, Manage tags, or a focused field in the page. The
+    Transactions search box and filters do not count: while one has focus,
+    only the results under it are redrawn (issue #77).
   - The browser reconnects a dropped stream itself. One it gives up on (a
     proxy's error page, a restart) is retried every 2 s, doubling up to a
     minute.

@@ -32,7 +32,9 @@ function element() {
   return new Proxy(own, { get: (o, k) => (k in o ? o[k] : stub()), set: (o, k, v) => { o[k] = v; return true; } });
 }
 const $el = (sel) => { if (!elements.has(sel)) elements.set(sel, element()); return elements.get(sel); };
-const document = new Proxy({}, { get: (t, k) => (k === "querySelectorAll" ? listStub : k === "querySelector" ? $el : stub()) });
+// docProps: what a test sets on document (activeElement); anything else is a stub
+const docProps = {};
+const document = new Proxy({}, { get: (t, k) => (k in docProps ? docProps[k] : k === "querySelectorAll" ? listStub : k === "querySelector" ? $el : stub()) });
 const location = { hash: "", search: "", pathname: "/", href: "http://localhost/" };
 const sandbox = {
   document, location, console, URL, URLSearchParams, Intl, Date, Math, JSON, Promise, setTimeout, clearTimeout,
@@ -43,7 +45,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, fmtNum, fmt, dayNet };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, fmtNum, fmt, dayNet };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -611,6 +613,80 @@ test("live updates (#55): one stream after sign-in, a refresh for a new revision
     sandbox.setTimeout = realSet; sandbox.clearTimeout = realClear;
     delete sandbox.EventSource;
     t.state.me = me; t.state.data = data;
+  }
+});
+
+test("live updates (#77): the cursor in the search box or a filter does not hold changes back", () => {
+  // a focused field in the page; kept: marked data-live-keep (the search box, the filter dropdowns)
+  const field = (id, kept) => ({
+    id,
+    closest: (sel) => (sel === "#view" ? {} : null),
+    matches: (sel) => sel === "input,textarea,select,[contenteditable=true]" || (sel === "[data-live-keep]" && kept),
+  });
+  const dialog = $el("#dialog"), drawer = $el("#drawer");
+  const was = { open: dialog.open, hidden: drawer.hidden, data: t.state.data, me: t.state.me, txns: t.state.data.transactions, tags: t.state.data.tags, filter: t.state.filter };
+  const timers = [], loads = [];
+  const realSet = sandbox.setTimeout, realClear = sandbox.clearTimeout, realLoad = sandbox.load;
+  sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  sandbox.clearTimeout = () => {};
+  sandbox.load = () => { loads.push(1); return Promise.resolve(); };
+  try {
+    dialog.open = false; drawer.hidden = true; // no dialog, no transaction panel
+    location.hash = "#transactions";
+    docProps.activeElement = null;
+    t.render();
+    assert.match($el("#view").innerHTML, /<input id="fq" type="search" data-live-keep /);
+    assert.match($el("#view").innerHTML, /<select id="faccount" data-live-keep /);
+    assert.strictEqual(t.liveBusy(), false, "nothing open, nothing focused");
+    docProps.activeElement = field("fq", true);
+    assert.strictEqual(t.liveBusy(), false, "the cursor in the search box does not hold a refresh back");
+    docProps.activeElement = field("ftag", true);
+    assert.strictEqual(t.liveBusy(), false, "nor does a filter dropdown that keeps focus after a choice");
+    docProps.activeElement = field("pStart", false);
+    assert.strictEqual(t.liveBusy(), true, "any other focused field in the page still waits");
+    docProps.activeElement = field("fq", true);
+    drawer.hidden = false;
+    assert.strictEqual(t.liveBusy(), true, "an open transaction panel still waits");
+    drawer.hidden = true;
+    // the issue: another page saves a transaction while this one has the cursor in the search box
+    t.state.me = { id: "usr-x" };
+    t.state.data.rev = "r-1";
+    assert.strictEqual(t.liveOnChange('{"rev":"r-2"}'), true);
+    timers[timers.length - 1].fn();
+    assert.strictEqual(loads.length, 1, "fetched at once, not postponed every 1.5 s");
+    assert.ok(!timers.some((x) => x.ms === 1500), "no waiting");
+    // load() then renders (render(true)): the results under the search box are redrawn, the search box itself is not
+    t.state.data.transactions = [...was.txns, { id: "t9", fromAccountId: "a1", toAccountId: "acc-external", type: "transfer", amountMinor: 8900, currency: "TWD", date: "2026-11-18", state: "posted", note: "Saved elsewhere", tagIds: [] }];
+    t.state.data.tags = [{ id: "g7", name: "Pets" }]; // a category added elsewhere
+    t.state.filter.tag = ""; // load() cleared a filter on a category removed elsewhere
+    $el("#ftag").value = "g-gone";
+    $el("#view").innerHTML = "the filter bar on screen";
+    t.render(true);
+    assert.strictEqual($el("#view").innerHTML, "the filter bar on screen", "the focused field is left alone");
+    assert.match($el("#txnResults").innerHTML, /Saved elsewhere/, "the new transaction is listed");
+    assert.match($el("#ftag").innerHTML, /<option value="g7" >Pets<\/option>/, "the dropdowns list what was added elsewhere");
+    assert.strictEqual($el("#ftag").value, "", "and show the filters in state");
+    // any other render (a hash change, Clear) draws the whole screen, also with the search box focused
+    t.render({ type: "hashchange" });
+    assert.match($el("#view").innerHTML, /id="fq"/);
+    // focus elsewhere: a refresh draws the whole screen as before
+    $el("#view").innerHTML = "";
+    docProps.activeElement = null;
+    t.render(true);
+    assert.match($el("#view").innerHTML, /id="fq"/);
+    // another screen has no such fields: a focused field there waits as before
+    location.hash = "#dashboard";
+    docProps.activeElement = field("fq", true);
+    assert.strictEqual(t.liveBusy(), true);
+  } finally {
+    t.liveStop();
+    sandbox.setTimeout = realSet; sandbox.clearTimeout = realClear; sandbox.load = realLoad;
+    delete docProps.activeElement;
+    dialog.open = was.open; drawer.hidden = was.hidden;
+    was.data.transactions = was.txns; was.data.tags = was.tags; delete was.data.rev;
+    t.state.filter = was.filter;
+    t.state.data = was.data; t.state.me = was.me; t.state.viewRedraw = null;
+    location.hash = "";
   }
 });
 

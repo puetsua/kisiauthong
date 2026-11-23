@@ -977,24 +977,30 @@ function writeTxnURL() {
   const h = "#transactions" + (qs.toString() ? "?" + qs : "");
   if (location.hash !== h) history.replaceState(null, "", h); // no hashchange, so no re-render
 }
-function screenTransactions(v) {
-  readTxnURL();
+// the Transactions filter dropdowns' options, with the filters in state.filter selected
+function txnFilterOptions() {
   const f = state.filter;
   const accOpt = (a) => `<option value="${esc(a.id)}" ${f.account === a.id ? "selected" : ""}>${esc(accName(a.id))}</option>`;
-  const accOpts = `<option value="">${esc(__("All accounts"))}</option>` + state.data.accounts.map(accOpt).join("")
+  const account = `<option value="">${esc(__("All accounts"))}</option>` + state.data.accounts.map(accOpt).join("")
     + (state.data.externals.length ? `<optgroup label="${esc(__("External accounts"))}">${state.data.externals.map(accOpt).join("")}</optgroup>` : "");
   const tagOpt = (t) => `<option value="${esc(t.id)}" ${f.tag === t.id ? "selected" : ""}>${esc(t.name)}</option>`;
   const tagGroup = (label, tags) => (tags.length ? `<optgroup label="${esc(label)}">${tags.map(tagOpt).join("")}</optgroup>` : "");
-  const tagOpts = `<option value="">${esc(__("All categories"))}</option><option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
+  const tag = `<option value="">${esc(__("All categories"))}</option><option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
     + tagGroup(__("Categories"), state.data.tags);
+  const type = `<option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}`;
+  return { account, type, tag };
+}
+function screenTransactions(v) {
+  readTxnURL();
+  const f = state.filter, opts = txnFilterOptions();
   // on phones the dropdowns fold away behind a Filters button that counts the ones in use
   v.innerHTML = `<div class="filters${state.filtersOpen ? " open" : ""}">
-      <input id="fq" type="search" placeholder="${esc(__("Search note, tag, account…"))}" value="${esc(f.q)}">
+      <input id="fq" type="search" data-live-keep placeholder="${esc(__("Search note, tag, account…"))}" value="${esc(f.q)}">
       <button type="button" class="smallbtn ftoggle" id="fToggle" aria-expanded="${!!state.filtersOpen}" aria-controls="fMore"></button>
       <div class="fmore" id="fMore">
-      <select id="faccount" aria-label="${esc(__("Account"))}">${accOpts}</select>
-      <select id="ftype" aria-label="${esc(__("Type"))}"><option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}</select>
-      <select id="ftag" aria-label="${esc(__("Tags"))}">${tagOpts}</select>
+      <select id="faccount" data-live-keep aria-label="${esc(__("Account"))}">${opts.account}</select>
+      <select id="ftype" data-live-keep aria-label="${esc(__("Type"))}">${opts.type}</select>
+      <select id="ftag" data-live-keep aria-label="${esc(__("Tags"))}">${opts.tag}</select>
       <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div></div>
     <div id="txnResults"></div>`;
   const countF = () => {
@@ -1007,8 +1013,8 @@ function screenTransactions(v) {
     $(".filters").classList.toggle("open", state.filtersOpen);
     $("#fToggle").setAttribute("aria-expanded", state.filtersOpen);
   });
-  const today = state.data.today;
   const nav = (p) => {
+    const today = state.data.today;
     const atLatest = p.end >= today;
     return `<nav class="periodnav" aria-label="${esc(__("Period"))}">
         <button class="smallbtn" data-shift="-1">${esc(__("‹ Previous"))}</button>
@@ -1017,7 +1023,7 @@ function screenTransactions(v) {
         ${!(today >= p.start && today <= p.end) ? `<button class="smallbtn" data-today>${esc(__("Back to today"))}</button>` : ""}</nav>`;
   };
   const drawResults = () => {
-    const p = currentPeriod(), all = filteredTxns();
+    const p = currentPeriod(), all = filteredTxns(), today = state.data.today;
     // unconfirmed items wait in their own section (oldest first, any date) instead of carrying a state on every row
     const expected = all.filter((t) => t.state === "planned").reverse();
     // a search looks through all of history; otherwise the period on screen
@@ -1102,6 +1108,15 @@ function screenTransactions(v) {
   $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", tag: "" }; history.replaceState(null, "", "#transactions"); render(); });
   countF();
   drawResults();
+  // a refresh while the search box or a filter has focus: the same fields stay (focus, caret, an open IME word),
+  // their options and values follow the new data and state.filter (a removed category's filter is cleared by load())
+  state.viewRedraw = { key: "transactions", fn: () => {
+    const o = txnFilterOptions();
+    ["account", "type", "tag"].forEach((k) => { const sel = $("#f" + k); sel.innerHTML = o[k]; sel.value = state.filter[k]; });
+    if ($("#fq").value !== state.filter.q) $("#fq").value = state.filter.q;
+    countF();
+    drawResults();
+  } };
   if (state.scrollToExpected && $("#expectedSec")) $("#expectedSec").scrollIntoView({ block: "start" });
   state.scrollToExpected = false;
 }
@@ -2905,7 +2920,8 @@ function currentScreen() {
   if (isAdminScreen(h) && !(state.me && state.me.isAdmin)) return "dashboard";
   return SCREENS[h] ? h : "dashboard";
 }
-function render() {
+// refresh: called by load() after fetching the books (a live update, the page's own write); see below
+function render(refresh) {
   if (!state.data) return; // signed out or still loading: the sign-in screen is up, and load() renders once data arrives
   const key = currentScreen();
   $("#pageTitle").textContent = __(SCREENS[key][0]);
@@ -2924,6 +2940,13 @@ function render() {
   renderBell();
   $("#addBtn").hidden = admin || (key === "dashboard" && state.customizing); // nothing to add there; it would cover widgets being edited
   $("#tabAdd").disabled = admin;
+  // A refresh while the search box or a filter on Transactions has focus (data-live-keep) leaves that field in
+  // place and redraws the rest, so it never takes the field away while it is in use: the caret, a phone's
+  // keyboard and an IME word being composed stay (issue #77). Any other render (a hash change, Clear) draws anew.
+  const redraw = state.viewRedraw, a = document.activeElement;
+  if (refresh === true && redraw && redraw.key === key && !state.scrollToExpected
+    && a && a.closest && a.closest("#view") && a.matches("[data-live-keep]")) { redraw.fn(); return; }
+  state.viewRedraw = null; // a screen with such fields sets it again
   SCREENS[key][1]($("#view"));
 }
 window.addEventListener("hashchange", render);
@@ -2944,7 +2967,7 @@ async function load() {
   if (state.filter.tag && !state.data.tags.some((t) => t.id === state.filter.tag)) state.filter.tag = ""; // e.g. merged away
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
-  render();
+  render(true);
 }
 /* ---------- live updates (issue #55, ADR 0023) ---------- */
 // After any write to these books (this page, another device, the API, an assistant over MCP, template
@@ -2955,11 +2978,13 @@ async function load() {
 // back to a page that sat in the background (phones pause it) or back online also catches up.
 // rev: the newest revision the server announced; loading: a fetch is under way
 const live = { es: null, timer: 0, retry: 0, wait: 2000, hiddenAt: 0, rev: "", loading: false };
-// a form is open or being typed in: the refresh waits so nothing typed is lost
+// a form is open or being typed in: the refresh waits so nothing typed is lost. A focused search box or
+// filter (data-live-keep) does not count: render() redraws only what is under it (issue #77).
 function liveBusy() {
   const a = document.activeElement;
-  return !!($("#dialog").open || !$("#drawer").hidden || state.customizing || state.tagPick
-    || (a && a.closest && a.closest("#view") && a.matches("input,textarea,select,[contenteditable=true]")));
+  const field = !!(a && a.closest && a.closest("#view") && a.matches("input,textarea,select,[contenteditable=true]"));
+  const kept = field && a.matches("[data-live-keep]") && !!state.viewRedraw && state.viewRedraw.key === currentScreen();
+  return !!($("#dialog").open || !$("#drawer").hidden || state.customizing || state.tagPick || (field && !kept));
 }
 function liveSchedule(delay = 400) {
   clearTimeout(live.timer);
