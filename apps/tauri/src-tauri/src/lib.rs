@@ -53,6 +53,9 @@ struct Shell {
     /// another server: once it has loaded, Android forgets the pages before it
     /// (issue #84); true once that page has started loading
     fresh: Mutex<Option<(Url, bool)>>,
+    /// origins of the server pages the window has shown, which its history may
+    /// still hold (issue #92)
+    shown: Mutex<HashSet<String>>,
 }
 
 impl Shell {
@@ -257,7 +260,8 @@ fn opened_fresh(slot: &mut Option<(Url, bool)>, page: &Url, finished: bool) -> b
 /// showed (issue #84): the previous server's pages must not stay behind it,
 /// where Android's Back (WebView.goBack) would walk into them, also into a
 /// removed server's. Android forgets them once the page has loaded (see
-/// open_window); WKWebView and WebView2 have no call to clear their history.
+/// open_window); WKWebView and WebView2 have no call to clear their history,
+/// so on Windows navigation() keeps Back from reaching them (issue #92).
 fn start_fresh(shell: &Shell, url: &Url) {
     *shell.fresh.lock().unwrap() = Some((url.clone(), false));
     *shell.returning.lock().unwrap() = None;
@@ -271,17 +275,59 @@ fn open_outside(app: &AppHandle, url: &Url) {
     }
 }
 
-/// The window stays on the server screen and the saved servers; anything else
-/// opens in the system browser.
+/// Whether a page belongs to the server in use: of its origin, and no other
+/// saved server of that origin has a base path that matches the page more
+/// closely (two servers may share an origin under different paths).
+fn in_use(store: &Store, url: &Url) -> bool {
+    let Some(active) = store.active_profile() else { return false };
+    let claim = |p: &Profile| {
+        Url::parse(&p.url).ok().filter(|u| same_origin(u, url) && url.path().starts_with(u.path())).map(|u| u.path().len())
+    };
+    let closest = store.servers.iter().filter_map(claim).max();
+    match claim(active) {
+        Some(n) => closest.map_or(true, |c| n >= c),
+        // outside every base path: the origin decides
+        None => closest.is_none() && Url::parse(&active.url).is_ok_and(|a| same_origin(&a, url)),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Nav {
+    Allow,
+    /// a page of another server: neither shown nor opened outside
+    Refuse,
+    /// not a server's page: the system browser opens it
+    Outside,
+}
+
+/// Where the window may go: the server screen and the server in use (issue
+/// #92). WebView2's Alt+Left and the mouse's Back button walk the history,
+/// which keeps the pages of a server the window left with Switch or Remove
+/// (Windows has no call to clear it, #84). Going back to one would show a
+/// server other than the one in use, or open a removed server in the system
+/// browser; a page of a saved server, or of one shown before (`shown`), is
+/// refused instead. Anything else opens in the system browser.
+fn navigation(store: &Store, shown: &HashSet<String>, url: &Url) -> Nav {
+    if is_local(url) || matches!(url.scheme(), "about" | "blob") || in_use(store, url) {
+        Nav::Allow
+    } else if known(store, url) || shown.contains(&url.origin().ascii_serialization()) {
+        Nav::Refuse
+    } else {
+        Nav::Outside
+    }
+}
+
 fn allow_navigation(app: &AppHandle, url: &Url) -> bool {
-    if is_local(url) || matches!(url.scheme(), "about" | "blob") {
-        return true;
+    let shell = app.state::<Shell>();
+    let nav = navigation(&shell.store.lock().unwrap(), &shell.shown.lock().unwrap(), url);
+    match nav {
+        Nav::Allow if matches!(url.scheme(), "http" | "https") => {
+            shell.shown.lock().unwrap().insert(url.origin().ascii_serialization());
+        }
+        Nav::Outside => open_outside(app, url),
+        _ => {}
     }
-    let ok = known(&app.state::<Shell>().store.lock().unwrap(), url);
-    if !ok {
-        open_outside(app, url);
-    }
-    ok
+    nav == Nav::Allow
 }
 
 /* ---------- commands of the server screen (local only) ---------- */
@@ -373,8 +419,10 @@ fn save(s: &mut Store, id: Option<&str>, name: Option<&str>, url: &str, connect:
         (false, Some(a)) => {
             let to = settings_of(a)?;
             // the opener is a page of the server in use before the edit; when
-            // that origin is gone, going back would land on an unsaved server
-            if before.is_some_and(|b| same_origin(&b, &to)) {
+            // that origin is gone, going back would land on an unsaved server,
+            // and when its page now belongs to another server on that origin,
+            // navigation() would refuse going back to it (#92)
+            if before.is_some_and(|b| same_origin(&b, &to) && in_use(s, &b)) {
                 Saved::Back(to)
             } else {
                 Saved::Open(to)
@@ -1080,6 +1128,7 @@ pub fn run() {
                 update_asked: AtomicBool::new(false),
                 returning: Mutex::new(None),
                 fresh: Mutex::new(None),
+                shown: Mutex::new(HashSet::new()),
             });
             for u in &urls {
                 grant(app.handle(), u);
@@ -1118,6 +1167,81 @@ mod tests {
         assert!(!known(&s, &Url::parse("http://books.example.org/kisiauthong/").unwrap()), "other scheme");
         assert!(!known(&s, &Url::parse("https://books.example.org:8443/").unwrap()), "other port");
         assert!(!known(&s, &Url::parse("https://www.gnu.org/licenses/agpl-3.0.html").unwrap()));
+    }
+
+    fn at(u: &str) -> Url {
+        Url::parse(u).unwrap()
+    }
+
+    fn origins(urls: &[&str]) -> HashSet<String> {
+        urls.iter().map(|u| at(u).origin().ascii_serialization()).collect()
+    }
+
+    #[test]
+    fn going_back_after_switch_stays_on_the_server_in_use() {
+        // issue #92: A's pages stay in WebView2's history after Switch to B
+        let mut s = Store::default();
+        let a = s.upsert(None, None, "https://a.example.org/").unwrap();
+        let b = s.upsert(None, None, "https://b.example.org/books/").unwrap();
+        s.activate(&a, "2026-11-01T00:00:00Z".into());
+        let shown = origins(&["https://a.example.org/"]);
+        assert_eq!(navigation(&s, &shown, &at("https://a.example.org/#transactions")), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("https://b.example.org/books/")), Nav::Refuse, "B before it is in use");
+        s.activate(&b, "2026-11-02T00:00:00Z".into());
+        assert_eq!(navigation(&s, &shown, &at("https://b.example.org/books/")), Nav::Allow, "Switch opens B");
+        assert_eq!(navigation(&s, &shown, &at("https://b.example.org/books/#settings")), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("https://a.example.org/#settings")), Nav::Refuse, "Alt+Left into A: not shown, not opened outside");
+        assert_eq!(navigation(&s, &shown, &screen_url(&[])), Nav::Allow, "the server screen");
+        assert_eq!(navigation(&s, &shown, &screen_url(&[("mode", "add")])), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("about:blank")), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("https://www.gnu.org/licenses/agpl-3.0.html")), Nav::Outside, "a link still opens outside");
+    }
+
+    #[test]
+    fn going_back_after_remove_opens_nothing_outside() {
+        let mut s = Store::default();
+        let a = s.upsert(None, None, "https://a.example.org/").unwrap();
+        let b = s.upsert(None, None, "http://192.168.1.20:8080/").unwrap();
+        s.activate(&b, "2026-11-01T00:00:00Z".into());
+        s.activate(&a, "2026-11-02T00:00:00Z".into());
+        let shown = origins(&["https://a.example.org/", "http://192.168.1.20:8080/"]);
+        // Remove A: B opens
+        assert!(s.remove(&a));
+        assert_eq!(s.active.as_deref(), Some(b.as_str()));
+        assert_eq!(navigation(&s, &shown, &at("http://192.168.1.20:8080/")), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("https://a.example.org/#settings")), Nav::Refuse, "the removed server, not in the browser either");
+        // Remove the last server: the server screen
+        assert!(s.remove(&b));
+        assert_eq!(s.active, None);
+        assert_eq!(navigation(&s, &shown, &screen_url(&[])), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("http://192.168.1.20:8080/#settings")), Nav::Refuse);
+        assert_eq!(navigation(&s, &shown, &at("https://a.example.org/")), Nav::Refuse);
+        assert_eq!(navigation(&s, &HashSet::new(), &at("https://a.example.org/")), Nav::Outside, "a page never shown is only a link");
+    }
+
+    #[test]
+    fn servers_sharing_an_origin_are_told_apart_by_their_path() {
+        let mut s = Store::default();
+        let a = s.upsert(None, None, "https://home.example.org/a/").unwrap();
+        let b = s.upsert(None, None, "https://home.example.org/b/").unwrap();
+        let shown = HashSet::new();
+        s.activate(&b, "2026-11-01T00:00:00Z".into());
+        assert_eq!(navigation(&s, &shown, &at("https://home.example.org/b/#settings")), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("https://home.example.org/a/#settings")), Nav::Refuse);
+        assert_eq!(navigation(&s, &shown, &at("https://home.example.org/")), Nav::Allow, "outside both: the origin decides");
+        s.activate(&a, "2026-11-02T00:00:00Z".into());
+        assert_eq!(navigation(&s, &shown, &at("https://home.example.org/a/")), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("https://home.example.org/b/")), Nav::Refuse);
+        // one server's base path inside the other's: the closer one owns the page
+        let mut s = Store::default();
+        let root = s.upsert(None, None, "https://home.example.org/").unwrap();
+        let sub = s.upsert(None, None, "https://home.example.org/sub/").unwrap();
+        s.activate(&root, "2026-11-01T00:00:00Z".into());
+        assert_eq!(navigation(&s, &shown, &at("https://home.example.org/#settings")), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("https://home.example.org/sub/#settings")), Nav::Refuse);
+        s.activate(&sub, "2026-11-02T00:00:00Z".into());
+        assert_eq!(navigation(&s, &shown, &at("https://home.example.org/sub/")), Nav::Allow);
+        assert_eq!(navigation(&s, &shown, &at("https://home.example.org/#settings")), Nav::Refuse);
     }
 
     #[test]
@@ -1222,6 +1346,21 @@ mod tests {
             Saved::Open(Url::parse("https://other.example.org/").unwrap())
         );
         assert_eq!(s.active_profile().map(|p| p.url.as_str()), Some("https://other.example.org/"));
+        // issue #92: the server in use moved off a base path another saved server on its
+        // origin then owns, where going back would be refused: its new Settings open instead
+        let mut s = Store::default();
+        s.upsert(None, None, "https://h.example.org/").unwrap();
+        let a = s.upsert(None, None, "https://h.example.org/a/").unwrap();
+        s.activate(&a, "2026-11-23T00:00:00Z".into());
+        assert_eq!(
+            save(&mut s, Some(&a), None, "https://h.example.org/a2/", false).unwrap(),
+            Saved::Open(Url::parse("https://h.example.org/a2/#settings").unwrap())
+        );
+        assert_eq!(
+            save(&mut s, Some(&a), Some("A"), "https://h.example.org/a2/", false).unwrap(),
+            Saved::Back(Url::parse("https://h.example.org/a2/#settings").unwrap()),
+            "a rename keeps going back"
+        );
     }
 
     #[test]
