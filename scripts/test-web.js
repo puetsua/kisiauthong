@@ -730,113 +730,89 @@ later.push(["Settings → Servers: when the list cannot load, the section and it
   delete sandbox.kisiauthongApp;
 }]);
 later.push(["transactions (#79): a filter the dropdowns cannot show is dropped by a fresh fetch, also from the address", async () => {
-  const was = { data: t.state.data, filter: t.state.filter, period: t.state.period, general: t.state.general, dashboard: t.state.dashboard, about: t.state.about, dismissed: t.state.dismissed };
-  const realApi = sandbox.api, realRender = sandbox.render;
+  const dialog = $el("#dialog"), drawer = $el("#drawer");
+  const was = { data: t.state.data, filter: t.state.filter, period: t.state.period, me: t.state.me, general: t.state.general, dashboard: t.state.dashboard, about: t.state.about, dismissed: t.state.dismissed, open: dialog.open, hidden: drawer.hidden };
+  const realApi = sandbox.api, realRender = sandbox.render, realSet = sandbox.setTimeout, realClear = sandbox.clearTimeout;
   const spend = (id, note, date, tagIds) => ({ ...tx(id, "a1", "acc-external", 12000, date, "posted", note), tagIds });
   // the server's books: "g-gone" was merged into g7 elsewhere, g8 was made elsewhere
-  const server = { tags: [{ id: "g7", name: "Pets" }, { id: "g8", name: "Garden" }],
-    transactions: [spend("t7", "Bus fare", "2026-11-11", []), spend("t8", "Cat food", "2026-11-10", ["g7"]), spend("t9", "Seeds", "2026-11-09", ["g8"])] };
-  const fetched = [], held = [];
-  const books = (tags) => ({ ...was.data, accounts: [acc, other, ext], tags, transactions: server.transactions });
-  let hold = false; // true: each /api/state answer waits in held until the test releases it
-  sandbox.api = (url) => {
-    fetched.push(url);
-    if (url !== "/api/state") return Promise.resolve({ general: {}, about: {}, notifications: {} });
-    return hold ? new Promise((ok, fail) => held.push({ ok, fail })) : Promise.resolve(books(server.tags));
-  };
-  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const tags = [{ id: "g7", name: "Pets" }, { id: "g8", name: "Garden" }];
+  const transactions = [spend("t7", "Bus fare", "2026-11-11", []), spend("t8", "Cat food", "2026-11-10", ["g7"]), spend("t9", "Seeds", "2026-11-09", ["g8"])];
+  const books = (tg) => ({ ...was.data, accounts: [acc, other, ext], tags: tg, transactions, rev: "r-9" });
+  const held = []; // each /api/state answer waits here until the test gives it
+  sandbox.api = (url) => (url === "/api/state" ? new Promise((ok) => held.push(ok)) : Promise.resolve({ general: {}, about: {}, notifications: {} }));
+  const timers = []; // timers still set (the live refresh's), fired by the test
+  let ids = 0;
+  sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms, id: ++ids }); return ids; };
+  sandbox.clearTimeout = (id) => { const i = timers.findIndex((x) => x.id === id); if (i >= 0) timers.splice(i, 1); };
+  const tick = () => new Promise((r) => realSet(r, 0));
+  const answer = async (i, tg) => { held[i](books(tg)); await tick(); };
   const shown = () => $el("#txnResults").innerHTML;
+  const open = (hash) => { location.hash = hash; t.render({ type: "hashchange" }); };
+  // the live refresh the link asked for: fire its timer, answer its fetch
+  const refresh = async (tg) => { const n = held.length; const done = timers.pop().fn(); await tick(); held[n](books(tg)); await done; };
   try {
-    docProps.activeElement = null; // nothing focused: render(true) draws the whole screen, reading the address
+    docProps.activeElement = null; dialog.open = false; drawer.hidden = true; // no form open: a refresh may run
+    t.state.me = { id: "usr-x" };
     t.state.period = { mode: "month", start: "2026-11-01", end: "2026-11-30" };
-    // a live refresh after the merge (or a reload): the address still has the old id
+    // a live refresh after the merge, or a reload: the address still has the old id
     location.hash = "#transactions?tag=g-gone&type=expense";
     t.state.filter = { q: "", account: "", type: "", tag: "g-gone" };
-    await sandbox.load();
+    let done = sandbox.load();
+    await answer(0, tags); await done;
     assert.strictEqual(t.state.filter.tag, "", "the address does not bring the removed category back");
     assert.strictEqual(t.state.filter.type, "expense", "the other filters stay");
     assert.strictEqual(location.hash, "#transactions?type=expense", "the address drops it too");
     assert.match(shown(), /Bus fare/, "the period's transactions are listed, not an empty filter");
     assert.match(shown(), /Seeds/);
-    // a link to a category made elsewhere, opened while this page is behind: kept, and shown once fetched
+    // a link to a category made elsewhere, opened while this page is behind: kept, and shown after a refresh
     t.state.data.tags = [{ id: "g7", name: "Pets" }];
-    fetched.length = 0;
-    location.hash = "#transactions?tag=g8";
-    t.render({ type: "hashchange" });
-    await settle();
-    assert.strictEqual(fetched[0], "/api/state", "an unknown value asks for a fresh fetch");
+    open("#transactions?tag=g8");
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "an unknown value asks for a refresh");
+    await refresh(tags);
     assert.strictEqual(t.state.filter.tag, "g8", "which knows the category");
     assert.strictEqual(location.hash, "#transactions?tag=g8");
     assert.match(shown(), /Seeds/);
     assert.doesNotMatch(shown(), /Bus fare/);
-    // a fetch begun before the link was opened (a live refresh) that answers without g8 does not drop it;
-    // the one the link asked for then shows it
+    // a fetch begun before the link was opened (a write, a live refresh) that answers without g8 does not drop it
     t.state.data.tags = [{ id: "g7", name: "Pets" }];
-    location.hash = "#transactions";
-    t.render({ type: "hashchange" });
-    hold = true; held.length = 0;
-    const older = sandbox.load();
-    location.hash = "#transactions?tag=g8";
-    t.render({ type: "hashchange" });
-    assert.strictEqual(held.length, 2, "the link asked for its own fetch");
-    held[0].ok(books([{ id: "g7", name: "Pets" }]));
-    await older;
+    open("#transactions");
+    const n = held.length;
+    done = sandbox.load(); // under way
+    open("#transactions?tag=g8");
+    await answer(n, [{ id: "g7", name: "Pets" }]); await done;
     assert.strictEqual(t.state.filter.tag, "g8", "the older answer does not drop what the link names");
     assert.strictEqual(location.hash, "#transactions?tag=g8");
-    held[1].ok(books(server.tags));
-    await settle();
+    await refresh(tags);
     assert.match(shown(), /Seeds/);
-    assert.doesNotMatch(shown(), /Bus fare/);
-    // answers in the other order: the older one, arriving last, does not replace the newer books
-    held.length = 0;
-    const first = sandbox.load(), second = sandbox.load();
-    held[1].ok(books(server.tags));
-    await second;
-    held[0].ok(books([]));
-    await first;
-    assert.strictEqual(t.state.data.tags.length, 2, "an older answer arriving late is ignored");
-    // the fetch fails (offline): the user is told, not left with a list that matches nothing and no word why
-    held.length = 0;
-    t.state.data.tags = [{ id: "g7", name: "Pets" }];
-    location.hash = "#transactions?tag=g9";
-    t.render({ type: "hashchange" });
-    held[0].fail(new Error("Failed to fetch"));
-    await settle();
-    assert.match(String($el("#toast").textContent), /Failed to fetch/, "the error is shown");
-    hold = false;
-    await sandbox.load();
-    // an old or shared link with an unknown account or type, or a merged-away category: dropped after the fetch
-    fetched.length = 0;
-    location.hash = "#transactions?account=acc-elsewhere&type=toString&tag=g-gone";
-    t.render({ type: "hashchange" });
-    await settle();
-    assert.strictEqual(fetched.filter((u) => u === "/api/state").length, 1, "fetched once, not again by its own redraw");
+    // an old or shared link with an unknown account or type, or a merged-away category: dropped by the refresh
+    open("#transactions?account=acc-elsewhere&type=toString&tag=g-gone");
+    await refresh(tags);
     assert.deepStrictEqual([t.state.filter.account, t.state.filter.type, t.state.filter.tag], ["", "", ""]);
     assert.strictEqual(location.hash, "#transactions");
     assert.match(shown(), /Bus fare/);
-    // known values, an external account and Uncategorised are kept without a fetch
-    fetched.length = 0;
-    location.hash = "#transactions?account=acc-external&type=expense&tag=g7";
-    t.render({ type: "hashchange" });
-    location.hash = "#transactions?tag=none";
-    t.render({ type: "hashchange" });
-    await settle();
-    assert.strictEqual(fetched.length, 0);
+    assert.strictEqual(timers.length, 0, "and asks for nothing more");
+    // known values, an external account and Uncategorised ask for no refresh
+    open("#transactions?account=acc-external&type=expense&tag=g7");
+    open("#transactions?tag=none");
+    assert.strictEqual(timers.length, 0);
     assert.strictEqual(t.state.filter.tag, "none");
     assert.match(shown(), /Bus fare/, "Uncategorised lists the spending without a category");
     assert.doesNotMatch(shown(), /Cat food/);
     // a refresh with the dropdown focused reads no address: load() alone decides, and it keeps Uncategorised
     sandbox.render = () => {};
     t.state.filter = { q: "", account: "", type: "", tag: "none" };
-    await sandbox.load();
+    done = sandbox.load(); await answer(held.length - 1, tags); await done;
     assert.strictEqual(t.state.filter.tag, "none", "Uncategorised is not a category id, and it stays");
     t.state.filter = { q: "", account: "", type: "", tag: "g-gone" };
-    await sandbox.load();
+    done = sandbox.load(); await answer(held.length - 1, tags); await done;
     assert.strictEqual(t.state.filter.tag, "");
   } finally {
-    sandbox.api = realApi; sandbox.render = realRender;
+    t.liveStop();
+    sandbox.api = realApi; sandbox.render = realRender; sandbox.setTimeout = realSet; sandbox.clearTimeout = realClear;
     // load() also replaced the settings: put them back for the tests after this one
-    Object.assign(t.state, { data: was.data, filter: was.filter, period: was.period, general: was.general, dashboard: was.dashboard, about: was.about, dismissed: was.dismissed });
+    Object.assign(t.state, { data: was.data, filter: was.filter, period: was.period, me: was.me, general: was.general, dashboard: was.dashboard, about: was.about, dismissed: was.dismissed });
+    dialog.open = was.open; drawer.hidden = was.hidden;
+    t.live.rev = "";
     location.hash = "";
     delete docProps.activeElement;
     t.setLang("en");

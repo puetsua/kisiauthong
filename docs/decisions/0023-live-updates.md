@@ -46,13 +46,10 @@ browsers that pause pages in the background.
     Customize dashboard, Manage tags, or a focused field in the page. The
     Transactions search box and filters do not count: while one has focus,
     only the results under it are redrawn (issue #77).
-  - Fetches can overlap (a refresh, the page's own write, a link checked
-    below). An answer to a fetch that began earlier than the one on screen
-    is ignored, so older books never replace newer ones.
   - A Transactions filter in the address that names a value the page does
     not know (a category made elsewhere, or one merged away) asks for a
-    fetch. Only a fetch begun after that address was opened may drop the
-    value; a failed one says so (issue #79).
+    refresh like the above. Only a fetch begun after that may drop the value
+    from the filter and the address (issue #79).
   - The browser reconnects a dropped stream itself. One it gives up on (a
     proxy's error page, a restart) is retried every 2 s, doubling up to a
     minute.
