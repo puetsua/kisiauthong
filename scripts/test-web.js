@@ -736,8 +736,14 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
   // the server's books: "g-gone" was merged into g7 elsewhere, g8 was made elsewhere
   const server = { tags: [{ id: "g7", name: "Pets" }, { id: "g8", name: "Garden" }],
     transactions: [spend("t7", "Bus fare", "2026-11-11", []), spend("t8", "Cat food", "2026-11-10", ["g7"]), spend("t9", "Seeds", "2026-11-09", ["g8"])] };
-  const fetched = [];
-  sandbox.api = (url) => { fetched.push(url); return Promise.resolve(url === "/api/state" ? { ...was.data, accounts: [acc, other, ext], tags: server.tags, transactions: server.transactions } : { general: {}, about: {}, notifications: {} }); };
+  const fetched = [], held = [];
+  const books = (tags) => ({ ...was.data, accounts: [acc, other, ext], tags, transactions: server.transactions });
+  let hold = false; // true: each /api/state answer waits in held until the test releases it
+  sandbox.api = (url) => {
+    fetched.push(url);
+    if (url !== "/api/state") return Promise.resolve({ general: {}, about: {}, notifications: {} });
+    return hold ? new Promise((ok, fail) => held.push({ ok, fail })) : Promise.resolve(books(server.tags));
+  };
   const settle = () => new Promise((r) => setTimeout(r, 0));
   const shown = () => $el("#txnResults").innerHTML;
   try {
@@ -763,6 +769,42 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     assert.strictEqual(location.hash, "#transactions?tag=g8");
     assert.match(shown(), /Seeds/);
     assert.doesNotMatch(shown(), /Bus fare/);
+    // a fetch begun before the link was opened (a live refresh) that answers without g8 does not drop it;
+    // the one the link asked for then shows it
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    location.hash = "#transactions";
+    t.render({ type: "hashchange" });
+    hold = true; held.length = 0;
+    const older = sandbox.load();
+    location.hash = "#transactions?tag=g8";
+    t.render({ type: "hashchange" });
+    assert.strictEqual(held.length, 2, "the link asked for its own fetch");
+    held[0].ok(books([{ id: "g7", name: "Pets" }]));
+    await older;
+    assert.strictEqual(t.state.filter.tag, "g8", "the older answer does not drop what the link names");
+    assert.strictEqual(location.hash, "#transactions?tag=g8");
+    held[1].ok(books(server.tags));
+    await settle();
+    assert.match(shown(), /Seeds/);
+    assert.doesNotMatch(shown(), /Bus fare/);
+    // answers in the other order: the older one, arriving last, does not replace the newer books
+    held.length = 0;
+    const first = sandbox.load(), second = sandbox.load();
+    held[1].ok(books(server.tags));
+    await second;
+    held[0].ok(books([]));
+    await first;
+    assert.strictEqual(t.state.data.tags.length, 2, "an older answer arriving late is ignored");
+    // the fetch fails (offline): the user is told, not left with a list that matches nothing and no word why
+    held.length = 0;
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    location.hash = "#transactions?tag=g9";
+    t.render({ type: "hashchange" });
+    held[0].fail(new Error("Failed to fetch"));
+    await settle();
+    assert.match(String($el("#toast").textContent), /Failed to fetch/, "the error is shown");
+    hold = false;
+    await sandbox.load();
     // an old or shared link with an unknown account or type, or a merged-away category: dropped after the fetch
     fetched.length = 0;
     location.hash = "#transactions?account=acc-elsewhere&type=toString&tag=g-gone";

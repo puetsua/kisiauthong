@@ -976,7 +976,23 @@ function dropGoneFilters() {
   gone.forEach((k) => params.delete(k));
   history.replaceState(null, "", "#transactions" + (params.toString() ? "?" + params : "")); // render() follows
 }
-let filterCheck = null; // the fetch readTxnURL() asked for, one at a time
+// fetches of the books, numbered as they begin (seq); applied: the newest one on screen
+const loads = { seq: 0, applied: 0 };
+// The address names a value this page does not know: fetch. Only a fetch begun after the address named it
+// (seq > after) may drop it, so a fetch still under way from before cannot drop a category made elsewhere.
+const filterCheck = { after: 0, addr: "", busy: false };
+function checkFilters() {
+  // a new check, or another address while one runs; the same address read again by a redraw keeps its mark
+  if (!filterCheck.busy || location.hash !== filterCheck.addr) { filterCheck.addr = location.hash; filterCheck.after = loads.seq; }
+  if (filterCheck.busy) return;
+  filterCheck.busy = true;
+  const done = load(), mine = loads.seq;
+  done.catch(errMsg).finally(() => {
+    filterCheck.busy = false;
+    // this fetch began before the address changed again: ask once more
+    if (mine <= filterCheck.after && hashParts().path === "transactions" && state.data && goneFilters(state.filter).length) checkFilters();
+  });
+}
 // The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
 // search can be bookmarked, shared and reloaded. A bare #transactions keeps what is on screen.
 function readTxnURL() {
@@ -984,7 +1000,7 @@ function readTxnURL() {
   if (![...qs.keys()].length) return;
   state.filter = { q: qs.get("q") || "", account: qs.get("account") || "", type: qs.get("type") || "", tag: qs.get("tag") || "" };
   // a value this page does not know: fetch, and load() keeps or drops it with fresh data (issue #79)
-  if (state.data && goneFilters(state.filter).length && !filterCheck) filterCheck = load().catch(() => {}).finally(() => { filterCheck = null; });
+  if (state.data && goneFilters(state.filter).length) checkFilters();
   state.searchPage = Math.max(0, (parseInt(qs.get("page"), 10) || 1) - 1);
   const per = parseInt(qs.get("per"), 10);
   if (PAGE_SIZES.includes(per)) state.pageSize = per;
@@ -2974,7 +2990,11 @@ function render(refresh) {
 }
 window.addEventListener("hashchange", render);
 async function load() {
-  state.data = await api("/api/state");
+  const seq = ++loads.seq;
+  const data = await api("/api/state");
+  if (seq < loads.applied) return; // one begun later is on screen already, with newer books
+  loads.applied = seq;
+  state.data = data;
   state.data.allAccounts = state.data.accounts;
   state.data.externals = state.data.accounts.filter((a) => a.kind === "external");
   state.data.accounts = state.data.accounts.filter((a) => a.kind !== "external");
@@ -2987,7 +3007,8 @@ async function load() {
   } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
-  dropGoneFilters(); // e.g. a category merged away; before render(), which reads the address
+  // e.g. a category merged away; before render(), which reads the address
+  if (seq > filterCheck.after) dropGoneFilters();
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render(true);
