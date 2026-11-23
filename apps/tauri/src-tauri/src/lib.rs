@@ -179,8 +179,35 @@ fn require_known(w: &Webview, shell: &Shell) -> Result<(), String> {
     }
 }
 
+/// Opens `url` as a new history entry, so Back returns to the page that asked:
+/// a server page opening the bundled screen, or another saved server.
 fn go(w: &Webview, url: Url) -> Result<(), String> {
     w.navigate(url).map_err(|e| e.to_string())
+}
+
+/// A URL as a JavaScript string literal (JSON is valid JavaScript).
+fn js_string(url: &Url) -> String {
+    serde_json::to_string(url.as_str()).expect("a string always serialises")
+}
+
+/// Leaves the bundled screen for `url` in place of the screen's own history
+/// entry (issue #67). Webview::navigate adds an entry, so the screen stayed
+/// below the server: Android's Back (WebView.goBack) returned to it, and at
+/// launch the screen opened the server again. The page itself does it, because
+/// no webview API replaces the current entry.
+fn leave(w: &Webview, url: &Url) -> Result<(), String> {
+    w.eval(replace_script(url)).map_err(|e| e.to_string())
+}
+
+fn replace_script(url: &Url) -> String {
+    format!("location.replace({})", js_string(url))
+}
+
+/// Cancel and Back on the bundled screen: back to the server page that opened
+/// it, as the system Back does, instead of a new entry after the screen; to
+/// `fallback` in the screen's place when nothing is behind it.
+fn back_script(fallback: &Url) -> String {
+    format!("if (history.length > 1) history.back(); else location.replace({})", js_string(fallback))
 }
 
 fn open_outside(app: &AppHandle, url: &Url) {
@@ -299,7 +326,7 @@ fn save_server(
         target
     };
     grant(&app, &url);
-    go(&webview, target)
+    leave(&webview, &target)
 }
 
 /// Where Back from the bundled screen may go: `back` only when it is a page of
@@ -315,23 +342,30 @@ fn may_check(asked: &AtomicBool, on_load: bool) -> bool {
     !on_load || was_asked
 }
 
-/// Leaves the bundled screen: to `back` when it is a page of a saved server
-/// (the App updates screen passes the page that opened it), otherwise to the
-/// active server's Settings.
+/// How the bundled screen is left, never with a new entry after it (issue #67):
+/// - `back`, when it is a page of a saved server (the App updates screen passes
+///   Settings → About of the page that opened it), opens in the screen's place:
+///   the web UI drops `?about` from its own entry once it has scrolled, and a
+///   check may have changed what About shows, so it loads anew;
+/// - otherwise (Add/Edit server → Cancel) back in history to the server page
+///   that opened the screen, as the system Back does, or with nothing behind
+///   it the active server's Settings (the server screen with none saved).
+fn cancel_script(store: &Store, back: Option<&str>) -> Result<String, String> {
+    Ok(match back_to(store, back) {
+        Some(u) => replace_script(&u),
+        None => back_script(&match store.active_profile() {
+            Some(a) => settings_of(a)?,
+            None => screen_url(&[]),
+        }),
+    })
+}
+
+/// Leaves the bundled screen (see cancel_script).
 #[tauri::command]
 fn cancel_form(webview: Webview, shell: State<'_, Shell>, back: Option<String>) -> Result<(), String> {
     require_local(&webview)?;
-    let target = {
-        let store = shell.store.lock().unwrap();
-        match back_to(&store, back.as_deref()) {
-            Some(u) => u,
-            None => match store.active_profile() {
-                Some(a) => settings_of(a)?,
-                None => screen_url(&[]),
-            },
-        }
-    };
-    go(&webview, target)
+    let script = cancel_script(&shell.store.lock().unwrap(), back.as_deref())?;
+    webview.eval(script).map_err(|e| e.to_string())
 }
 
 /// Asks GitHub for the latest release, only when the user asked: a tap on
@@ -980,6 +1014,49 @@ mod tests {
         asked.store(true, Ordering::SeqCst);
         assert!(may_check(&asked, false));
         assert!(!may_check(&asked, true), "a tap uses up the opening too");
+    }
+
+    /// The JavaScript string literal in a script, read back.
+    fn literal_in(script: &str, prefix: &str) -> String {
+        let rest = script.strip_prefix(prefix).unwrap_or_else(|| panic!("{script} starts with {prefix}"));
+        let lit = rest.strip_suffix(')').unwrap_or_else(|| panic!("{script} ends the call"));
+        serde_json::from_str(lit).unwrap_or_else(|e| panic!("{lit} is one string literal: {e}"))
+    }
+
+    #[test]
+    fn leaving_the_screen_replaces_its_history_entry() {
+        // issue #67: a new entry kept the screen below the server for Android's Back
+        for url in [
+            "https://books.example.org/kisiauthong/",
+            "http://192.168.1.20:8080/#settings",
+            "https://books.example.org/a'b/\");alert(1);//#settings?about",
+            "https://books.example.org/%E8%A8%98/</script>",
+        ] {
+            let u = Url::parse(url).unwrap();
+            let script = replace_script(&u);
+            // the whole argument is one string literal: nothing of the URL runs as code
+            assert_eq!(literal_in(&script, "location.replace("), u.as_str(), "{script}");
+        }
+    }
+
+    #[test]
+    fn cancel_goes_back_to_the_page_that_opened_the_screen() {
+        let back = "if (history.length > 1) history.back(); else location.replace(";
+        let mut s = Store::default();
+        // nothing saved: only the server screen itself is left
+        let start = cancel_script(&s, None).unwrap();
+        assert_eq!(literal_in(&start, back), screen_url(&[]).as_str());
+        let id = s.upsert(None, None, "https://books.example.org/kisiauthong/").unwrap();
+        s.activate(&id, "2026-11-23T00:00:00Z".into());
+        // Add/Edit server → Cancel: the opener first, never a new entry after the screen
+        let cancel = cancel_script(&s, None).unwrap();
+        assert_eq!(literal_in(&cancel, back), "https://books.example.org/kisiauthong/#settings");
+        // App updates → Back: Settings → About of the opener, in the screen's place
+        let about = "https://books.example.org/kisiauthong/#settings?about";
+        assert_eq!(literal_in(&cancel_script(&s, Some(about)).unwrap(), "location.replace("), about);
+        // a `back` that is not a saved server's page is ignored
+        let other = cancel_script(&s, Some("https://evil.example/#settings")).unwrap();
+        assert_eq!(literal_in(&other, back), "https://books.example.org/kisiauthong/#settings");
     }
 
     #[test]
