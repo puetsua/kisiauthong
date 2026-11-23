@@ -956,12 +956,50 @@ function filteredTxns() {
   else if (f.tag) list = list.filter((t) => txnCats(t).includes(f.tag));
   return list;
 }
+// A filter whose value is gone or unknown (a category merged away elsewhere, an old or shared link) would
+// match nothing while its dropdown, having no such option, shows "All …" (issue #79). Only load() drops such
+// values, from state.filter and from the address, and only a fetch begun after the address named them: an
+// older one may not know a category made elsewhere yet. An address from before a merge (browser Back) then
+// shows everything: only a filter on screen follows a merge.
+function goneFilters(f) {
+  const d = state.data;
+  return ["tag", "account", "type"].filter((k) => f[k] && !(k === "tag" ? f.tag === "none" || d.tags.some((t) => t.id === f.tag)
+    : k === "account" ? (d.allAccounts || d.accounts).some((x) => x.id === f.account)
+      : Object.keys(TYPE_L).includes(f.type))); // not `in`: "toString" is no type
+}
+// the filters the Transactions address names ("" elsewhere), and the unknown ones among them
+function addressFilters() {
+  const { path, params } = hashParts();
+  return path === "transactions" ? { tag: params.get("tag") || "", account: params.get("account") || "", type: params.get("type") || "" } : null;
+}
+const addressKey = () => JSON.stringify(addressFilters());
+function goneInAddress() {
+  const f = addressFilters();
+  return f ? goneFilters(f) : [];
+}
+function dropGoneFilters() {
+  goneFilters(state.filter).forEach((k) => { state.filter[k] = ""; });
+  const gone = goneInAddress(), { params } = hashParts();
+  if (!gone.length) return;
+  gone.forEach((k) => params.delete(k));
+  history.replaceState(null, "", "#transactions" + (params.toString() ? "?" + params : "")); // render() follows
+}
+// fetches of the books, numbered as they begin; applied: the one on screen. filterAfter: only a fetch
+// numbered above it may drop the unknown filter values the address named (asked: which ones, so a redraw
+// does not move the mark again)
+const loads = { seq: 0, applied: 0, filterAfter: 0, asked: "" };
 // The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
 // search can be bookmarked, shared and reloaded. A bare #transactions keeps what is on screen.
 function readTxnURL() {
   const qs = hashParts().params;
   if (![...qs.keys()].length) return;
   state.filter = { q: qs.get("q") || "", account: qs.get("account") || "", type: qs.get("type") || "", tag: qs.get("tag") || "" };
+  if (!Object.keys(TYPE_L).includes(state.filter.type)) state.filter.type = ""; // the types never change: no fetch helps
+  // a value this page does not know may be gone, or made elsewhere and not fetched yet: refresh, and let only
+  // a fetch begun from now on decide; one under way may be older than the value (issue #79)
+  const unknown = state.data ? goneFilters(state.filter).map((k) => k + "=" + state.filter[k]).join("&") : "";
+  // asked already: a refresh is on its way, or load() asks for the next one
+  if (unknown && unknown !== loads.asked) { loads.asked = unknown; loads.filterAfter = loads.seq; liveForce(); }
   state.searchPage = Math.max(0, (parseInt(qs.get("page"), 10) || 1) - 1);
   const per = parseInt(qs.get("per"), 10);
   if (PAGE_SIZES.includes(per)) state.pageSize = per;
@@ -980,12 +1018,14 @@ function writeTxnURL() {
 // the Transactions filter dropdowns' options, with the filters in state.filter selected
 function txnFilterOptions() {
   const f = state.filter;
+  // a value the address named that this page does not know yet: shown as such until a fetch decides (issue #79)
+  const gone = goneFilters(f), checking = (k) => (gone.includes(k) ? `<option value="${esc(f[k])}" selected disabled>${esc(__("Checking…"))}</option>` : "");
   const accOpt = (a) => `<option value="${esc(a.id)}" ${f.account === a.id ? "selected" : ""}>${esc(accName(a.id))}</option>`;
-  const account = `<option value="">${esc(__("All accounts"))}</option>` + state.data.accounts.map(accOpt).join("")
+  const account = `<option value="">${esc(__("All accounts"))}</option>` + checking("account") + state.data.accounts.map(accOpt).join("")
     + (state.data.externals.length ? `<optgroup label="${esc(__("External accounts"))}">${state.data.externals.map(accOpt).join("")}</optgroup>` : "");
   const tagOpt = (t) => `<option value="${esc(t.id)}" ${f.tag === t.id ? "selected" : ""}>${esc(t.name)}</option>`;
   const tagGroup = (label, tags) => (tags.length ? `<optgroup label="${esc(label)}">${tags.map(tagOpt).join("")}</optgroup>` : "");
-  const tag = `<option value="">${esc(__("All categories"))}</option><option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
+  const tag = `<option value="">${esc(__("All categories"))}</option>${checking("tag")}<option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
     + tagGroup(__("Categories"), state.data.tags);
   const type = `<option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}`;
   return { account, type, tag };
@@ -1109,7 +1149,7 @@ function screenTransactions(v) {
   countF();
   drawResults();
   // a refresh while the search box or a filter has focus: the same fields stay (focus, caret, an open IME word),
-  // their options and values follow the new data and state.filter (a removed category's filter is cleared by load())
+  // their options and values follow the new data and state.filter (load() drops a value that is gone, issue #79)
   state.viewRedraw = { key: "transactions", fn: () => {
     const o = txnFilterOptions();
     ["account", "type", "tag"].forEach((k) => { const sel = $("#f" + k); sel.innerHTML = o[k]; sel.value = state.filter[k]; });
@@ -2431,6 +2471,7 @@ function bindAuthServer() {
 function showAuth(mode) {
   liveStop();
   state.me = null; state.data = null;
+  loads.applied = ++loads.seq; // a fetch still under way is not drawn over the sign-in screen
   msg("");
   $(".shell").hidden = true; $("#addBtn").hidden = true; showMore(false); $("#notifPanel").hidden = true; $("#userMenu").hidden = true;
   const box = $("#authScreen");
@@ -2951,20 +2992,31 @@ function render(refresh) {
 }
 window.addEventListener("hashchange", render);
 async function load() {
-  state.data = await api("/api/state");
+  const seq = ++loads.seq, addr = addressKey(); // the filters only: typing a search changes the address too
+  const data = await api("/api/state");
+  let s = null, sErr = null;
+  try { s = await api("/api/settings"); } catch (e) { sErr = e; }
+  // fetches overlap (a write, a live refresh): an answer older than the one on screen is dropped whole
+  if (seq < loads.applied) return;
+  loads.applied = seq;
+  state.data = data;
   state.data.allAccounts = state.data.accounts;
   state.data.externals = state.data.accounts.filter((a) => a.kind === "external");
   state.data.accounts = state.data.accounts.filter((a) => a.kind !== "external");
-  try {
-    const s = await api("/api/settings");
+  if (s) {
     state.dashboard = s.dashboard;
     state.general = s.general;
     state.about = s.about;
     state.dismissed = (s.notifications && s.notifications.dismissed) || [];
-  } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
+  } else msg(__("Settings unavailable, using defaults: {message}", { message: sErr ? sErr.message : "—" }), "error");
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
-  if (state.filter.tag && !state.data.tags.some((t) => t.id === state.filter.tag)) state.filter.tag = ""; // e.g. merged away
+  // e.g. a category merged away; before render(), which reads the address. A fetch begun before the
+  // address named an unknown value (or changed: a link opened while it ran) cannot tell gone from new: the
+  // next one decides.
+  if (seq > loads.filterAfter && addressKey() === addr) { dropGoneFilters(); loads.asked = ""; live.force = false; }
+  else if (goneFilters(state.filter).length) liveForce();
+  else loads.asked = ""; // nothing unknown left (Clear): the same link opened again asks anew
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render(true);
@@ -2977,7 +3029,8 @@ async function load() {
 // gives up on (a proxy's error page, a server restart) is retried here, waiting longer each time. Coming
 // back to a page that sat in the background (phones pause it) or back online also catches up.
 // rev: the newest revision the server announced; loading: a fetch is under way
-const live = { es: null, timer: 0, retry: 0, wait: 2000, hiddenAt: 0, rev: "", loading: false };
+// force: fetch even when no newer revision was announced (an unknown filter value, issue #79)
+const live = { es: null, timer: 0, retry: 0, wait: 2000, hiddenAt: 0, rev: "", loading: false, force: false };
 // a form is open or being typed in: the refresh waits so nothing typed is lost. A focused search box or
 // filter (data-live-keep) does not count: render() redraws only what is under it (issue #77).
 function liveBusy() {
@@ -2990,17 +3043,22 @@ function liveSchedule(delay = 400) {
   clearTimeout(live.timer);
   live.timer = setTimeout(liveRefresh, delay);
 }
+function liveForce() { live.force = true; liveSchedule(); }
 // whether the page is behind the newest announced revision. The server announces a write before it
 // answers it, so the writing page often hears of its own write while its own fetch is still running:
 // by the time the timer fires, that fetch has brought the revision in and nothing is left to do.
 const liveBehind = () => !(live.rev && state.data && live.rev === state.data.rev);
 async function liveRefresh() {
   live.timer = 0;
-  if (!state.me || !state.data || !liveBehind()) return;
+  if (!state.me || !state.data || !(liveBehind() || live.force)) return;
   if (live.loading || liveBusy()) { liveSchedule(1500); return; } // a fetch is running, or a form is open
-  const y = window.scrollY;
-  live.loading = true;
-  try { await load(); window.scrollTo(0, y); } catch (e) { /* the next event or visit tries again */ }
+  const y = window.scrollY, forced = live.force;
+  live.loading = true; live.force = false;
+  try { await load(); window.scrollTo(0, y); } catch (e) {
+    // the next event or visit tries again; an asked-for refresh (issue #79) is also asked anew by the next
+    // redraw of Transactions, or by opening the same link again
+    if (forced && state.me) { live.force = true; loads.asked = ""; }
+  }
   finally { live.loading = false; }
 }
 // ready (on every (re)connect) and change events: fetch unless the page shows that revision already,
@@ -3009,7 +3067,7 @@ function liveOnChange(data) {
   let rev = "";
   try { rev = JSON.parse(data).rev || ""; } catch (e) { /* no revision: fetch */ }
   live.rev = rev;
-  if (!liveBehind()) return false;
+  if (!liveBehind() && !live.force) return false;
   liveSchedule();
   return true;
 }
@@ -3032,13 +3090,15 @@ function liveStart() {
 function liveStop() {
   clearTimeout(live.timer); clearTimeout(live.retry);
   if (live.es) live.es.close();
-  Object.assign(live, { es: null, timer: 0, retry: 0, wait: 2000, rev: "" });
+  Object.assign(live, { es: null, timer: 0, retry: 0, wait: 2000, rev: "", force: false });
+  loads.asked = "";
 }
 // back from the background, focus, or back online: reconnect if needed. After a long background pause
 // or a network change the stream may look open but be dead (phones), so it is opened anew; its ready
 // event says whether anything changed meanwhile.
 function liveWake(stale) {
   if (!state.me || document.visibilityState === "hidden") return;
+  if (live.force && stale) liveSchedule(); // a refresh asked for (issue #79) that failed: a later visit tries again
   if (typeof EventSource === "undefined") { if (stale) { live.rev = ""; liveSchedule(); } return; }
   if (live.es && !stale) return;
   if (live.es) live.es.close();

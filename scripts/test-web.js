@@ -729,6 +729,218 @@ later.push(["Settings → Servers: when the list cannot load, the section and it
   assert.strictEqual($el('.snav [data-goto="servers"]').hidden, true);
   delete sandbox.kisiauthongApp;
 }]);
+later.push(["transactions (#79): a filter the dropdowns cannot show is dropped by a fresh fetch, also from the address", async () => {
+  const dialog = $el("#dialog"), drawer = $el("#drawer");
+  const was = { data: t.state.data, filter: t.state.filter, period: t.state.period, me: t.state.me, general: t.state.general, dashboard: t.state.dashboard, about: t.state.about, dismissed: t.state.dismissed, open: dialog.open, hidden: drawer.hidden };
+  const realApi = sandbox.api, realRender = sandbox.render, realSet = sandbox.setTimeout, realClear = sandbox.clearTimeout;
+  const spend = (id, note, date, tagIds) => ({ ...tx(id, "a1", "acc-external", 12000, date, "posted", note), tagIds });
+  // the server's books: "g-gone" was merged into g7 elsewhere, g8 was made elsewhere
+  const tags = [{ id: "g7", name: "Pets" }, { id: "g8", name: "Garden" }];
+  const transactions = [spend("t7", "Bus fare", "2026-11-11", []), spend("t8", "Cat food", "2026-11-10", ["g7"]), spend("t9", "Seeds", "2026-11-09", ["g8"])];
+  const books = (tg) => ({ ...was.data, accounts: [acc, other, ext], tags: tg, transactions, rev: "r-9" });
+  const held = [], failing = []; // each /api/state answer waits in held until the test gives it
+  let settings = { general: {}, about: {}, notifications: {} };
+  sandbox.api = (url) => (url === "/api/state" ? new Promise((ok, fail) => { held.push(ok); failing.push(fail); }) : Promise.resolve(settings));
+  const timers = []; // timers still set (the live refresh's), fired by the test
+  let ids = 0;
+  sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms, id: ++ids }); return ids; };
+  sandbox.clearTimeout = (id) => { const i = timers.findIndex((x) => x.id === id); if (i >= 0) timers.splice(i, 1); };
+  const tick = () => new Promise((r) => realSet(r, 0));
+  sandbox.scrollY = 0; sandbox.scrollTo = () => {}; // liveRefresh keeps the scroll position
+  const answer = async (i, tg) => { held[i](books(tg)); await tick(); };
+  const shown = () => $el("#txnResults").innerHTML;
+  const open = (hash) => { location.hash = hash; t.render({ type: "hashchange" }); };
+  // the live refresh the link asked for: fire its timer, answer its fetch
+  const refresh = async (tg) => { const n = held.length; const done = timers.pop().fn(); await tick(); held[n](books(tg)); await done; };
+  try {
+    docProps.activeElement = null; dialog.open = false; drawer.hidden = true; // no form open: a refresh may run
+    t.state.me = { id: "usr-x" };
+    t.state.period = { mode: "month", start: "2026-11-01", end: "2026-11-30" };
+    // a live refresh after the merge, or a reload: the address still has the old id
+    location.hash = "#transactions?tag=g-gone&type=expense";
+    t.state.filter = { q: "", account: "", type: "", tag: "g-gone" };
+    let done = sandbox.load();
+    await answer(0, tags); await done;
+    assert.strictEqual(t.state.filter.tag, "", "the address does not bring the removed category back");
+    assert.strictEqual(t.state.filter.type, "expense", "the other filters stay");
+    assert.strictEqual(location.hash, "#transactions?type=expense", "the address drops it too");
+    assert.match(shown(), /Bus fare/, "the period's transactions are listed, not an empty filter");
+    assert.match(shown(), /Seeds/);
+    // a link to a category made elsewhere, opened while this page is behind: kept, and shown after a refresh
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions?tag=g8");
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "an unknown value asks for a refresh");
+    assert.match($el("#view").innerHTML, /<option value="g8" selected disabled>Checking…<\/option>/, "meanwhile the dropdown says so, and keeps it");
+    await refresh(tags);
+    assert.strictEqual(t.state.filter.tag, "g8", "which knows the category");
+    assert.strictEqual(location.hash, "#transactions?tag=g8");
+    assert.match(shown(), /Seeds/);
+    assert.doesNotMatch(shown(), /Bus fare/);
+    // a fetch begun before the link was opened (a write, a live refresh) that answers without g8 does not drop it
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions");
+    const n = held.length;
+    done = sandbox.load(); // under way
+    open("#transactions?tag=g8");
+    await answer(n, [{ id: "g7", name: "Pets" }]); await done;
+    assert.strictEqual(t.state.filter.tag, "g8", "the older answer does not drop what the link names");
+    assert.strictEqual(location.hash, "#transactions?tag=g8");
+    await refresh(tags);
+    assert.match(shown(), /Seeds/);
+    // the same with the category dropdown focused: the redraw reads no address, the next refresh decides
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions");
+    done = sandbox.load();
+    open("#transactions?tag=g8");
+    docProps.activeElement = { closest: (sel) => (sel === "#view" ? {} : null), matches: (sel) => sel === "[data-live-keep]" || sel === "input,textarea,select,[contenteditable=true]" };
+    await answer(held.length - 1, [{ id: "g7", name: "Pets" }]); await done;
+    assert.strictEqual(t.state.filter.tag, "g8");
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "the older answer asks for the next refresh");
+    await refresh(tags);
+    assert.match(shown(), /Seeds/);
+    docProps.activeElement = null;
+    // a redraw while the refresh is under way (same address) does not make that refresh too old to decide
+    open("#transactions?tag=g-zap");
+    const before = held.length;
+    done = timers.pop().fn(); await tick();
+    t.render({ type: "hashchange" });
+    assert.strictEqual(timers.length, 0, "the redraw asks for no other refresh");
+    held[before](books(tags)); await done;
+    assert.strictEqual(location.hash, "#transactions", "decided by that one fetch");
+    assert.strictEqual(timers.length, 0, "with no other");
+    assert.strictEqual(held.length, before + 1);
+    // a live event announcing the revision already on screen does not cancel the refresh the link asked for
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions?tag=g8");
+    assert.strictEqual(t.liveOnChange('{"rev":"' + t.state.data.rev + '"}'), true);
+    await refresh(tags);
+    assert.match(shown(), /Seeds/);
+    // that refresh fails (offline): the next event tries again
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions?tag=g8");
+    let n2 = held.length;
+    done = timers.pop().fn(); await tick();
+    failing[n2](new Error("Failed to fetch")); await done;
+    assert.strictEqual(t.live.force, true, "still to do");
+    open("#transactions?tag=g8"); // the same link again, or any redraw: asks again
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "opening the link again tries again");
+    timers.length = 0;
+    sandbox.EventSource = function () { return { addEventListener: () => {}, close: () => {} }; }; // a stream is open
+    t.liveWake(false);
+    assert.deepStrictEqual(timers, [], "a mere focus does not fetch again");
+    t.liveWake(true);
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "coming back to the page after a while tries again");
+    delete sandbox.EventSource;
+    await refresh(tags);
+    assert.match(shown(), /Seeds/);
+    assert.strictEqual(t.live.force, false, "done");
+    // signed out while it ran (the session ended: 401): nothing is carried over to the next sign-in
+    open("#transactions?tag=g-q");
+    n2 = held.length;
+    done = timers.pop().fn(); await tick();
+    t.state.me = null;
+    failing[n2](new Error("Unauthorized")); await done;
+    assert.strictEqual(t.live.force, false, "signed out");
+    t.state.me = { id: "usr-x" };
+    // an older answer arriving last is dropped whole: it neither replaces newer books nor drops a known filter
+    const nA = held.length;
+    const fetchA = sandbox.load(), fetchB = sandbox.load();
+    await answer(nA + 1, tags); await fetchB;
+    open("#transactions?tag=g8");
+    assert.strictEqual(timers.length, 0, "known: nothing to ask");
+    await answer(nA, [{ id: "g7", name: "Pets" }]); await fetchA;
+    assert.strictEqual(t.state.data.tags.length, 2, "the newer books stay");
+    assert.strictEqual(t.state.filter.tag, "g8");
+    assert.strictEqual(location.hash, "#transactions?tag=g8");
+    // a fetch begun for another reason (a saved form) that settles the value ends the asked-for refresh too
+    open("#transactions?tag=g-x");
+    assert.strictEqual(t.live.force, true);
+    done = sandbox.load(); await answer(held.length - 1, tags); await done;
+    assert.strictEqual(t.live.force, false, "nothing left to fetch");
+    assert.strictEqual(location.hash, "#transactions");
+    const fetches = held.length;
+    await timers.pop().fn();
+    assert.strictEqual(held.length, fetches, "the refresh's timer then fetches nothing");
+    // a link opened while a fetch begun earlier ran: that fetch does not decide, the next one does
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions");
+    done = sandbox.load();
+    location.hash = "#transactions?tag=g8"; // the address changes first, its hashchange comes later
+    await answer(held.length - 1, [{ id: "g7", name: "Pets" }]); await done;
+    assert.strictEqual(location.hash, "#transactions?tag=g8", "not dropped by a fetch older than the link");
+    await refresh(tags);
+    assert.strictEqual(t.state.filter.tag, "g8");
+    assert.match(shown(), /Seeds/);
+    // Clear before the refresh answers, then the same link again: it asks again (not "Checking…" for good)
+    open("#transactions?tag=g-q2");
+    done = timers.pop().fn(); await tick();
+    location.hash = "#transactions"; t.state.filter = { q: "", account: "", type: "", tag: "" }; t.render(); // Clear
+    await answer(held.length - 1, tags); await done;
+    open("#transactions?tag=g-q2");
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "the same link asks again");
+    await refresh(tags);
+    assert.strictEqual(location.hash, "#transactions");
+    // typing a search while the refresh runs changes the address, not its filters: the refresh still decides
+    open("#transactions?tag=g-q3");
+    done = timers.pop().fn(); await tick();
+    location.hash = "#transactions?q=bus&tag=g-q3"; // what writeTxnURL writes after a keystroke
+    await answer(held.length - 1, tags); await done;
+    assert.strictEqual(location.hash, "#transactions?q=bus", "decided");
+    assert.deepStrictEqual(timers, []);
+    open("#transactions");
+    t.state.filter = { q: "", account: "", type: "", tag: "" };
+    // a type that does not exist: no fetch can change the types, so it goes at once
+    open("#transactions?type=toString");
+    assert.strictEqual(timers.length, 0);
+    assert.strictEqual(location.hash, "#transactions");
+    // an old or shared link with an unknown account, or a merged-away category: dropped by the refresh
+    timers.length = 0;
+    open("#transactions?account=acc-elsewhere&type=toString&tag=g-gone");
+    assert.match($el("#view").innerHTML, /<option value="acc-elsewhere" selected disabled>Checking…<\/option>/);
+    await refresh(tags);
+    assert.deepStrictEqual([t.state.filter.account, t.state.filter.type, t.state.filter.tag], ["", "", ""]);
+    assert.strictEqual(location.hash, "#transactions");
+    assert.match(shown(), /Bus fare/);
+    assert.strictEqual(timers.length, 0, "and asks for nothing more");
+    // known values, an external account and Uncategorised ask for no refresh
+    open("#transactions?account=acc-external&type=expense&tag=g7");
+    open("#transactions?tag=none");
+    assert.strictEqual(timers.length, 0);
+    assert.strictEqual(t.state.filter.tag, "none");
+    assert.match(shown(), /Bus fare/, "Uncategorised lists the spending without a category");
+    assert.doesNotMatch(shown(), /Cat food/);
+    // a refresh with the dropdown focused reads no address: load() alone decides, and it keeps Uncategorised
+    sandbox.render = () => {};
+    t.state.filter = { q: "", account: "", type: "", tag: "none" };
+    done = sandbox.load(); await answer(held.length - 1, tags); await done;
+    assert.strictEqual(t.state.filter.tag, "none", "Uncategorised is not a category id, and it stays");
+    t.state.filter = { q: "", account: "", type: "", tag: "g-gone" };
+    done = sandbox.load(); await answer(held.length - 1, tags); await done;
+    assert.strictEqual(t.state.filter.tag, "");
+    // settings that answer with nothing: defaults, as before
+    settings = null;
+    done = sandbox.load(); await answer(held.length - 1, tags); await done;
+    assert.match(String($el("#toast").textContent), /Settings unavailable/);
+    settings = { general: {}, about: {}, notifications: {} };
+    // signed out while a fetch was under way: its answer is not drawn over the sign-in screen
+    sandbox.render = realRender;
+    done = sandbox.load();
+    t.showAuth("login");
+    await answer(held.length - 1, tags); await done;
+    assert.strictEqual(t.state.data, null);
+  } finally {
+    t.liveStop();
+    sandbox.api = realApi; sandbox.render = realRender; sandbox.setTimeout = realSet; sandbox.clearTimeout = realClear;
+    delete sandbox.scrollY; delete sandbox.scrollTo;
+    // load() also replaced the settings: put them back for the tests after this one
+    Object.assign(t.state, { data: was.data, filter: was.filter, period: was.period, me: was.me, general: was.general, dashboard: was.dashboard, about: was.about, dismissed: was.dismissed });
+    dialog.open = was.open; drawer.hidden = was.hidden;
+    t.live.rev = "";
+    location.hash = "";
+    delete docProps.activeElement;
+    t.setLang("en");
+  }
+}]);
 (async () => {
   for (const [name, fn] of later) { await fn(); n++; console.log("ok", name); }
   console.log(`${n} tests passed`);
