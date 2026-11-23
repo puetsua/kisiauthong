@@ -27,6 +27,9 @@
   document.getElementById("close").addEventListener("click", () => win("close"));
   // the webview's own menu (Back, Reload, Print…) makes no sense on a title bar
   document.addEventListener("contextmenu", (e) => e.preventDefault());
+  // A click on the bar gives this webview the keyboard; hand it back to the
+  // page, so typing and shortcuts keep working (and after Alt+Tab too).
+  window.addEventListener("focus", () => t.invoke("plugin:webview|set_webview_focus", { label: "content" }).catch(() => {}));
 
   window.kstFrame = {
     focus(on) { document.body.classList.toggle("blur", !on); },

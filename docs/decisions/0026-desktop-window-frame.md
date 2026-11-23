@@ -34,12 +34,16 @@ frame has two problems the issue names:
 - **Only the frame may move, resize or close the window.** The capability
   `frame` grants `core:window:allow-start-dragging`, `allow-minimize`,
   `allow-toggle-maximize` (and Tauri's internal double-click variant) and
-  `allow-close` to the `frame` webview alone, for local pages only. Saved
+  `allow-close` to the `frame` webview alone, for local pages only, plus
+  `core:webview:allow-set-webview-focus`: a click on the bar gives the frame
+  the keyboard, and the frame hands it straight back to the page, so typing
+  and shortcuts keep working. Saved
   servers' pages get the bridge in the `content` webview only, as before.
   `scripts/test-app.js` checks both.
 - **Windows:** no system title bar. The shell turns decorations off after the
   webviews exist, so Tauri's resize borders work on every edge and corner.
-  The bar is a drag region; double-clicking it maximizes and restores. The
+  The whole bar, icon and name included, is a drag region (`"deep"`);
+  double-clicking it maximizes and restores. The
   maximize button turns into restore when the window is maximized.
 - **macOS:** the native traffic lights stay (`titleBarStyle: Overlay`,
   `hiddenTitle`), over the frame's left end; the frame draws no buttons there.
@@ -51,6 +55,9 @@ frame has two problems the issue names:
   the server screen); the system colours in high-contrast mode. Button names
   ("Minimize", "Restore"…) come from `strings.js`, in the system language.
 - iOS and Android keep a single webview: they have no window frame.
+- **Linux** is not built yet. Before it is, the frame needs the same work as
+  Windows there (decorations off, its own buttons); as the code stands a Linux
+  build would show the system title bar above the frame.
 
 ## Consequences
 

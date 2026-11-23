@@ -220,11 +220,12 @@ test("window frame: only the bundled frame webview may move, resize or close the
   assert.deepStrictEqual(frame.webviews, ["frame"], "and only for the frame webview, not the whole window");
   assert.ok(!frame.windows, "a window-wide grant would reach the server's page too");
   assert.deepStrictEqual(frame.platforms.sort(), ["linux", "macOS", "windows"], "desktop only");
-  for (const p of frame.permissions) assert.ok(/^core:window:allow-/.test(p), `frame has only window permissions: ${p}`);
+  for (const p of frame.permissions)
+    assert.ok(/^core:window:allow-/.test(p) || p === "core:webview:allow-set-webview-focus", `frame has only window permissions, and may give the page the keyboard: ${p}`);
   for (const f of fs.readdirSync(caps).filter((f) => f !== "frame.json")) {
     const c = cap(f);
     assert.ok(!(c.webviews || []).includes("frame"), `${f} grants nothing to the frame`);
-    assert.ok(!JSON.stringify(c.permissions).includes("core:window"), `${f} grants no window permission`);
+    assert.ok(!/core:(window|webview)/.test(JSON.stringify(c.permissions)), `${f} grants no window or webview permission`);
   }
   assert.ok(!fs.readFileSync(path.join(tauri, "permissions", "app.toml"), "utf8").includes("core:window"), "no permission set has window permissions");
   const lib = fs.readFileSync(path.join(tauri, "src", "lib.rs"), "utf8");
@@ -232,6 +233,7 @@ test("window frame: only the bundled frame webview may move, resize or close the
   assert.ok(/\.webview\(CONTENT\)/.test(grant) && !/\.window\(/.test(grant), "saved servers' pages get the bridge in the content webview only");
   const html = fs.readFileSync(path.join(app, "frame.html"), "utf8");
   for (const m of html.matchAll(/(?:src|href)="([^"]+)"/g)) assert.ok(!/^[a-z]+:/i.test(m[1]), `frame.html loads only bundled files: ${m[1]}`);
+  assert.ok(/<header[^>]*data-tauri-drag-region="deep"/.test(html), "the whole bar drags, text and icon included");
 });
 
 // The RGBA pixels of an 8-bit, non-interlaced RGBA PNG (what scripts/android-icons.py writes).
