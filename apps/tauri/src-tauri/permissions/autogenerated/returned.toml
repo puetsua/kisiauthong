@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-returned"
+description = "Enables the returned command without any pre-configured scope."
+commands.allow = ["returned"]
+
+[[permission]]
+identifier = "deny-returned"
+description = "Denies the returned command without any pre-configured scope."
+commands.deny = ["returned"]

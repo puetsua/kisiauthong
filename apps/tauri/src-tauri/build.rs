@@ -13,6 +13,7 @@ fn main() {
             "update_settings",
             "app_info",
             "open_updates",
+            "returned",
             "servers",
             "use_server",
             "remove_server",

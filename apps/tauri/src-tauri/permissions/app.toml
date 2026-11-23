@@ -8,5 +8,5 @@ permissions = ["allow-app-state", "allow-probe", "allow-save-server", "allow-can
 
 [[set]]
 identifier = "bridge"
-description = "What a saved server's web UI may ask of the app: list, switch to, remove servers, open the add or edit screen, open a link in the system browser, ask a yes/no question in a native dialog, read the app's version, and open the App updates screen."
-permissions = ["allow-servers", "allow-use-server", "allow-remove-server", "allow-open-server-form", "allow-open-external", "allow-confirm", "allow-app-info", "allow-open-updates"]
+description = "What a saved server's web UI may ask of the app: list, switch to, remove servers, open the add or edit screen, open a link in the system browser, ask a yes/no question in a native dialog, read the app's version, open the App updates screen, and learn which page to show after coming back from the server screen."
+permissions = ["allow-returned", "allow-servers", "allow-use-server", "allow-remove-server", "allow-open-server-form", "allow-open-external", "allow-confirm", "allow-app-info", "allow-open-updates"]
