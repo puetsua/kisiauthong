@@ -979,6 +979,155 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     t.setLang("en");
   }
 }]);
+later.push(["settings (#87): a setting saved while a fetch runs is not put back by that fetch's answer", async () => {
+  const was = { data: t.state.data, me: t.state.me, general: t.state.general, dashboard: t.state.dashboard, about: t.state.about, dismissed: t.state.dismissed, customizing: t.state.customizing };
+  const realApi = sandbox.api, realSet = sandbox.setTimeout, realClear = sandbox.clearTimeout;
+  const tick = () => new Promise((r) => realSet(r, 0));
+  const timers = []; // the live refresh's timers, kept here, not fired
+  sandbox.setTimeout = (fn, ms) => timers.push({ fn, ms });
+  sandbox.clearTimeout = () => {};
+  // the server: a fetch's settings are the ones saved when the server reads them, and its answer waits in
+  // held until the test gives it
+  const copy = (o) => JSON.parse(JSON.stringify(o));
+  let saved = { dashboard: null, general: { language: "en" }, about: {}, notifications: { dismissed: [] } };
+  const held = [];
+  const books = () => ({ ...was.data, accounts: [acc, other, ext], rev: "r-87" });
+  sandbox.api = (url, opts) => {
+    if (url === "/api/state") return Promise.resolve(books());
+    if (opts && opts.method === "PUT") {
+      const b = JSON.parse(opts.body);
+      saved = { ...saved, ...b, general: { ...saved.general, ...(b.general || {}) } };
+      return Promise.resolve(copy(saved));
+    }
+    const read = copy(saved);
+    return new Promise((ok) => held.push(() => ok(read)));
+  };
+  // a fetch begins (a write, a live refresh) and the server reads the settings, which have not been saved yet
+  const begin = async () => { const done = sandbox.load(); await tick(); return { done }; };
+  const on = {}; // the listeners the screens add, by element
+  ["#setLang", "#dashSave"].forEach((sel) => { $el(sel).addEventListener = (ev, fn) => { on[sel] = fn; }; });
+  try {
+    t.state.me = { id: "usr-x" };
+    location.hash = "#settings";
+    t.render();
+    let { done } = await begin();
+    await on["#setLang"]({ target: { value: "zh-TW" } });
+    assert.strictEqual(t.state.general.language, "zh-TW");
+    held.pop()(); await done;
+    assert.strictEqual(t.state.general.language, "zh-TW", "the language saved stays");
+    assert.strictEqual(vm.runInContext("LANG", sandbox), "zh-TW", "and so does the UI language");
+    assert.deepStrictEqual(t.state.data.rev, "r-87", "the fetch's books are drawn");
+    assert.ok(timers.some((x) => x.ms === 400) && t.live.force, "and a fresh fetch follows, for settings changed elsewhere");
+    timers.length = 0; t.live.force = false;
+    // a fetch begun after the save brings the saved settings, and later changes from elsewhere
+    saved.general = { ...saved.general, numberFormat: "space" };
+    ({ done } = await begin()); held.pop()(); await done;
+    assert.strictEqual(t.state.general.numberFormat, "space", "a later fetch applies its settings");
+    // Customize dashboard: saved while a fetch runs
+    const layout = JSON.parse(JSON.stringify(t.DASH_DEFAULT));
+    const DASH0 = { items: [] };
+    ({ done } = await begin());
+    t.state.customizing = true; t.state.dashDraft = JSON.parse(JSON.stringify(layout)); t.state.dashSel = null;
+    location.hash = "#dashboard";
+    t.screenDashboardEditor({ innerHTML: "", querySelector: () => element(), querySelectorAll: listStub });
+    t.state.dashDraft.items.splice(0, 1); // a widget removed in the editor
+    await on["#dashSave"]();
+    assert.strictEqual(t.state.customizing, false);
+    held.pop()(); await done;
+    assert.strictEqual((t.state.dashboard || DASH0).items.length, layout.items.length - 1, "the saved dashboard stays");
+    // a notification dismissed while a fetch runs (the list is shown at once, before the save answers)
+    ({ done } = await begin());
+    await sandbox.saveDismissed(["note-87"]);
+    held.pop()(); await done;
+    assert.ok(t.state.dismissed.includes("note-87"), "the dismissed notification stays dismissed");
+    // and one answering between the dismissal and its save's answer
+    let release;
+    const realPut = sandbox.api;
+    sandbox.api = (url, opts) => (opts && opts.method === "PUT" ? new Promise((ok) => { release = () => ok(realPut(url, opts)); }) : realPut(url, opts));
+    ({ done } = await begin());
+    const saving = sandbox.saveDismissed(["note-88"]);
+    held.pop()(); await done;
+    assert.ok(t.state.dismissed.includes("note-88"), "shown dismissed while it saves");
+    release(); await saving;
+    assert.ok(t.state.dismissed.includes("note-88"));
+    // a fetch begun after the dismissal, read by the server before the save, answering after the save
+    const saving2 = sandbox.saveDismissed(["note-89"]);
+    ({ done } = await begin());
+    release(); await saving2;
+    held.pop()(); await done;
+    assert.ok(t.state.dismissed.includes("note-89"), "still dismissed after the older answer");
+  } finally {
+    t.liveStop();
+    sandbox.api = realApi; sandbox.setTimeout = realSet; sandbox.clearTimeout = realClear;
+    ["#setLang", "#dashSave"].forEach((sel) => { delete $el(sel).addEventListener; });
+    Object.assign(t.state, was, { dashDraft: null, dashSel: null });
+    location.hash = "";
+    t.setLang("en");
+  }
+}]);
+later.push(["live refresh (#88): the scroll position is put back only on the screen it was taken on, by its own answer", async () => {
+  const was = { data: t.state.data, me: t.state.me, general: t.state.general, dashboard: t.state.dashboard, about: t.state.about, dismissed: t.state.dismissed };
+  const dialog = $el("#dialog"), drawer = $el("#drawer"), wasUI = { open: dialog.open, hidden: drawer.hidden };
+  const realApi = sandbox.api, realSet = sandbox.setTimeout;
+  const tick = () => new Promise((r) => realSet(r, 0));
+  const held = [];
+  const settings = { dashboard: was.dashboard, general: was.general || {}, about: was.about || {}, notifications: { dismissed: [] } };
+  sandbox.api = (url) => (url === "/api/state" ? new Promise((ok) => held.push(ok)) : Promise.resolve(settings));
+  const books = (rev) => ({ ...was.data, accounts: [acc, other, ext], rev });
+  const scrolls = [];
+  sandbox.scrollY = 640; sandbox.scrollTo = (x, y) => { scrolls.push(y); };
+  const open = (hash) => { location.hash = hash; t.render({ type: "hashchange" }); };
+  // a live event announced a newer revision: the refresh begins on the screen on view
+  const begin = (rev) => { t.state.data.rev = "r-old"; t.live.rev = rev; return t.liveRefresh(); };
+  try {
+    docProps.activeElement = null; dialog.open = false; drawer.hidden = true;
+    t.state.me = { id: "usr-x" };
+    t.state.data = { ...books("r-old") };
+    // on the same screen: the position is kept
+    open("#accounts");
+    let done = begin("r-1"); await tick();
+    held.pop()(books("r-1")); await done;
+    assert.deepStrictEqual(scrolls, [640], "same screen: scrolled back");
+    // another screen opened while the refresh ran (deleting a reserve opens Reserves): not scrolled
+    scrolls.length = 0;
+    open("#accounts");
+    done = begin("r-2"); await tick();
+    open("#reserves");
+    held.pop()(books("r-2")); await done;
+    assert.deepStrictEqual(scrolls, [], "the new screen keeps its own position");
+    // one account's page to another's: another screen too
+    open(`#acct?id=a1&range=month`);
+    done = begin("r-3"); await tick();
+    open(`#acct?id=a2&range=month`);
+    held.pop()(books("r-3")); await done;
+    assert.deepStrictEqual(scrolls, []);
+    // the same page with another period: the same screen
+    open(`#acct?id=a1&range=month`);
+    done = begin("r-4"); await tick();
+    open(`#acct?id=a1&range=year`);
+    held.pop()(books("r-4")); await done;
+    assert.deepStrictEqual(scrolls, [640]);
+    // the refresh's answer is older than one drawn meanwhile (a write's own fetch): nothing of it is drawn,
+    // so the position is not put back either
+    scrolls.length = 0;
+    open("#accounts");
+    done = begin("r-5"); await tick();
+    const n = held.length, write = sandbox.load();
+    held[n](books("r-6")); await write;
+    held[n - 1](books("r-5")); await done;
+    assert.strictEqual(t.state.data.rev, "r-6", "the newer books stay");
+    assert.deepStrictEqual(scrolls, [], "not scrolled by an answer that was dropped");
+  } finally {
+    t.liveStop();
+    sandbox.api = realApi;
+    delete sandbox.scrollY; delete sandbox.scrollTo;
+    Object.assign(t.state, was);
+    dialog.open = wasUI.open; drawer.hidden = wasUI.hidden;
+    location.hash = "";
+    delete docProps.activeElement;
+    t.setLang("en");
+  }
+}]);
 (async () => {
   for (const [name, fn] of later) { await fn(); n++; console.log("ok", name); }
   console.log(`${n} tests passed`);

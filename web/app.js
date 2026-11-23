@@ -716,6 +716,7 @@ function screenDashboardEditor(v) {
     try {
       const saved = await put("/api/settings", { dashboard: draft });
       state.dashboard = saved.dashboard;
+      settingsApplied();
       state.customizing = false;
       msg(__("Dashboard saved."));
       render();
@@ -994,8 +995,12 @@ function dropGoneFilters() {
 }
 // fetches of the books, numbered as they begin; applied: the one on screen. filterAfter: only a fetch
 // numbered above it may drop the unknown filter values the address named (asked: which ones, so a redraw
-// does not move the mark again)
-const loads = { seq: 0, applied: 0, filterAfter: 0, asked: "" };
+// does not move the mark again). settings: a fetch numbered below it began before a setting was saved and
+// applied in place, so its settings are older than the ones on screen (issue #87)
+const loads = { seq: 0, applied: 0, filterAfter: 0, asked: "", settings: 0 };
+// call after applying a setting from its own PUT (not through load()): a fetch under way keeps its books
+// but not its settings, which may be from before the save (issue #87)
+function settingsApplied() { loads.settings = ++loads.seq; }
 // The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
 // search can be bookmarked, shared and reloaded. A bare #transactions keeps what is on screen.
 function readTxnURL() {
@@ -1891,6 +1896,7 @@ function screenSettings(v) {
     try {
       const s = await put("/api/settings", { general: patch });
       state.general = s.general;
+      settingsApplied();
       setLang(pickLang(state.general.language));
       applyPageWidth();
       msg(done());
@@ -2401,8 +2407,9 @@ const notifications = () => { const dismissed = new Set(state.dismissed); return
 async function saveDismissed(add) {
   const live = new Set(allNotifications().map((n) => n.key)); // all, including already-dismissed ones
   state.dismissed = [...new Set([...state.dismissed.filter((k) => live.has(k)), ...add])];
+  settingsApplied();
   renderBell();
-  try { const s = await put("/api/settings", { notifications: { dismissed: state.dismissed } }); state.dismissed = s.notifications.dismissed; }
+  try { const s = await put("/api/settings", { notifications: { dismissed: state.dismissed } }); state.dismissed = s.notifications.dismissed; settingsApplied(); renderBell(); }
   catch (e) { errMsg(e); }
 }
 function renderBell() {
@@ -3005,18 +3012,18 @@ async function load() {
   let s = null, sErr = null;
   try { s = await api("/api/settings"); } catch (e) { sErr = e; }
   // fetches overlap (a write, a live refresh): an answer older than the one on screen is dropped whole
-  if (seq < loads.applied) return;
+  if (seq < loads.applied) return false;
   loads.applied = seq;
   state.data = data;
   state.data.allAccounts = state.data.accounts;
   state.data.externals = state.data.accounts.filter((a) => a.kind === "external");
   state.data.accounts = state.data.accounts.filter((a) => a.kind !== "external");
-  if (s) {
+  if (s && seq > loads.settings) { // not when a setting was saved since this fetch began (issue #87)
     state.dashboard = s.dashboard;
     state.general = s.general;
     state.about = s.about;
     state.dismissed = (s.notifications && s.notifications.dismissed) || [];
-  } else msg(__("Settings unavailable, using defaults: {message}", { message: sErr ? sErr.message : "—" }), "error");
+  } else if (!s) msg(__("Settings unavailable, using defaults: {message}", { message: sErr ? sErr.message : "—" }), "error");
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
   // e.g. a category merged away; before render(), which reads the address. A fetch begun before the
@@ -3025,9 +3032,13 @@ async function load() {
   if (seq > loads.filterAfter && addressKey() === addr) { dropGoneFilters(); loads.asked = ""; live.force = false; }
   else if (goneFilters(state.filter).length) liveForce();
   else loads.asked = ""; // nothing unknown left (Clear): the same link opened again asks anew
+  // its settings were left out (issue #87): fetch again, so a change made elsewhere meanwhile is not missed.
+  // After the filter check above, which may end an asked-for refresh.
+  if (s && seq < loads.settings) liveForce();
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render(true);
+  return true; // drawn
 }
 /* ---------- live updates (issue #55, ADR 0023) ---------- */
 // After any write to these books (this page, another device, the API, an assistant over MCP, template
@@ -3056,13 +3067,16 @@ function liveForce() { live.force = true; liveSchedule(); }
 // answers it, so the writing page often hears of its own write while its own fetch is still running:
 // by the time the timer fires, that fetch has brought the revision in and nothing is left to do.
 const liveBehind = () => !(live.rev && state.data && live.rev === state.data.rev);
+// the screen on view: one category's, reserve's or account's page is its own screen
+const screenKey = () => currentScreen() + ":" + (hashParts().params.get("id") || "");
 async function liveRefresh() {
   live.timer = 0;
   if (!state.me || !state.data || !(liveBehind() || live.force)) return;
   if (live.loading || liveBusy()) { liveSchedule(1500); return; } // a fetch is running, or a form is open
-  const y = window.scrollY, forced = live.force;
+  const y = window.scrollY, forced = live.force, screen = screenKey();
   live.loading = true; live.force = false;
-  try { await load(); window.scrollTo(0, y); } catch (e) {
+  // the scroll position is put back only where it was taken, and only if this answer was drawn (issue #88)
+  try { if (await load() && screenKey() === screen) window.scrollTo(0, y); } catch (e) {
     // the next event or visit tries again; an asked-for refresh (issue #79) is also asked anew by the next
     // redraw of Transactions, or by opening the same link again
     if (forced && state.me) { live.force = true; loads.asked = ""; }
