@@ -976,15 +976,17 @@ function dropGoneFilters() {
   gone.forEach((k) => params.delete(k));
   history.replaceState(null, "", "#transactions" + (params.toString() ? "?" + params : "")); // render() follows
 }
-// fetches of the books, numbered as they begin. filterAfter: only a fetch numbered above it may drop the
-// unknown filter values the address named (asked: which ones, so a redraw does not move the mark again)
-const loads = { seq: 0, filterAfter: 0, asked: "" };
+// fetches of the books, numbered as they begin; applied: the one on screen. filterAfter: only a fetch
+// numbered above it may drop the unknown filter values the address named (asked: which ones, so a redraw
+// does not move the mark again)
+const loads = { seq: 0, applied: 0, filterAfter: 0, asked: "" };
 // The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
 // search can be bookmarked, shared and reloaded. A bare #transactions keeps what is on screen.
 function readTxnURL() {
   const qs = hashParts().params;
   if (![...qs.keys()].length) return;
   state.filter = { q: qs.get("q") || "", account: qs.get("account") || "", type: qs.get("type") || "", tag: qs.get("tag") || "" };
+  if (!Object.keys(TYPE_L).includes(state.filter.type)) state.filter.type = ""; // the types never change: no fetch helps
   // a value this page does not know may be gone, or made elsewhere and not fetched yet: refresh, and let only
   // a fetch begun from now on decide; one under way may be older than the value (issue #79)
   const unknown = state.data ? goneFilters(state.filter).map((k) => k + "=" + state.filter[k]).join("&") : "";
@@ -1008,12 +1010,14 @@ function writeTxnURL() {
 // the Transactions filter dropdowns' options, with the filters in state.filter selected
 function txnFilterOptions() {
   const f = state.filter;
+  // a value the address named that this page does not know yet: shown as such until a fetch decides (issue #79)
+  const gone = goneFilters(f), checking = (k) => (gone.includes(k) ? `<option value="${esc(f[k])}" selected>${esc(__("Checking…"))}</option>` : "");
   const accOpt = (a) => `<option value="${esc(a.id)}" ${f.account === a.id ? "selected" : ""}>${esc(accName(a.id))}</option>`;
-  const account = `<option value="">${esc(__("All accounts"))}</option>` + state.data.accounts.map(accOpt).join("")
+  const account = `<option value="">${esc(__("All accounts"))}</option>` + checking("account") + state.data.accounts.map(accOpt).join("")
     + (state.data.externals.length ? `<optgroup label="${esc(__("External accounts"))}">${state.data.externals.map(accOpt).join("")}</optgroup>` : "");
   const tagOpt = (t) => `<option value="${esc(t.id)}" ${f.tag === t.id ? "selected" : ""}>${esc(t.name)}</option>`;
   const tagGroup = (label, tags) => (tags.length ? `<optgroup label="${esc(label)}">${tags.map(tagOpt).join("")}</optgroup>` : "");
-  const tag = `<option value="">${esc(__("All categories"))}</option><option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
+  const tag = `<option value="">${esc(__("All categories"))}</option>${checking("tag")}<option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
     + tagGroup(__("Categories"), state.data.tags);
   const type = `<option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}`;
   return { account, type, tag };
@@ -2459,6 +2463,7 @@ function bindAuthServer() {
 function showAuth(mode) {
   liveStop();
   state.me = null; state.data = null;
+  loads.applied = ++loads.seq; // a fetch still under way is not drawn over the sign-in screen
   msg("");
   $(".shell").hidden = true; $("#addBtn").hidden = true; showMore(false); $("#notifPanel").hidden = true; $("#userMenu").hidden = true;
   const box = $("#authScreen");
@@ -2980,22 +2985,27 @@ function render(refresh) {
 window.addEventListener("hashchange", render);
 async function load() {
   const seq = ++loads.seq;
-  state.data = await api("/api/state");
+  const data = await api("/api/state");
+  let s = null, sErr = null;
+  try { s = await api("/api/settings"); } catch (e) { sErr = e; }
+  // fetches overlap (a write, a live refresh): an answer older than the one on screen is dropped whole
+  if (seq < loads.applied) return;
+  loads.applied = seq;
+  state.data = data;
   state.data.allAccounts = state.data.accounts;
   state.data.externals = state.data.accounts.filter((a) => a.kind === "external");
   state.data.accounts = state.data.accounts.filter((a) => a.kind !== "external");
-  try {
-    const s = await api("/api/settings");
+  if (s) {
     state.dashboard = s.dashboard;
     state.general = s.general;
     state.about = s.about;
     state.dismissed = (s.notifications && s.notifications.dismissed) || [];
-  } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
+  } else msg(__("Settings unavailable, using defaults: {message}", { message: sErr.message }), "error");
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
   // e.g. a category merged away; before render(), which reads the address. A fetch begun before the
   // address named an unknown value cannot tell gone from new: the next one decides.
-  if (seq > loads.filterAfter) { dropGoneFilters(); loads.asked = ""; } else if (goneFilters(state.filter).length) liveForce();
+  if (seq > loads.filterAfter) { dropGoneFilters(); loads.asked = ""; live.force = false; } else if (goneFilters(state.filter).length) liveForce();
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render(true);
@@ -3072,6 +3082,7 @@ function liveStop() {
 // event says whether anything changed meanwhile.
 function liveWake(stale) {
   if (!state.me || document.visibilityState === "hidden") return;
+  if (live.force) liveSchedule(); // a refresh asked for (issue #79) that failed: a visit tries again
   if (typeof EventSource === "undefined") { if (stale) { live.rev = ""; liveSchedule(); } return; }
   if (live.es && !stale) return;
   if (live.es) live.es.close();

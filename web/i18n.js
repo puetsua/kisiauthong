@@ -98,7 +98,7 @@ const I18N = {
     "{spent} of {limit}": "{spent}／{limit}", "by {date}": "{date} 前",
     "No allocations yet": "還沒有分配",
     // transactions
-    "All accounts": "所有帳戶", "All types": "所有類型", "All categories": "所有分類", "No categories yet.": "還沒有分類。",
+    "All accounts": "所有帳戶", "All types": "所有類型", "All categories": "所有分類", "Checking…": "確認中…", "No categories yet.": "還沒有分類。",
     "Clear": "清除", "Today": "今天", "Spending faster than the period": "花得比時間進度快", "Expected range {min} – {max}.": "預計範圍 {min} – {max}。",
     "Expected on {date}, not confirmed yet. Check the amount and save to confirm it.": "預計在 {date}，尚未確認。核對金額後儲存即可確認。",
     "Has a note": "有備註",

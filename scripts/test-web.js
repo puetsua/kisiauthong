@@ -769,6 +769,7 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     t.state.data.tags = [{ id: "g7", name: "Pets" }];
     open("#transactions?tag=g8");
     assert.deepStrictEqual(timers.map((x) => x.ms), [400], "an unknown value asks for a refresh");
+    assert.match($el("#view").innerHTML, /<option value="g8" selected>Checking…<\/option>/, "meanwhile the dropdown says so, and keeps it");
     await refresh(tags);
     assert.strictEqual(t.state.filter.tag, "g8", "which knows the category");
     assert.strictEqual(location.hash, "#transactions?tag=g8");
@@ -820,7 +821,8 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     done = timers.pop().fn(); await tick();
     failing[n2](new Error("Failed to fetch")); await done;
     assert.strictEqual(t.live.force, true, "still to do");
-    assert.strictEqual(t.liveOnChange('{"rev":"' + t.state.data.rev + '"}'), true, "back online, the stream's ready event fetches");
+    t.liveWake(false);
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "coming back to the page tries again");
     await refresh(tags);
     assert.match(shown(), /Seeds/);
     assert.strictEqual(t.live.force, false, "done");
@@ -832,8 +834,33 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     failing[n2](new Error("Unauthorized")); await done;
     assert.strictEqual(t.live.force, false, "signed out");
     t.state.me = { id: "usr-x" };
-    // an old or shared link with an unknown account or type, or a merged-away category: dropped by the refresh
+    // an older answer arriving last is dropped whole: it neither replaces newer books nor drops a known filter
+    const nA = held.length;
+    const fetchA = sandbox.load(), fetchB = sandbox.load();
+    await answer(nA + 1, tags); await fetchB;
+    open("#transactions?tag=g8");
+    assert.strictEqual(timers.length, 0, "known: nothing to ask");
+    await answer(nA, [{ id: "g7", name: "Pets" }]); await fetchA;
+    assert.strictEqual(t.state.data.tags.length, 2, "the newer books stay");
+    assert.strictEqual(t.state.filter.tag, "g8");
+    assert.strictEqual(location.hash, "#transactions?tag=g8");
+    // a fetch begun for another reason (a saved form) that settles the value ends the asked-for refresh too
+    open("#transactions?tag=g-x");
+    assert.strictEqual(t.live.force, true);
+    done = sandbox.load(); await answer(held.length - 1, tags); await done;
+    assert.strictEqual(t.live.force, false, "nothing left to fetch");
+    assert.strictEqual(location.hash, "#transactions");
+    const fetches = held.length;
+    await timers.pop().fn();
+    assert.strictEqual(held.length, fetches, "the refresh's timer then fetches nothing");
+    // a type that does not exist: no fetch can change the types, so it goes at once
+    open("#transactions?type=toString");
+    assert.strictEqual(timers.length, 0);
+    assert.strictEqual(location.hash, "#transactions");
+    // an old or shared link with an unknown account, or a merged-away category: dropped by the refresh
+    timers.length = 0;
     open("#transactions?account=acc-elsewhere&type=toString&tag=g-gone");
+    assert.match($el("#view").innerHTML, /<option value="acc-elsewhere" selected>Checking…<\/option>/);
     await refresh(tags);
     assert.deepStrictEqual([t.state.filter.account, t.state.filter.type, t.state.filter.tag], ["", "", ""]);
     assert.strictEqual(location.hash, "#transactions");
@@ -854,6 +881,12 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     t.state.filter = { q: "", account: "", type: "", tag: "g-gone" };
     done = sandbox.load(); await answer(held.length - 1, tags); await done;
     assert.strictEqual(t.state.filter.tag, "");
+    // signed out while a fetch was under way: its answer is not drawn over the sign-in screen
+    sandbox.render = realRender;
+    done = sandbox.load();
+    t.showAuth("login");
+    await answer(held.length - 1, tags); await done;
+    assert.strictEqual(t.state.data, null);
   } finally {
     t.liveStop();
     sandbox.api = realApi; sandbox.render = realRender; sandbox.setTimeout = realSet; sandbox.clearTimeout = realClear;
