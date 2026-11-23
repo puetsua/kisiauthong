@@ -965,7 +965,7 @@ function dropGoneFilters() {
   if (!d) return;
   if (f.tag && f.tag !== "none" && !d.tags.some((t) => t.id === f.tag)) f.tag = "";
   if (f.account && !(d.allAccounts || d.accounts).some((a) => a.id === f.account)) f.account = "";
-  if (f.type && !(f.type in TYPE_L)) f.type = "";
+  if (f.type && !Object.keys(TYPE_L).includes(f.type)) f.type = ""; // not `in`: "toString" is no type
 }
 // The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
 // search can be bookmarked, shared and reloaded. A bare #transactions keeps what is on screen.

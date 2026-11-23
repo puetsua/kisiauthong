@@ -719,6 +719,8 @@ test("transactions (#79): a filter on a category that is gone is dropped, also w
     drawAt("#transactions?account=acc-elsewhere&type=refund&tag=g7");
     assert.deepStrictEqual([t.state.filter.account, t.state.filter.type, t.state.filter.tag], ["", "", "g7"]);
     assert.strictEqual(location.hash, "#transactions?tag=g7");
+    drawAt("#transactions?type=toString");
+    assert.strictEqual(t.state.filter.type, "", "a name every object has is no type either");
     drawAt("#transactions?account=acc-external&type=income");
     assert.deepStrictEqual([t.state.filter.account, t.state.filter.type], ["acc-external", "income"], "an external account and a known type stay");
     // a category that exists, and Uncategorised, stay
