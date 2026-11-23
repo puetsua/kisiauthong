@@ -76,7 +76,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal && rustup default stable
           rustup target add aarch64-linux-android
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -84,7 +84,7 @@ jobs:
             apps/tauri/src-tauri/target
           key: tauri-android-${{ hashFiles('apps/tauri/src-tauri/Cargo.lock') }}
           restore-keys: tauri-android-
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches
