@@ -967,11 +967,14 @@ function goneFilters(f) {
     : k === "account" ? (d.allAccounts || d.accounts).some((x) => x.id === f.account)
       : Object.keys(TYPE_L).includes(f.type))); // not `in`: "toString" is no type
 }
+// the unknown filter values the Transactions address names
+function goneInAddress() {
+  const { path, params } = hashParts();
+  return path === "transactions" ? goneFilters({ tag: params.get("tag") || "", account: params.get("account") || "", type: params.get("type") || "" }) : [];
+}
 function dropGoneFilters() {
   goneFilters(state.filter).forEach((k) => { state.filter[k] = ""; });
-  const { path, params } = hashParts();
-  if (path !== "transactions") return;
-  const gone = goneFilters({ tag: params.get("tag") || "", account: params.get("account") || "", type: params.get("type") || "" });
+  const gone = goneInAddress(), { params } = hashParts();
   if (!gone.length) return;
   gone.forEach((k) => params.delete(k));
   history.replaceState(null, "", "#transactions" + (params.toString() ? "?" + params : "")); // render() follows
@@ -2984,7 +2987,7 @@ function render(refresh) {
 }
 window.addEventListener("hashchange", render);
 async function load() {
-  const seq = ++loads.seq;
+  const seq = ++loads.seq, addr = location.hash;
   const data = await api("/api/state");
   let s = null, sErr = null;
   try { s = await api("/api/settings"); } catch (e) { sErr = e; }
@@ -3000,12 +3003,14 @@ async function load() {
     state.general = s.general;
     state.about = s.about;
     state.dismissed = (s.notifications && s.notifications.dismissed) || [];
-  } else msg(__("Settings unavailable, using defaults: {message}", { message: sErr.message }), "error");
+  } else msg(__("Settings unavailable, using defaults: {message}", { message: sErr ? sErr.message : "" }), "error");
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
   // e.g. a category merged away; before render(), which reads the address. A fetch begun before the
-  // address named an unknown value cannot tell gone from new: the next one decides.
-  if (seq > loads.filterAfter) { dropGoneFilters(); loads.asked = ""; live.force = false; } else if (goneFilters(state.filter).length) liveForce();
+  // address named an unknown value (or changed: a link opened while it ran) cannot tell gone from new: the
+  // next one decides.
+  if (seq > loads.filterAfter && location.hash === addr) { dropGoneFilters(); loads.asked = ""; live.force = false; }
+  else if (goneFilters(state.filter).length) liveForce();
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render(true);
@@ -3082,7 +3087,7 @@ function liveStop() {
 // event says whether anything changed meanwhile.
 function liveWake(stale) {
   if (!state.me || document.visibilityState === "hidden") return;
-  if (live.force) liveSchedule(); // a refresh asked for (issue #79) that failed: a visit tries again
+  if (live.force && stale) liveSchedule(); // a refresh asked for (issue #79) that failed: a later visit tries again
   if (typeof EventSource === "undefined") { if (stale) { live.rev = ""; liveSchedule(); } return; }
   if (live.es && !stale) return;
   if (live.es) live.es.close();

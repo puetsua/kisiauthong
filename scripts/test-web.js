@@ -739,7 +739,8 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
   const transactions = [spend("t7", "Bus fare", "2026-11-11", []), spend("t8", "Cat food", "2026-11-10", ["g7"]), spend("t9", "Seeds", "2026-11-09", ["g8"])];
   const books = (tg) => ({ ...was.data, accounts: [acc, other, ext], tags: tg, transactions, rev: "r-9" });
   const held = [], failing = []; // each /api/state answer waits in held until the test gives it
-  sandbox.api = (url) => (url === "/api/state" ? new Promise((ok, fail) => { held.push(ok); failing.push(fail); }) : Promise.resolve({ general: {}, about: {}, notifications: {} }));
+  let settings = { general: {}, about: {}, notifications: {} };
+  sandbox.api = (url) => (url === "/api/state" ? new Promise((ok, fail) => { held.push(ok); failing.push(fail); }) : Promise.resolve(settings));
   const timers = []; // timers still set (the live refresh's), fired by the test
   let ids = 0;
   sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms, id: ++ids }); return ids; };
@@ -821,8 +822,12 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     done = timers.pop().fn(); await tick();
     failing[n2](new Error("Failed to fetch")); await done;
     assert.strictEqual(t.live.force, true, "still to do");
+    sandbox.EventSource = function () { return { addEventListener: () => {}, close: () => {} }; }; // a stream is open
     t.liveWake(false);
-    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "coming back to the page tries again");
+    assert.deepStrictEqual(timers, [], "a mere focus does not fetch again");
+    t.liveWake(true);
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "coming back to the page after a while tries again");
+    delete sandbox.EventSource;
     await refresh(tags);
     assert.match(shown(), /Seeds/);
     assert.strictEqual(t.live.force, false, "done");
@@ -853,6 +858,16 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     const fetches = held.length;
     await timers.pop().fn();
     assert.strictEqual(held.length, fetches, "the refresh's timer then fetches nothing");
+    // a link opened while a fetch begun earlier ran: that fetch does not decide, the next one does
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    open("#transactions");
+    done = sandbox.load();
+    location.hash = "#transactions?tag=g8"; // the address changes first, its hashchange comes later
+    await answer(held.length - 1, [{ id: "g7", name: "Pets" }]); await done;
+    assert.strictEqual(location.hash, "#transactions?tag=g8", "not dropped by a fetch older than the link");
+    await refresh(tags);
+    assert.strictEqual(t.state.filter.tag, "g8");
+    assert.match(shown(), /Seeds/);
     // a type that does not exist: no fetch can change the types, so it goes at once
     open("#transactions?type=toString");
     assert.strictEqual(timers.length, 0);
@@ -881,6 +896,11 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     t.state.filter = { q: "", account: "", type: "", tag: "g-gone" };
     done = sandbox.load(); await answer(held.length - 1, tags); await done;
     assert.strictEqual(t.state.filter.tag, "");
+    // settings that answer with nothing: defaults, as before
+    settings = null;
+    done = sandbox.load(); await answer(held.length - 1, tags); await done;
+    assert.match(String($el("#toast").textContent), /Settings unavailable/);
+    settings = { general: {}, about: {}, notifications: {} };
     // signed out while a fetch was under way: its answer is not drawn over the sign-in screen
     sandbox.render = realRender;
     done = sandbox.load();
