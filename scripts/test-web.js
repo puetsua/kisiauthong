@@ -770,7 +770,7 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     t.state.data.tags = [{ id: "g7", name: "Pets" }];
     open("#transactions?tag=g8");
     assert.deepStrictEqual(timers.map((x) => x.ms), [400], "an unknown value asks for a refresh");
-    assert.match($el("#view").innerHTML, /<option value="g8" selected>Checking…<\/option>/, "meanwhile the dropdown says so, and keeps it");
+    assert.match($el("#view").innerHTML, /<option value="g8" selected disabled>Checking…<\/option>/, "meanwhile the dropdown says so, and keeps it");
     await refresh(tags);
     assert.strictEqual(t.state.filter.tag, "g8", "which knows the category");
     assert.strictEqual(location.hash, "#transactions?tag=g8");
@@ -822,6 +822,9 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     done = timers.pop().fn(); await tick();
     failing[n2](new Error("Failed to fetch")); await done;
     assert.strictEqual(t.live.force, true, "still to do");
+    open("#transactions?tag=g8"); // the same link again, or any redraw: asks again
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "opening the link again tries again");
+    timers.length = 0;
     sandbox.EventSource = function () { return { addEventListener: () => {}, close: () => {} }; }; // a stream is open
     t.liveWake(false);
     assert.deepStrictEqual(timers, [], "a mere focus does not fetch again");
@@ -893,7 +896,7 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     // an old or shared link with an unknown account, or a merged-away category: dropped by the refresh
     timers.length = 0;
     open("#transactions?account=acc-elsewhere&type=toString&tag=g-gone");
-    assert.match($el("#view").innerHTML, /<option value="acc-elsewhere" selected>Checking…<\/option>/);
+    assert.match($el("#view").innerHTML, /<option value="acc-elsewhere" selected disabled>Checking…<\/option>/);
     await refresh(tags);
     assert.deepStrictEqual([t.state.filter.account, t.state.filter.type, t.state.filter.tag], ["", "", ""]);
     assert.strictEqual(location.hash, "#transactions");

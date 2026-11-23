@@ -53,9 +53,8 @@ browsers that pause pages in the background.
     one leaves it to the next. A refresh that fails is tried again with the
     next event or visit (issue #79).
   - Fetches can overlap (a refresh, the page's own write). An answer to a
-    fetch that began before the one on screen is dropped whole, so older
-    books and settings never replace newer ones; so is any answer that
-    arrives after sign-out.
+    fetch that began before the one on screen is dropped whole, and so is
+    any answer that arrives after sign-out.
   - The browser reconnects a dropped stream itself. One it gives up on (a
     proxy's error page, a restart) is retried every 2 s, doubling up to a
     minute.

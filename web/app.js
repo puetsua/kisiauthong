@@ -1019,7 +1019,7 @@ function writeTxnURL() {
 function txnFilterOptions() {
   const f = state.filter;
   // a value the address named that this page does not know yet: shown as such until a fetch decides (issue #79)
-  const gone = goneFilters(f), checking = (k) => (gone.includes(k) ? `<option value="${esc(f[k])}" selected>${esc(__("Checking…"))}</option>` : "");
+  const gone = goneFilters(f), checking = (k) => (gone.includes(k) ? `<option value="${esc(f[k])}" selected disabled>${esc(__("Checking…"))}</option>` : "");
   const accOpt = (a) => `<option value="${esc(a.id)}" ${f.account === a.id ? "selected" : ""}>${esc(accName(a.id))}</option>`;
   const account = `<option value="">${esc(__("All accounts"))}</option>` + checking("account") + state.data.accounts.map(accOpt).join("")
     + (state.data.externals.length ? `<optgroup label="${esc(__("External accounts"))}">${state.data.externals.map(accOpt).join("")}</optgroup>` : "");
@@ -3008,7 +3008,7 @@ async function load() {
     state.general = s.general;
     state.about = s.about;
     state.dismissed = (s.notifications && s.notifications.dismissed) || [];
-  } else msg(__("Settings unavailable, using defaults: {message}", { message: sErr ? sErr.message : "" }), "error");
+  } else msg(__("Settings unavailable, using defaults: {message}", { message: sErr ? sErr.message : "—" }), "error");
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
   // e.g. a category merged away; before render(), which reads the address. A fetch begun before the
@@ -3054,7 +3054,11 @@ async function liveRefresh() {
   if (live.loading || liveBusy()) { liveSchedule(1500); return; } // a fetch is running, or a form is open
   const y = window.scrollY, forced = live.force;
   live.loading = true; live.force = false;
-  try { await load(); window.scrollTo(0, y); } catch (e) { if (forced && state.me) live.force = true; /* the next event or visit tries again */ }
+  try { await load(); window.scrollTo(0, y); } catch (e) {
+    // the next event or visit tries again; an asked-for refresh (issue #79) is also asked anew by the next
+    // redraw of Transactions, or by opening the same link again
+    if (forced && state.me) { live.force = true; loads.asked = ""; }
+  }
   finally { live.loading = false; }
 }
 // ready (on every (re)connect) and change events: fetch unless the page shows that revision already,
