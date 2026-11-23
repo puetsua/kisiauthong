@@ -16,7 +16,6 @@ const app = path.join(root, "apps", "tauri", "src");
 const C = require(path.join(app, "connect.js"));
 const STRINGS = require(path.join(app, "strings.js"));
 
-let n = 0;
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
 
@@ -337,7 +336,4 @@ test("Android launcher icon: adaptive layers, artwork inside the 66dp safe zone 
   assert.ok(!fs.existsSync(path.join(res, "values", "ic_launcher_background.xml")), "no plain colour background layer");
 });
 
-(async () => {
-  for (const [name, fn] of tests) { await fn(); n++; console.log("ok", name); }
-  console.log(`${n} tests passed`);
-})().catch((e) => { console.error(e); process.exit(1); });
+require("./run-tests.js")(tests);

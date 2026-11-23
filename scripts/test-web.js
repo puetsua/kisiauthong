@@ -811,6 +811,23 @@ test("live updates (#77): the cursor in the search box or a filter does not hold
   }
 });
 
+test("the test runner (#91): a test that never settles fails the run and is named", () => {
+  const { spawnSync } = require("child_process");
+  const run = (tests) => spawnSync(process.execPath, ["-e", `require(${JSON.stringify(path.join(__dirname, "run-tests.js"))})([${tests}])`], { encoding: "utf8" });
+  let r = run(`["first", async () => {}], ["stuck", () => new Promise(() => {})], ["third", async () => {}]`);
+  assert.strictEqual(r.status, 1, "a pending test is a failure, not exit code 0");
+  assert.match(r.stdout, /ok first/);
+  assert.doesNotMatch(r.stdout, /ok third|tests passed/);
+  assert.match(r.stderr, /"stuck" never settled, 1 test\(s\) after it did not run/);
+  r = run(`["fails", async () => { throw new Error("boom"); }]`);
+  assert.strictEqual(r.status, 1, "a rejected test still fails the run");
+  assert.match(r.stderr, /boom/);
+  assert.doesNotMatch(r.stderr, /never settled/, "a failure is not also reported as stuck");
+  r = run(`["one", async () => {}], ["two", () => new Promise((ok) => setTimeout(ok, 5))]`);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /2 tests passed/);
+});
+
 // askConfirm is async; these run after the synchronous tests
 const later = [];
 later.push(["askConfirm: window.confirm() in a browser, the app's native dialog inside the app", async () => {
@@ -1211,7 +1228,4 @@ later.push(["live refresh (#88): the scroll position is put back only on the scr
     t.setLang("en");
   }
 }]);
-(async () => {
-  for (const [name, fn] of later) { await fn(); n++; console.log("ok", name); }
-  console.log(`${n} tests passed`);
-})().catch((e) => { console.error(e); process.exit(1); });
+require("./run-tests.js")(later, n);
