@@ -41,7 +41,8 @@ browsers that pause pages in the background.
   - After a server restart the prefix differs, so pages fetch once.
 - **The page refreshes carefully.**
   - It fetches again 0.4 s after a change, so a burst of writes is fetched once,
-    and keeps the scroll position.
+    and keeps the scroll position: only on the screen where the refresh
+    began, and only when its own answer is drawn (issue #88).
   - It waits while the user is in a form: the dialog, the transaction panel,
     Customize dashboard, Manage tags, or a focused field in the page. The
     Transactions search box and filters do not count: while one has focus,
@@ -55,6 +56,10 @@ browsers that pause pages in the background.
   - Fetches can overlap (a refresh, the page's own write). An answer to a
     fetch that began before the one on screen is dropped whole, and so is
     any answer that arrives after sign-out.
+  - A setting saved and applied from its own answer (Settings, Customize
+    dashboard, a dismissed notification) is not put back by a fetch begun
+    before that: such a fetch draws its books but keeps the settings on
+    screen (issue #87).
   - The browser reconnects a dropped stream itself. One it gives up on (a
     proxy's error page, a restart) is retried every 2 s, doubling up to a
     minute.
