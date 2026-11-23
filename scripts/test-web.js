@@ -791,7 +791,6 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     done = sandbox.load();
     open("#transactions?tag=g8");
     docProps.activeElement = { closest: (sel) => (sel === "#view" ? {} : null), matches: (sel) => sel === "[data-live-keep]" || sel === "input,textarea,select,[contenteditable=true]" };
-    timers.length = 0;
     await answer(held.length - 1, [{ id: "g7", name: "Pets" }]); await done;
     assert.strictEqual(t.state.filter.tag, "g8");
     assert.deepStrictEqual(timers.map((x) => x.ms), [400], "the older answer asks for the next refresh");
@@ -803,7 +802,7 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     const before = held.length;
     done = timers.pop().fn(); await tick();
     t.render({ type: "hashchange" });
-    timers.length = 0;
+    assert.strictEqual(timers.length, 0, "the redraw asks for no other refresh");
     held[before](books(tags)); await done;
     assert.strictEqual(location.hash, "#transactions", "decided by that one fetch");
     assert.strictEqual(timers.length, 0, "with no other");
@@ -825,6 +824,14 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     await refresh(tags);
     assert.match(shown(), /Seeds/);
     assert.strictEqual(t.live.force, false, "done");
+    // signed out while it ran (the session ended: 401): nothing is carried over to the next sign-in
+    open("#transactions?tag=g-q");
+    n2 = held.length;
+    done = timers.pop().fn(); await tick();
+    t.state.me = null;
+    failing[n2](new Error("Unauthorized")); await done;
+    assert.strictEqual(t.live.force, false, "signed out");
+    t.state.me = { id: "usr-x" };
     // an old or shared link with an unknown account or type, or a merged-away category: dropped by the refresh
     open("#transactions?account=acc-elsewhere&type=toString&tag=g-gone");
     await refresh(tags);

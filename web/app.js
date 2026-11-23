@@ -988,10 +988,8 @@ function readTxnURL() {
   // a value this page does not know may be gone, or made elsewhere and not fetched yet: refresh, and let only
   // a fetch begun from now on decide; one under way may be older than the value (issue #79)
   const unknown = state.data ? goneFilters(state.filter).map((k) => k + "=" + state.filter[k]).join("&") : "";
-  if (unknown) {
-    if (unknown !== loads.asked) { loads.asked = unknown; loads.filterAfter = loads.seq; }
-    liveForce();
-  }
+  // asked already: a refresh is on its way, or load() asks for the next one
+  if (unknown && unknown !== loads.asked) { loads.asked = unknown; loads.filterAfter = loads.seq; liveForce(); }
   state.searchPage = Math.max(0, (parseInt(qs.get("page"), 10) || 1) - 1);
   const per = parseInt(qs.get("per"), 10);
   if (PAGE_SIZES.includes(per)) state.pageSize = per;
@@ -3035,7 +3033,7 @@ async function liveRefresh() {
   if (live.loading || liveBusy()) { liveSchedule(1500); return; } // a fetch is running, or a form is open
   const y = window.scrollY, forced = live.force;
   live.loading = true; live.force = false;
-  try { await load(); window.scrollTo(0, y); } catch (e) { if (forced) live.force = true; /* the next event or visit tries again */ }
+  try { await load(); window.scrollTo(0, y); } catch (e) { if (forced && state.me) live.force = true; /* the next event or visit tries again */ }
   finally { live.loading = false; }
 }
 // ready (on every (re)connect) and change events: fetch unless the page shows that revision already,
