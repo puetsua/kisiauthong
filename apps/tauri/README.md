@@ -63,8 +63,11 @@ apps/tauri/
    ends with a row naming the server's host and a **Change server** link to
    the same Add server form, so the server can be changed without signing in;
    Cancel goes back to the sign-in page. In a browser the row is not there.
-5. Pages may only stay on the bundled screen or a saved server's origin. Other
-   links, `target="_blank"` and `window.open` open in the system browser.
+5. Pages may only stay on the bundled screen or the server in use. A page of
+   another saved server, or of one the window showed before, is refused, so
+   Back (on Windows also Alt+Left and the mouse's Back button) cannot leave
+   the server in use after Switch or Remove (issue #92). Other links,
+   `target="_blank"` and `window.open` open in the system browser.
    On Windows and macOS the window has no system title bar: a second, bundled
    webview (`src/frame.html`) draws the bar above the page, and only it may
    move, maximize or close the window
