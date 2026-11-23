@@ -36,6 +36,7 @@ Colours are CSS custom properties on `:root`; use them, not literal colours.
 | `--side`, `--side2`, `--sidehover`, `--sidetext`, `--sidemuted` | the dark sidebar |
 | `--accent`, `--accent2`, `--accentsoft` | primary actions, selected state, selected fill |
 | `--pos`/`--posbg`, `--amber`/`--amberbg`, `--red`/`--redbg` | good, warning, bad/over |
+| `--neg` | spending in the Transactions list (issue #66); not `--red`, which means over budget or danger |
 | `--sched`, `--schedbg`, `--schedink`, `--schedline` | scheduled (dated after today, ADR 0014): bar segment and dot, section/note fill, text on that fill, its border |
 | `--nightlybg`, `--nightlyline`, `--nightlyink` | the teal `nightly` chip beside the version (ADR 0018); solid `--nightlyline` on the dark sidebar |
 | `--page-max` | content width (Settings → Page width) |
@@ -450,6 +451,15 @@ topmost popup only.
   inside its digits), or plain. Never parse displayed amounts back; a search
   that matches them treats any white space as a plain space.
 - Negative is shown with a minus; income in `--pos` where direction matters.
+- The Transactions list (rows and each day's net, inside `.amtstyle`) follows
+  Settings → Display → Spending and income (issue #66), set as
+  `data-amounts` on `<html>`: `both` (default) signs plus `--pos` for income
+  and `--neg` for spending, `sign` only + / − in ink, `color` only the colors.
+  The sign is always in the markup as `.asign`; `color` shrinks it to
+  `font-size:0` (not `display:none`, not out of flow), so screen readers and
+  copied text keep it on the same line. Transfers
+  between own accounts stay `--muted` with no sign in every mode. The account
+  page, category and reserve totals and the dashboard keep their own rules.
 - Dates the user thinks in: `dayLabel(iso)`; periods: `periodLabel()`.
 - Versions have no `v` prefix: `0.2.0`, `0.2.0-1118-c22ff51`, as in the
   release tags (ADR 0009).

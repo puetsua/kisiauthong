@@ -140,6 +140,8 @@ const I18N = {
     // settings
     "Language": "語言", "Browser default": "依瀏覽器設定", "Language saved.": "語言已儲存。",
     "Page width": "頁面寬度", "Default": "預設", "Wide": "加寬", "Page width saved.": "頁面寬度已儲存。",
+    "Spending and income": "收支顯示", "Signs and color": "符號和顏色", "Signs only (+ / −)": "只用 + / − 符號", "Color only": "只用顏色", "Spending and income display saved.": "收支顯示已儲存。",
+    "With Color only, spending and income differ only by color and by the icon in front of each row.": "只用顏色時，收入和支出只靠顏色和每列前面的圖示分辨。",
     "Default currency": "預設幣別", "Default currency saved.": "預設幣別已儲存。", "Frequently used currencies": "常用幣別",
     "Add currency": "新增幣別", "+ Add currency…": "＋ 新增幣別…", "Remove {currency}": "移除 {currency}", "All currencies": "所有幣別",
     "{currency} added.": "已新增 {currency}。", "{currency} removed.": "已移除 {currency}。",

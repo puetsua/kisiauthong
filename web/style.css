@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
-:root{--page-max:1120px;--ink:#221d2b;--muted:#6b6578;--bg:#f6f4f9;--panel:#fff;--line:#e1dceb;--hover:#f4f1f8;--hover2:#ece7f3;--rule:#ece8f2;--track:#e8e3ef;--soft:#faf8fc;--side:#2a1740;--side2:#45286a;--sidehover:#36204f;--sidetext:#e6dcf2;--sidemuted:#b9a6d1;--accent:#5b2a86;--accent2:#6d3aa0;--accentsoft:#f0e9f8;--pos:#1b6b3c;--posbg:#e3f1e7;--amber:#b45309;--amberbg:#fdf3e3;--red:#b3261e;--redbg:#fdecea;--sched:#2b6cb0;--schedbg:#e8f1fb;--schedink:#1a4a7f;--schedline:#b9d3ee}
+:root{--page-max:1120px;--ink:#221d2b;--muted:#6b6578;--bg:#f6f4f9;--panel:#fff;--line:#e1dceb;--hover:#f4f1f8;--hover2:#ece7f3;--rule:#ece8f2;--track:#e8e3ef;--soft:#faf8fc;--side:#2a1740;--side2:#45286a;--sidehover:#36204f;--sidetext:#e6dcf2;--sidemuted:#b9a6d1;--accent:#5b2a86;--accent2:#6d3aa0;--accentsoft:#f0e9f8;--pos:#1b6b3c;--posbg:#e3f1e7;--neg:#c62828;--amber:#b45309;--amberbg:#fdf3e3;--red:#b3261e;--redbg:#fdecea;--sched:#2b6cb0;--schedbg:#e8f1fb;--schedink:#1a4a7f;--schedline:#b9d3ee}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 .formnote{margin:8px 0 0;font-size:.86rem;color:var(--amber)}
@@ -273,6 +273,15 @@ dialog textarea{width:100%;padding:10px;border:1px solid var(--line);border-radi
 .famt{flex:none;font-variant-numeric:tabular-nums;font-weight:600;text-align:right;padding-left:8px}
 .famt.in{color:var(--pos)}
 .famt.move{color:var(--muted);font-weight:500}
+/* Settings → Display → Spending and income (issue #66), the Transactions list only (.amtstyle):
+   both (default) signs and colors, sign = + / − without color, color = color without a visible sign.
+   --neg is spending, kept apart from --red (over budget, danger). In color the sign is still inline
+   text at size 0, so a copy of the row or the day reads "−TWD 120" and screen readers say it. */
+.amtstyle .famt.out,.amtstyle .fnet .out{color:var(--neg)}
+.amtstyle .fnet .in{color:var(--pos)}
+[data-amounts=sign] .amtstyle .famt.in,[data-amounts=sign] .amtstyle .famt.out{color:var(--ink)}
+[data-amounts=sign] .amtstyle .fnet span{color:inherit}
+[data-amounts=color] .amtstyle .asign{font-size:0}
 .feed li>.smallbtn{flex:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* transaction detail popup */
@@ -585,6 +594,7 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .srow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:18px;align-items:center;padding:14px 20px;border-top:1px solid var(--rule)}
 .scard>.srow:first-child{border-top:0}
 .sl{font-weight:600;color:var(--ink)}
+.sc .shint{margin:6px 0 0;font-size:.84rem;color:var(--muted);line-height:1.45}
 .sc select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:.98rem;background:#fff;color:var(--ink)}
 .sc a{color:var(--accent);overflow-wrap:anywhere}
 .sbtns{display:flex;gap:8px;flex-wrap:wrap}

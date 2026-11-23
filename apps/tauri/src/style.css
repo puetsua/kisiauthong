@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* The app's server screen (ADR 0019). The :root tokens are copied from web/style.css
    and scripts/test-app.js checks they still match; the rest follows the web UI's rules. */
-:root{--page-max:1120px;--ink:#221d2b;--muted:#6b6578;--bg:#f6f4f9;--panel:#fff;--line:#e1dceb;--hover:#f4f1f8;--hover2:#ece7f3;--rule:#ece8f2;--track:#e8e3ef;--soft:#faf8fc;--side:#2a1740;--side2:#45286a;--sidehover:#36204f;--sidetext:#e6dcf2;--sidemuted:#b9a6d1;--accent:#5b2a86;--accent2:#6d3aa0;--accentsoft:#f0e9f8;--pos:#1b6b3c;--posbg:#e3f1e7;--amber:#b45309;--amberbg:#fdf3e3;--red:#b3261e;--redbg:#fdecea;--sched:#2b6cb0;--schedbg:#e8f1fb;--schedink:#1a4a7f;--schedline:#b9d3ee}
+:root{--page-max:1120px;--ink:#221d2b;--muted:#6b6578;--bg:#f6f4f9;--panel:#fff;--line:#e1dceb;--hover:#f4f1f8;--hover2:#ece7f3;--rule:#ece8f2;--track:#e8e3ef;--soft:#faf8fc;--side:#2a1740;--side2:#45286a;--sidehover:#36204f;--sidetext:#e6dcf2;--sidemuted:#b9a6d1;--accent:#5b2a86;--accent2:#6d3aa0;--accentsoft:#f0e9f8;--pos:#1b6b3c;--posbg:#e3f1e7;--neg:#c62828;--amber:#b45309;--amberbg:#fdf3e3;--red:#b3261e;--redbg:#fdecea;--sched:#2b6cb0;--schedbg:#e8f1fb;--schedink:#1a4a7f;--schedline:#b9d3ee}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0;height:100%}

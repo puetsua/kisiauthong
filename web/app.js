@@ -26,6 +26,12 @@ const openDays = () => (state.general && state.general.openDays) || 7;
 const WIDTH_L = { default: N_("Default"), wide: N_("Wide"), full: N_("Full width") };
 const pageWidth = () => (state.general && WIDTH_L[state.general.pageWidth] ? state.general.pageWidth : "default");
 const applyPageWidth = () => { document.documentElement.dataset.width = pageWidth(); };
+// How the Transactions list marks spending and income (Settings → Display, issue #66): "both" a sign
+// and a color, "sign" only + / −, "color" only a color. The sign stays in the page as hidden text in
+// "color" (at font-size 0), so screen readers and copied text keep it; CSS on html[data-amounts] does the rest.
+const AMTSTYLE_L = { both: N_("Signs and color"), sign: N_("Signs only (+ / −)"), color: N_("Color only") };
+const amountStyle = () => (state.general && AMTSTYLE_L[state.general.amountStyle] ? state.general.amountStyle : "both");
+const applyAmountStyle = () => { document.documentElement.dataset.amounts = amountStyle(); };
 // The default currency is always in the frequently used list, first.
 const favCurs = () => { const d = defCur(), l = (state.general && state.general.currencies) || []; return [d, ...l.filter((c) => c !== d)]; };
 // One order wherever currencies are listed (issue #71): the frequently used list in its Settings order,
@@ -842,24 +848,29 @@ function shortDay(iso) {
 // the date that decides scheduled on save: the server's today, or this device's if it is earlier
 const schedToday = () => { const d = state.data; return d.serverToday && d.serverToday < d.today ? d.serverToday : d.today; };
 // dayNet: income minus spending per currency for one day (transfers and money-box decisions net to zero)
-function dayNet(list) {
+function dayNetParts(list) {
   const net = {};
   list.forEach((t) => { const k = flow(t); if (k === "income") net[t.currency] = (net[t.currency] || 0) + t.amountMinor; if (k === "expense") net[t.currency] = (net[t.currency] || 0) - t.amountMinor; });
   // one line in the day's header, in the same order as every other list of currencies (issue #62)
-  return curOrder(net).filter(([, v]) => v).map(([c, v]) => (v > 0 ? "+" : "−") + fmt(Math.abs(v), c)).join(" · ");
+  return curOrder(net).filter(([, v]) => v);
 }
+const dayNet = (list) => dayNetParts(list).map(([c, v]) => (v > 0 ? "+" : "−") + fmt(Math.abs(v), c)).join(" · ");
+// the same line as HTML: each currency's net a .in / .out span, so Settings → Display can color it
+const dayNetHTML = (list) => dayNetParts(list).map(([c, v]) => `<span class="${v > 0 ? "in" : "out"}">${signHTML(v > 0 ? "+" : "−")}${esc(fmt(Math.abs(v), c))}</span>`).join(" · ");
+// a + / − of a flow amount in its own span (.asign), which "Color only" hides from sight but not from copying
+const signHTML = (sign) => (sign ? `<span class="asign">${sign}</span>` : "");
 function feedRow(t, opts = {}) {
   // withDate: rows outside day sections (search results, expected) lead with their date
   // acct: the amount is signed as that account sees it (− leaving it, + arriving), transfers included
   const out = opts.acct && t.fromAccountId === opts.acct;
-  const amt = opts.acct ? (out ? "−" : "+") + fmt(t.amountMinor, t.currency) : amountText(t), cls = opts.acct ? (out ? "out" : "in") : amountCls(t);
+  const amt = opts.acct ? esc((out ? "−" : "+") + fmt(t.amountMinor, t.currency)) : signHTML(signed(t)) + esc(fmt(t.amountMinor, t.currency)), cls = opts.acct ? (out ? "out" : "in") : amountCls(t);
   // the post-date chip gets a line of its own under the row, so a narrow phone never cuts the date short
   const sub = txnSubtitle(t), chip = opts.sched ? `<span class="chip sched">${esc(__("Posts {date}", { date: shortDay(t.date) }))}</span>` : "",
     when = !opts.sched && opts.withDate ? `<span class="fwhen">${esc(dayLabel(txnDay(t)))}</span>` : "";
   return `<li><button type="button" class="feedrow${chip ? " withpost" : ""}" ${opts.edit ? "data-edit-txn" : "data-detail-txn"}="${esc(t.id)}">
       <span class="ficon t-${esc(flow(t))}" aria-hidden="true">${typeIcon(iconKind(t))}</span>
       <span class="fmain"><span class="ftitle">${esc(t.note || txnTagNames(t)[0] || lbl(TYPE_L, flow(t)))}${t.memo ? `<span class="fmemo" title="${esc(__("Has a note"))}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">${esc(__("Has a note"))}</span></span>` : ""}</span><span class="fsub">${when}${txnClock(t)}<span class="sr">${esc(lbl(TYPE_L, flow(t)))} · </span>${esc(sub)}</span></span>
-      <span class="famt ${cls}">${esc(amt)}</span>${chip ? `<span class="fpost">${chip}</span>` : ""}</button></li>`;
+      <span class="famt ${cls}">${amt}</span>${chip ? `<span class="fpost">${chip}</span>` : ""}</button></li>`;
 }
 /* ---------- transaction periods (the list pages by calendar period, not by entry count) ---------- */
 const MAX_RANGE_DAYS = 180;
@@ -937,7 +948,7 @@ function feedHTML(list, open = Infinity, rowOpts = {}) {
   list.forEach((t) => { const day = txnDay(t), last = days[days.length - 1]; if (last && last.date === day) last.items.push(t); else days.push({ date: day, items: [t] }); });
   return days.map((d, i) => {
     const byDefault = i < open, isOpen = d.date in state.dayOpen ? state.dayOpen[d.date] : byDefault;
-    return `<details class="fday" data-day="${esc(d.date)}" data-default="${byDefault ? 1 : 0}" ${isOpen ? "open" : ""}><summary><span class="fdate">${esc(dayLabel(d.date))}</span><span class="fcount">${esc(__("{n} transaction(s)", { n: d.items.length }))}</span><span class="fnet">${d.items.length > 1 ? esc(dayNet(d.items)) : ""}</span></summary><ul class="feed">${d.items.map((t) => feedRow(t, rowOpts)).join("")}</ul></details>`;
+    return `<details class="fday" data-day="${esc(d.date)}" data-default="${byDefault ? 1 : 0}" ${isOpen ? "open" : ""}><summary><span class="fdate">${esc(dayLabel(d.date))}</span><span class="fcount">${esc(__("{n} transaction(s)", { n: d.items.length }))}</span><span class="fnet">${d.items.length > 1 ? dayNetHTML(d.items) : ""}</span></summary><ul class="feed">${d.items.map((t) => feedRow(t, rowOpts)).join("")}</ul></details>`;
   }).join("");
 }
 function bindDays(root) {
@@ -1055,7 +1066,7 @@ function screenTransactions(v) {
       <select id="ftype" data-live-keep aria-label="${esc(__("Type"))}">${opts.type}</select>
       <select id="ftag" data-live-keep aria-label="${esc(__("Tags"))}">${opts.tag}</select>
       <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div></div>
-    <div id="txnResults"></div>`;
+    <div id="txnResults" class="amtstyle"></div>`;
   const countF = () => {
     const n = ["account", "type", "tag"].filter((k) => state.filter[k]).length;
     $("#fToggle").textContent = n ? __("Filters · {n}", { n }) : __("Filters");
@@ -1873,6 +1884,8 @@ function screenSettings(v) {
     ["display", __("Display"), [
       row(__("Page width"), select("setWidth", enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())), "setWidth"),
       row(__("Days open by default"), select("setOpenDays", [...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")), "setOpenDays"),
+      row(__("Spending and income"), `<select id="setAmtStyle" aria-describedby="setAmtHint">${enumOptions(AMTSTYLE_L, Object.keys(AMTSTYLE_L), amountStyle())}</select>`
+        + `<p class="shint" id="setAmtHint">${esc(__("With Color only, spending and income differ only by color and by the icon in front of each row."))}</p>`, "setAmtStyle"),
     ]],
     ["data", __("Data"), [
       row(__("Export all data"), `<div class="sbtns"><a class="smallbtn" href="api/export" download>${esc(__("Export JSON"))}</a></div>`),
@@ -1899,6 +1912,7 @@ function screenSettings(v) {
       settingsApplied();
       setLang(pickLang(state.general.language));
       applyPageWidth();
+      applyAmountStyle();
       msg(done());
     } catch (err) { errMsg(err); }
     render();
@@ -1907,6 +1921,7 @@ function screenSettings(v) {
   $("#setDefCur").addEventListener("change", (e) => saveGeneral({ defaultCurrency: e.target.value }, () => __("Default currency saved.")));
   $("#setNumFmt").addEventListener("change", (e) => saveGeneral({ numberFormat: e.target.value }, () => __("Number format saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
+  $("#setAmtStyle").addEventListener("change", (e) => saveGeneral({ amountStyle: e.target.value }, () => __("Spending and income display saved.")));
   $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
   if ($("#copyCommit")) $("#copyCommit").addEventListener("click", async () => { try { await navigator.clipboard.writeText(verAbout().commit); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } });
   if (state.goAbout) { state.goAbout = false; $("#set-about").scrollIntoView({ block: "start" }); }
@@ -3026,6 +3041,7 @@ async function load() {
   } else if (!s) msg(__("Settings unavailable, using defaults: {message}", { message: sErr ? sErr.message : "—" }), "error");
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
+  applyAmountStyle();
   // e.g. a category merged away; before render(), which reads the address. A fetch begun before the
   // address named an unknown value (or changed: a link opened while it ran) cannot tell gone from new: the
   // next one decides.

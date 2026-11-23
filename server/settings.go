@@ -114,6 +114,9 @@ type GeneralSettings struct {
 	TimeZone string `json:"timeZone"`
 	// NumberFormat writes amounts as "grouped" (1,074,958), "four" (107 4958, split by a no-break space in the web UI) or "plain" (1074958).
 	NumberFormat string `json:"numberFormat"`
+	// AmountStyle is how the transaction list marks spending and income: "both" (+ / − and a
+	// color), "sign" (+ / − only) or "color" (a color only). Issue #66.
+	AmountStyle string `json:"amountStyle"`
 }
 
 const (
@@ -124,6 +127,8 @@ const (
 var pageWidths = map[string]bool{"default": true, "wide": true, "full": true}
 
 var numberFormats = map[string]bool{"grouped": true, "four": true, "plain": true}
+
+var amountStyles = map[string]bool{"both": true, "sign": true, "color": true}
 
 // uiLanguages are the UI languages the web client ships translations for.
 var uiLanguages = map[string]bool{"en": true, "zh-TW": true}
@@ -194,7 +199,7 @@ func defaultDashboard() DashboardSettings {
 func defaultSettings() Settings {
 	return Settings{
 		Dashboard: defaultDashboard(),
-		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, PageWidth: "default", OpenDays: defaultOpenDays, NumberFormat: "grouped"},
+		General:   GeneralSettings{DefaultCurrency: "TWD", Currencies: []string{"TWD"}, PageWidth: "default", OpenDays: defaultOpenDays, NumberFormat: "grouped", AmountStyle: "both"},
 	}
 }
 
@@ -297,6 +302,12 @@ func (g *GeneralSettings) validate() error {
 	}
 	if !numberFormats[g.NumberFormat] {
 		return fmt.Errorf("numberFormat must be grouped, four or plain")
+	}
+	if g.AmountStyle == "" { // rows saved before this setting existed
+		g.AmountStyle = "both"
+	}
+	if !amountStyles[g.AmountStyle] {
+		return fmt.Errorf("amountStyle must be both, sign or color")
 	}
 	if g.PageWidth == "" { // rows saved before this setting existed
 		g.PageWidth = "default"
