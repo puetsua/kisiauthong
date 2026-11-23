@@ -967,10 +967,15 @@ function goneFilters(f) {
     : k === "account" ? (d.allAccounts || d.accounts).some((x) => x.id === f.account)
       : Object.keys(TYPE_L).includes(f.type))); // not `in`: "toString" is no type
 }
-// the unknown filter values the Transactions address names
-function goneInAddress() {
+// the filters the Transactions address names ("" elsewhere), and the unknown ones among them
+function addressFilters() {
   const { path, params } = hashParts();
-  return path === "transactions" ? goneFilters({ tag: params.get("tag") || "", account: params.get("account") || "", type: params.get("type") || "" }) : [];
+  return path === "transactions" ? { tag: params.get("tag") || "", account: params.get("account") || "", type: params.get("type") || "" } : null;
+}
+const addressKey = () => JSON.stringify(addressFilters());
+function goneInAddress() {
+  const f = addressFilters();
+  return f ? goneFilters(f) : [];
 }
 function dropGoneFilters() {
   goneFilters(state.filter).forEach((k) => { state.filter[k] = ""; });
@@ -2987,7 +2992,7 @@ function render(refresh) {
 }
 window.addEventListener("hashchange", render);
 async function load() {
-  const seq = ++loads.seq, addr = location.hash;
+  const seq = ++loads.seq, addr = addressKey(); // the filters only: typing a search changes the address too
   const data = await api("/api/state");
   let s = null, sErr = null;
   try { s = await api("/api/settings"); } catch (e) { sErr = e; }
@@ -3009,8 +3014,9 @@ async function load() {
   // e.g. a category merged away; before render(), which reads the address. A fetch begun before the
   // address named an unknown value (or changed: a link opened while it ran) cannot tell gone from new: the
   // next one decides.
-  if (seq > loads.filterAfter && location.hash === addr) { dropGoneFilters(); loads.asked = ""; live.force = false; }
+  if (seq > loads.filterAfter && addressKey() === addr) { dropGoneFilters(); loads.asked = ""; live.force = false; }
   else if (goneFilters(state.filter).length) liveForce();
+  else loads.asked = ""; // nothing unknown left (Clear): the same link opened again asks anew
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render(true);
@@ -3081,6 +3087,7 @@ function liveStop() {
   clearTimeout(live.timer); clearTimeout(live.retry);
   if (live.es) live.es.close();
   Object.assign(live, { es: null, timer: 0, retry: 0, wait: 2000, rev: "", force: false });
+  loads.asked = "";
 }
 // back from the background, focus, or back online: reconnect if needed. After a long background pause
 // or a network change the stream may look open but be dead (phones), so it is opened anew; its ready

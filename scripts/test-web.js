@@ -868,6 +868,24 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     await refresh(tags);
     assert.strictEqual(t.state.filter.tag, "g8");
     assert.match(shown(), /Seeds/);
+    // Clear before the refresh answers, then the same link again: it asks again (not "Checking…" for good)
+    open("#transactions?tag=g-q2");
+    done = timers.pop().fn(); await tick();
+    location.hash = "#transactions"; t.state.filter = { q: "", account: "", type: "", tag: "" }; t.render(); // Clear
+    await answer(held.length - 1, tags); await done;
+    open("#transactions?tag=g-q2");
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "the same link asks again");
+    await refresh(tags);
+    assert.strictEqual(location.hash, "#transactions");
+    // typing a search while the refresh runs changes the address, not its filters: the refresh still decides
+    open("#transactions?tag=g-q3");
+    done = timers.pop().fn(); await tick();
+    location.hash = "#transactions?q=bus&tag=g-q3"; // what writeTxnURL writes after a keystroke
+    await answer(held.length - 1, tags); await done;
+    assert.strictEqual(location.hash, "#transactions?q=bus", "decided");
+    assert.deepStrictEqual(timers, []);
+    open("#transactions");
+    t.state.filter = { q: "", account: "", type: "", tag: "" };
     // a type that does not exist: no fetch can change the types, so it goes at once
     open("#transactions?type=toString");
     assert.strictEqual(timers.length, 0);
