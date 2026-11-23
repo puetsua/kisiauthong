@@ -278,6 +278,10 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   dialog, transaction panel, Customize dashboard or Manage tags, or a focused
   field; it waits until they are closed or left. A new pattern with its own
   form or editing mode must add itself to `liveBusy()` in `web/app.js`.
+  The exception is a field marked `data-live-keep` (the Transactions search
+  box and filters): its screen sets `state.viewRedraw`, and while such a field
+  has focus a refresh redraws only the results under it, never the field
+  itself, so a search box left focused never holds updates back (issue #77).
 
 ## Popups
 
