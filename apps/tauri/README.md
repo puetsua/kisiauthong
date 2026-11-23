@@ -50,8 +50,8 @@ apps/tauri/
    again; Cancel, like the system Back, goes back to Settings. The bundled
    screen never stays behind a server page in the window's history: when it
    opens a server (at launch, or after saving one) the server takes the
-   screen's place, so Android's Back walks back through the web UI and then
-   leaves the app (issue #67).
+   screen's place, so Android's Back walks back through the web UI's pages
+   without coming back to the screen (issue #67).
    Signed out, the sign-in card (sign in, two-step code, first-user setup)
    ends with a row naming the server's host and a **Change server** link to
    the same Add server form, so the server can be changed without signing in;

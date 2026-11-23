@@ -342,24 +342,30 @@ fn may_check(asked: &AtomicBool, on_load: bool) -> bool {
     !on_load || was_asked
 }
 
-/// Leaves the bundled screen: back in history to the server page that opened
-/// it. Only with nothing behind the screen does it open `back` when that is a
-/// page of a saved server (the App updates screen passes the page that opened
-/// it), otherwise the active server's Settings, in the screen's place.
+/// How the bundled screen is left, never with a new entry after it (issue #67):
+/// - `back`, when it is a page of a saved server (the App updates screen passes
+///   Settings → About of the page that opened it), opens in the screen's place:
+///   the web UI drops `?about` from its own entry once it has scrolled, and a
+///   check may have changed what About shows, so it loads anew;
+/// - otherwise (Add/Edit server → Cancel) back in history to the server page
+///   that opened the screen, as the system Back does, or with nothing behind
+///   it the active server's Settings (the server screen with none saved).
+fn cancel_script(store: &Store, back: Option<&str>) -> Result<String, String> {
+    Ok(match back_to(store, back) {
+        Some(u) => replace_script(&u),
+        None => back_script(&match store.active_profile() {
+            Some(a) => settings_of(a)?,
+            None => screen_url(&[]),
+        }),
+    })
+}
+
+/// Leaves the bundled screen (see cancel_script).
 #[tauri::command]
 fn cancel_form(webview: Webview, shell: State<'_, Shell>, back: Option<String>) -> Result<(), String> {
     require_local(&webview)?;
-    let target = {
-        let store = shell.store.lock().unwrap();
-        match back_to(&store, back.as_deref()) {
-            Some(u) => u,
-            None => match store.active_profile() {
-                Some(a) => settings_of(a)?,
-                None => screen_url(&[]),
-            },
-        }
-    };
-    webview.eval(back_script(&target)).map_err(|e| e.to_string())
+    let script = cancel_script(&shell.store.lock().unwrap(), back.as_deref())?;
+    webview.eval(script).map_err(|e| e.to_string())
 }
 
 /// Asks GitHub for the latest release, only when the user asked: a tap on
@@ -1035,12 +1041,22 @@ mod tests {
 
     #[test]
     fn cancel_goes_back_to_the_page_that_opened_the_screen() {
-        let fallback = Url::parse("https://books.example.org/kisiauthong/#settings").unwrap();
-        let script = back_script(&fallback);
-        let prefix = "if (history.length > 1) history.back(); else location.replace(";
-        assert_eq!(literal_in(&script, prefix), fallback.as_str(), "the opener first, never a new entry");
-        let start = screen_url(&[]);
-        assert_eq!(literal_in(&back_script(&start), prefix), start.as_str());
+        let back = "if (history.length > 1) history.back(); else location.replace(";
+        let mut s = Store::default();
+        // nothing saved: only the server screen itself is left
+        let start = cancel_script(&s, None).unwrap();
+        assert_eq!(literal_in(&start, back), screen_url(&[]).as_str());
+        let id = s.upsert(None, None, "https://books.example.org/kisiauthong/").unwrap();
+        s.activate(&id, "2026-11-23T00:00:00Z".into());
+        // Add/Edit server → Cancel: the opener first, never a new entry after the screen
+        let cancel = cancel_script(&s, None).unwrap();
+        assert_eq!(literal_in(&cancel, back), "https://books.example.org/kisiauthong/#settings");
+        // App updates → Back: Settings → About of the opener, in the screen's place
+        let about = "https://books.example.org/kisiauthong/#settings?about";
+        assert_eq!(literal_in(&cancel_script(&s, Some(about)).unwrap(), "location.replace("), about);
+        // a `back` that is not a saved server's page is ignored
+        let other = cancel_script(&s, Some("https://evil.example/#settings")).unwrap();
+        assert_eq!(literal_in(&other, back), "https://books.example.org/kisiauthong/#settings");
     }
 
     #[test]
