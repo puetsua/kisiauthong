@@ -957,23 +957,34 @@ function filteredTxns() {
   return list;
 }
 // A filter whose value is gone or unknown (a category merged away elsewhere, an old or shared link) would
-// match nothing while its dropdown, having no such option, shows "All …": it is dropped. Checked after each
-// fetch and whenever the filters are read from the address, which may still carry the old value (issue #79).
-// An address from before a merge (browser Back) shows everything: only a filter on screen follows a merge.
-function dropGoneFilters() {
-  const f = state.filter, d = state.data;
-  if (!d) return;
-  if (f.tag && f.tag !== "none" && !d.tags.some((t) => t.id === f.tag)) f.tag = "";
-  if (f.account && !(d.allAccounts || d.accounts).some((a) => a.id === f.account)) f.account = "";
-  if (f.type && !Object.keys(TYPE_L).includes(f.type)) f.type = ""; // not `in`: "toString" is no type
+// match nothing while its dropdown, having no such option, shows "All …" (issue #79). Only load() drops such
+// values, from state.filter and from the address, since only with fresh data is a value known to be gone
+// rather than made elsewhere and not fetched yet. An address from before a merge (browser Back) then shows
+// everything: only a filter on screen follows a merge.
+function goneFilters(f) {
+  const d = state.data;
+  return ["tag", "account", "type"].filter((k) => f[k] && !(k === "tag" ? f.tag === "none" || d.tags.some((t) => t.id === f.tag)
+    : k === "account" ? (d.allAccounts || d.accounts).some((x) => x.id === f.account)
+      : Object.keys(TYPE_L).includes(f.type))); // not `in`: "toString" is no type
 }
+function dropGoneFilters() {
+  goneFilters(state.filter).forEach((k) => { state.filter[k] = ""; });
+  const { path, params } = hashParts();
+  if (path !== "transactions") return;
+  const gone = goneFilters({ tag: params.get("tag") || "", account: params.get("account") || "", type: params.get("type") || "" });
+  if (!gone.length) return;
+  gone.forEach((k) => params.delete(k));
+  history.replaceState(null, "", "#transactions" + (params.toString() ? "?" + params : "")); // render() follows
+}
+let filterCheck = null; // the fetch readTxnURL() asked for, one at a time
 // The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
 // search can be bookmarked, shared and reloaded. A bare #transactions keeps what is on screen.
 function readTxnURL() {
   const qs = hashParts().params;
   if (![...qs.keys()].length) return;
   state.filter = { q: qs.get("q") || "", account: qs.get("account") || "", type: qs.get("type") || "", tag: qs.get("tag") || "" };
-  dropGoneFilters(); // drawResults() then writes the address without them
+  // a value this page does not know: fetch, and load() keeps or drops it with fresh data (issue #79)
+  if (state.data && goneFilters(state.filter).length && !filterCheck) filterCheck = load().catch(() => {}).finally(() => { filterCheck = null; });
   state.searchPage = Math.max(0, (parseInt(qs.get("page"), 10) || 1) - 1);
   const per = parseInt(qs.get("per"), 10);
   if (PAGE_SIZES.includes(per)) state.pageSize = per;
@@ -2976,7 +2987,7 @@ async function load() {
   } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
-  dropGoneFilters(); // e.g. a category merged away
+  dropGoneFilters(); // e.g. a category merged away; before render(), which reads the address
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render(true);

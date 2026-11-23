@@ -690,54 +690,6 @@ test("live updates (#77): the cursor in the search box or a filter does not hold
   }
 });
 
-test("transactions (#79): a filter on a category that is gone is dropped, also when the address still carries it", () => {
-  const was = { data: t.state.data, filter: t.state.filter };
-  const spend = (id, note, date, tagIds) => ({ ...tx(id, "a1", "acc-external", 12000, date, "posted", note), tagIds });
-  const drawAt = (hash) => { location.hash = hash; t.render(true); return $el("#txnResults").innerHTML; };
-  try {
-    docProps.activeElement = null; // nothing focused: render(true) draws the whole screen, reading the address
-    // "g-gone" was merged away into another category elsewhere
-    t.state.data = { ...was.data, accounts: [acc, other], externals: [ext], allAccounts: [acc, other, ext], tags: [{ id: "g7", name: "Pets" }],
-      transactions: [spend("t7", "Bus fare", "2026-11-11", []), spend("t8", "Coffee beans", "2026-11-10", ["g7"]), spend("t9", "Cat food", "2026-11-09", ["g7"])] };
-    // a live refresh after the merge: load() had cleared the filter, the address still has the old id
-    t.state.filter = { q: "", account: "", type: "", tag: "" };
-    let html = drawAt("#transactions?tag=g-gone");
-    assert.strictEqual(t.state.filter.tag, "", "the address does not bring the removed category back");
-    assert.strictEqual(location.hash, "#transactions", "and the address drops it too");
-    assert.match(html, /Bus fare/, "the period's transactions are listed, not an empty filter");
-    assert.match(html, /Coffee beans/);
-    assert.match(html, /Cat food/);
-    assert.doesNotMatch(html, /No transactions in this period/);
-    // a reload or an old bookmark: the same
-    t.state.filter = { q: "", account: "", type: "", tag: "" };
-    drawAt("#transactions?tag=g-gone&type=expense");
-    assert.strictEqual(t.state.filter.tag, "");
-    assert.strictEqual(t.state.filter.type, "expense", "the other filters stay");
-    assert.strictEqual(location.hash, "#transactions?type=expense");
-    // an unknown account or type in an old or shared link: the same, for the same reason
-    t.state.filter = { q: "", account: "", type: "", tag: "" };
-    drawAt("#transactions?account=acc-elsewhere&type=refund&tag=g7");
-    assert.deepStrictEqual([t.state.filter.account, t.state.filter.type, t.state.filter.tag], ["", "", "g7"]);
-    assert.strictEqual(location.hash, "#transactions?tag=g7");
-    drawAt("#transactions?type=toString");
-    assert.strictEqual(t.state.filter.type, "", "a name every object has is no type either");
-    drawAt("#transactions?account=acc-external&type=income");
-    assert.deepStrictEqual([t.state.filter.account, t.state.filter.type], ["acc-external", "income"], "an external account and a known type stay");
-    // a category that exists, and Uncategorised, stay
-    html = drawAt("#transactions?tag=g7");
-    assert.strictEqual(t.state.filter.tag, "g7");
-    assert.strictEqual(location.hash, "#transactions?tag=g7");
-    html = drawAt("#transactions?tag=none");
-    assert.strictEqual(t.state.filter.tag, "none");
-    assert.match(html, /Bus fare/, "Uncategorised lists the spending without a category");
-    assert.doesNotMatch(html, /Coffee beans/);
-  } finally {
-    t.state.data = was.data; t.state.filter = was.filter;
-    location.hash = "";
-    delete docProps.activeElement;
-  }
-});
-
 // askConfirm is async; these run after the synchronous tests
 const later = [];
 later.push(["askConfirm: window.confirm() in a browser, the app's native dialog inside the app", async () => {
@@ -777,27 +729,74 @@ later.push(["Settings → Servers: when the list cannot load, the section and it
   assert.strictEqual($el('.snav [data-goto="servers"]').hidden, true);
   delete sandbox.kisiauthongApp;
 }]);
-later.push(["transactions (#79): a refresh keeps Uncategorised and drops a category merged away", async () => {
-  const was = { data: t.state.data, filter: t.state.filter, general: t.state.general, dashboard: t.state.dashboard, about: t.state.about, dismissed: t.state.dismissed };
+later.push(["transactions (#79): a filter the dropdowns cannot show is dropped by a fresh fetch, also from the address", async () => {
+  const was = { data: t.state.data, filter: t.state.filter, period: t.state.period, general: t.state.general, dashboard: t.state.dashboard, about: t.state.about, dismissed: t.state.dismissed };
   const realApi = sandbox.api, realRender = sandbox.render;
-  const fresh = () => ({ ...was.data, accounts: [acc, other, ext], tags: [{ id: "g7", name: "Pets" }] });
-  sandbox.api = (url) => Promise.resolve(url === "/api/state" ? fresh() : { general: {}, about: {}, notifications: {} });
-  sandbox.render = () => {};
+  const spend = (id, note, date, tagIds) => ({ ...tx(id, "a1", "acc-external", 12000, date, "posted", note), tagIds });
+  // the server's books: "g-gone" was merged into g7 elsewhere, g8 was made elsewhere
+  const server = { tags: [{ id: "g7", name: "Pets" }, { id: "g8", name: "Garden" }],
+    transactions: [spend("t7", "Bus fare", "2026-11-11", []), spend("t8", "Cat food", "2026-11-10", ["g7"]), spend("t9", "Seeds", "2026-11-09", ["g8"])] };
+  const fetched = [];
+  sandbox.api = (url) => { fetched.push(url); return Promise.resolve(url === "/api/state" ? { ...was.data, accounts: [acc, other, ext], tags: server.tags, transactions: server.transactions } : { general: {}, about: {}, notifications: {} }); };
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const shown = () => $el("#txnResults").innerHTML;
   try {
-    // the dropdown keeps focus after a choice, so the redraw after load() reads no address: load() alone decides
+    docProps.activeElement = null; // nothing focused: render(true) draws the whole screen, reading the address
+    t.state.period = { mode: "month", start: "2026-11-01", end: "2026-11-30" };
+    // a live refresh after the merge (or a reload): the address still has the old id
+    location.hash = "#transactions?tag=g-gone&type=expense";
+    t.state.filter = { q: "", account: "", type: "", tag: "g-gone" };
+    await sandbox.load();
+    assert.strictEqual(t.state.filter.tag, "", "the address does not bring the removed category back");
+    assert.strictEqual(t.state.filter.type, "expense", "the other filters stay");
+    assert.strictEqual(location.hash, "#transactions?type=expense", "the address drops it too");
+    assert.match(shown(), /Bus fare/, "the period's transactions are listed, not an empty filter");
+    assert.match(shown(), /Seeds/);
+    // a link to a category made elsewhere, opened while this page is behind: kept, and shown once fetched
+    t.state.data.tags = [{ id: "g7", name: "Pets" }];
+    fetched.length = 0;
+    location.hash = "#transactions?tag=g8";
+    t.render({ type: "hashchange" });
+    await settle();
+    assert.strictEqual(fetched[0], "/api/state", "an unknown value asks for a fresh fetch");
+    assert.strictEqual(t.state.filter.tag, "g8", "which knows the category");
+    assert.strictEqual(location.hash, "#transactions?tag=g8");
+    assert.match(shown(), /Seeds/);
+    assert.doesNotMatch(shown(), /Bus fare/);
+    // an old or shared link with an unknown account or type, or a merged-away category: dropped after the fetch
+    fetched.length = 0;
+    location.hash = "#transactions?account=acc-elsewhere&type=toString&tag=g-gone";
+    t.render({ type: "hashchange" });
+    await settle();
+    assert.strictEqual(fetched.filter((u) => u === "/api/state").length, 1, "fetched once, not again by its own redraw");
+    assert.deepStrictEqual([t.state.filter.account, t.state.filter.type, t.state.filter.tag], ["", "", ""]);
+    assert.strictEqual(location.hash, "#transactions");
+    assert.match(shown(), /Bus fare/);
+    // known values, an external account and Uncategorised are kept without a fetch
+    fetched.length = 0;
+    location.hash = "#transactions?account=acc-external&type=expense&tag=g7";
+    t.render({ type: "hashchange" });
+    location.hash = "#transactions?tag=none";
+    t.render({ type: "hashchange" });
+    await settle();
+    assert.strictEqual(fetched.length, 0);
+    assert.strictEqual(t.state.filter.tag, "none");
+    assert.match(shown(), /Bus fare/, "Uncategorised lists the spending without a category");
+    assert.doesNotMatch(shown(), /Cat food/);
+    // a refresh with the dropdown focused reads no address: load() alone decides, and it keeps Uncategorised
+    sandbox.render = () => {};
     t.state.filter = { q: "", account: "", type: "", tag: "none" };
     await sandbox.load();
     assert.strictEqual(t.state.filter.tag, "none", "Uncategorised is not a category id, and it stays");
     t.state.filter = { q: "", account: "", type: "", tag: "g-gone" };
     await sandbox.load();
-    assert.strictEqual(t.state.filter.tag, "", "a category merged away is dropped");
-    t.state.filter = { q: "", account: "", type: "", tag: "g7" };
-    await sandbox.load();
-    assert.strictEqual(t.state.filter.tag, "g7");
+    assert.strictEqual(t.state.filter.tag, "");
   } finally {
     sandbox.api = realApi; sandbox.render = realRender;
     // load() also replaced the settings: put them back for the tests after this one
-    Object.assign(t.state, { data: was.data, filter: was.filter, general: was.general, dashboard: was.dashboard, about: was.about, dismissed: was.dismissed });
+    Object.assign(t.state, { data: was.data, filter: was.filter, period: was.period, general: was.general, dashboard: was.dashboard, about: was.about, dismissed: was.dismissed });
+    location.hash = "";
+    delete docProps.activeElement;
     t.setLang("en");
   }
 }]);
