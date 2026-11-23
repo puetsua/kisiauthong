@@ -54,6 +54,10 @@ apps/tauri/
    Cancel goes back to the sign-in page. In a browser the row is not there.
 5. Pages may only stay on the bundled screen or a saved server's origin. Other
    links, `target="_blank"` and `window.open` open in the system browser.
+   On Windows and macOS the window has no system title bar: a second, bundled
+   webview (`src/frame.html`) draws the bar above the page, and only it may
+   move, maximize or close the window
+   ([ADR 0026](../../docs/decisions/0026-desktop-window-frame.md)).
 6. **App updates** ([ADR 0020](../../docs/decisions/0020-app-updates.md)).
    Settings → About shows the app's version. On Android, *Check for updates*
    opens the bundled App updates screen. It asks GitHub for the latest release,

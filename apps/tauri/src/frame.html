@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- The desktop apps' window frame (issue #32): its own small webview above the
+     server's page, so no server page has to make room for it or may move the window. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>記數通 KiSiauThong</title>
+<link rel="stylesheet" href="frame.css">
+</head>
+<body>
+<header class="bar" data-tauri-drag-region="deep">
+  <img class="ico" src="icon-512.png" alt="">
+  <span class="name"><span lang="nan-Hant-TW">記數通</span> KiSiauThong</span>
+  <nav class="ctl" id="ctl">
+    <button type="button" id="min"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10"/></svg></button>
+    <button type="button" id="max"><svg class="up" viewBox="0 0 10 10" aria-hidden="true"><path d="M.5.5h9v9h-9z"/></svg><svg class="down" viewBox="0 0 10 10" aria-hidden="true"><path d="M.5 2.5h7v7h-7zM2.5 2.5V.5h7v7h-2"/></svg></button>
+    <button type="button" id="close" class="close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
+  </nav>
+</header>
+<script src="connect.js"></script>
+<script src="strings.js"></script>
+<script src="frame.js"></script>
+</body>
+</html>

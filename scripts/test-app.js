@@ -116,7 +116,7 @@ test("strings: both languages have the same keys and {url} placeholders, and eve
   }
   for (const kind of ["invalid", "unreachable", "notServer", "cleartext", "certificate", "save"])
     assert.ok(en[kind + "Title"] && en[kind + "Text"], kind);
-  for (const f of ["first-run.js", "update.js"]) {
+  for (const f of ["first-run.js", "update.js", "frame.js"]) {
     const js = fs.readFileSync(path.join(app, f), "utf8");
     for (const m of js.matchAll(/\bS\.([a-zA-Z]+)/g)) assert.ok(m[1] in en, `${f} uses S.${m[1]}`);
   }
@@ -209,6 +209,31 @@ test("desktop updates: the updater runs only in Rust, never from a page (ADR 002
   assert.ok(u.requireSignedVersion, "the signature must name the version it was signed for");
   assert.ok(!u.dangerousInsecureTransportProtocol && !u.allowDowngrades, "https only, no downgrades");
   assert.ok(!(conf.bundle && conf.bundle.createUpdaterArtifacts), "signed builds only in release.yml, so local builds need no key");
+});
+
+test("window frame: only the bundled frame webview may move, resize or close the window (ADR 0026)", () => {
+  const tauri = path.join(root, "apps", "tauri", "src-tauri");
+  const caps = path.join(tauri, "capabilities");
+  const cap = (f) => JSON.parse(fs.readFileSync(path.join(caps, f), "utf8"));
+  const frame = cap("frame.json");
+  assert.ok(frame.local && !frame.remote, "the frame capability is for the bundled frame page only");
+  assert.deepStrictEqual(frame.webviews, ["frame"], "and only for the frame webview, not the whole window");
+  assert.ok(!frame.windows, "a window-wide grant would reach the server's page too");
+  assert.deepStrictEqual(frame.platforms.sort(), ["linux", "macOS", "windows"], "desktop only");
+  for (const p of frame.permissions)
+    assert.ok(/^core:window:allow-/.test(p) || p === "core:webview:allow-set-webview-focus", `frame has only window permissions, and may give the page the keyboard: ${p}`);
+  for (const f of fs.readdirSync(caps).filter((f) => f !== "frame.json")) {
+    const c = cap(f);
+    assert.ok(!(c.webviews || []).includes("frame"), `${f} grants nothing to the frame`);
+    assert.ok(!/core:(window|webview)/.test(JSON.stringify(c.permissions)), `${f} grants no window or webview permission`);
+  }
+  assert.ok(!fs.readFileSync(path.join(tauri, "permissions", "app.toml"), "utf8").includes("core:window"), "no permission set has window permissions");
+  const lib = fs.readFileSync(path.join(tauri, "src", "lib.rs"), "utf8");
+  const grant = lib.slice(lib.indexOf("fn grant("), lib.indexOf("fn require_local("));
+  assert.ok(/\.webview\(CONTENT\)/.test(grant) && !/\.window\(/.test(grant), "saved servers' pages get the bridge in the content webview only");
+  const html = fs.readFileSync(path.join(app, "frame.html"), "utf8");
+  for (const m of html.matchAll(/(?:src|href)="([^"]+)"/g)) assert.ok(!/^[a-z]+:/i.test(m[1]), `frame.html loads only bundled files: ${m[1]}`);
+  assert.ok(/<header[^>]*data-tauri-drag-region="deep"/.test(html), "the whole bar drags, text and icon included");
 });
 
 // The RGBA pixels of an 8-bit, non-interlaced RGBA PNG (what scripts/android-icons.py writes).

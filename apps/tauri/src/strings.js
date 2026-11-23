@@ -64,6 +64,10 @@
       updBack: "Back",
       updAuto: "Check for updates when the app opens",
       updAutoFailed: "Could not save the setting. ({detail})",
+      frameMinimize: "Minimize",
+      frameMaximize: "Maximize",
+      frameRestore: "Restore",
+      frameClose: "Close",
       updHint: "Updates come from the project's releases on GitHub. The app asks GitHub when you check, and each time it opens while the switch above is on. It sends nothing about you or your server.",
     },
     "zh-TW": {
@@ -123,6 +127,10 @@
       updBack: "返回",
       updAuto: "App 開啟時檢查更新",
       updAutoFailed: "無法儲存設定。（{detail}）",
+      frameMinimize: "最小化",
+      frameMaximize: "最大化",
+      frameRestore: "還原",
+      frameClose: "關閉",
       updHint: "更新來自本專案在 GitHub 上的發行版本。你檢查時，以及開啟上面的選項後每次開啟 App 時，App 會連到 GitHub。不會傳送任何關於你或你的伺服器的資料。",
     },
   };

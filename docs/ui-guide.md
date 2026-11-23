@@ -225,6 +225,11 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   app's version, the status line, one primary button (Check → Download and
   install / Update and restart), Back, then a plain checkbox *Check for
   updates when the app opens* and a hint saying where updates come from.
+- **The desktop apps' window frame** (`apps/tauri/src/frame.html`, ADR 0026):
+  a bar in the sidebar purple across the top of the window, above every page:
+  icon and name, then on Windows minimize, maximize/restore and close at the
+  right; on macOS the system traffic lights at the left. The bar drags the
+  window and double-click maximizes. Pages draw no title area of their own.
 - **The apps' server screen** (`apps/tauri/src/`, outside the web UI): the
   brand panel with the large icon beside the form on desktop, a purple header
   above a white sheet on phones; one address field, a hint with an example,
