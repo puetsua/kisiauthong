@@ -45,7 +45,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -379,6 +379,89 @@ test("transactions: no scheduled rows, no line", () => {
   t.screenTransactions(view());
   assert.doesNotMatch($el("#txnResults").innerHTML, /schedSec/);
   t.state.data.transactions = keep;
+});
+
+test("spending and income display (#66): the list's signs sit in their own span, the account page keeps its own", () => {
+  const keep = t.state.data.transactions;
+  t.state.data.transactions = [...keep,
+    tx("d1", "a1", "acc-external", 12000, "2026-11-17", "posted", "Lunch"),
+    tx("d2", "acc-external", "a1", 129000, "2026-11-17", "posted", "Refund"),
+    tx("d3", "a1", "a2", 300000, "2026-11-17", "posted", "To Daily"),
+    tx("d4", "a1", "acc-external", 50000, "2026-11-16", "posted", "Card"),
+    tx("d5", "a2", "acc-external", 6500, "2026-11-16", "posted", "Coffee")];
+  const rows = {};
+  for (const style of ["both", "sign", "color"]) {
+    t.state.general = { ...(t.state.general || {}), amountStyle: style };
+    assert.strictEqual(t.amountStyle(), style);
+    t.screenTransactions(view());
+    rows[style] = strip($el("#txnResults").innerHTML);
+  }
+  t.state.general = { ...t.state.general, amountStyle: "both" };
+  const html = rows.both;
+  // the markup is the same in every mode: CSS on html[data-amounts] decides what shows,
+  // so copied text and screen readers always get the + / −
+  assert.strictEqual(rows.sign, html);
+  assert.strictEqual(rows.color, html);
+  assert.match(html, /<span class="famt out"><span class="asign">−<\/span>TWD 120<\/span>/, "spending");
+  assert.match(html, /<span class="famt in"><span class="asign">\+<\/span>TWD 1,290<\/span>/, "income");
+  assert.match(html, /<span class="famt move">TWD 3,000<\/span>/, "a transfer between own accounts: no sign");
+  // day nets: one .in / .out span per currency, the sign in its own span too
+  assert.match(html, /<span class="fnet"><span class="in"><span class="asign">\+<\/span>TWD 1,170<\/span><\/span>/);
+  assert.match(html, /<span class="fnet"><span class="out"><span class="asign">−<\/span>TWD 565<\/span><\/span>/);
+  assert.strictEqual(strip(t.dayNet(t.state.data.transactions.filter((x) => x.date === "2026-11-16"))), "−TWD 565", "the text form keeps its sign");
+  // only the Transactions list takes the style; the account page keeps its signs and colors
+  const v = view();
+  t.screenTransactions(v);
+  assert.match(v.innerHTML, /<div id="txnResults" class="amtstyle"><\/div>/);
+  location.hash = "#acct?id=a1";
+  const av = view();
+  t.screenAcct(av);
+  assert.doesNotMatch(av.innerHTML, /amtstyle|famt[^"]*"><span class="asign"/, "no styled container, rows signed as the account sees them");
+  assert.match(strip(av.innerHTML), /famt out">−TWD 120</);
+  location.hash = "#transactions";
+  t.state.data.transactions = keep;
+});
+
+test("spending and income display (#66): unknown or missing setting reads as both, and it lands on <html>", () => {
+  t.state.general = { ...t.state.general, amountStyle: undefined };
+  assert.strictEqual(t.amountStyle(), "both");
+  t.state.general = { ...t.state.general, amountStyle: "rainbow" };
+  assert.strictEqual(t.amountStyle(), "both");
+  docProps.documentElement = { dataset: {} };
+  t.state.general = { ...t.state.general, amountStyle: "color" };
+  t.applyAmountStyle();
+  assert.strictEqual(docProps.documentElement.dataset.amounts, "color");
+  delete docProps.documentElement;
+  t.state.general = { ...t.state.general, amountStyle: "both" };
+});
+
+test("spending and income display (#66): Settings → Display has the select, en and zh-TW", () => {
+  const v = view();
+  t.state.general = { ...t.state.general, amountStyle: "sign" };
+  t.screenSettings(v);
+  const display = v.innerHTML.slice(v.innerHTML.indexOf('id="set-display"'), v.innerHTML.indexOf('id="set-data"'));
+  assert.match(display, /<label for="setAmtStyle" class="sl">Spending and income<\/label>/);
+  assert.match(display, /<option value="both" >Signs and color<\/option><option value="sign" selected>Signs only \(\+ \/ −\)<\/option><option value="color" >Color only<\/option>/);
+  assert.match(display, /<select id="setAmtStyle" aria-describedby="setAmtHint">/);
+  assert.match(display, /<p class="shint" id="setAmtHint">With Color only/);
+  t.setLang("zh-TW");
+  t.screenSettings(v);
+  assert.match(v.innerHTML, />收支顯示<\/label>.*>符號和顏色<.*>只用 \+ \/ − 符號<.*>只用顏色</s);
+  t.setLang("en");
+  t.state.general = { ...t.state.general, amountStyle: "both" };
+});
+
+test("spending and income display (#66): the stylesheet colors only the list, and spending has its own red", () => {
+  const css = read("style.css");
+  const tok = (k) => (css.match(new RegExp("--" + k + ":(#[0-9a-f]{3,6})")) || [])[1];
+  assert.ok(tok("neg") && tok("red") && tok("neg") !== tok("red"), "--neg is not the over-budget --red");
+  assert.match(css, /\.amtstyle \.famt\.out,\.amtstyle \.fnet \.out\{color:var\(--neg\)\}/);
+  assert.match(css, /\.amtstyle \.fnet \.in\{color:var\(--pos\)\}/);
+  assert.match(css, /\[data-amounts=sign\] \.amtstyle \.famt\.in,\[data-amounts=sign\] \.amtstyle \.famt\.out\{color:var\(--ink\)\}/);
+  // hidden from sight but still inline text (not display:none or out of flow), so a copied row keeps "−TWD 120" on one line
+  assert.match(css, /\[data-amounts=color\] \.amtstyle \.asign\{font-size:0\}/);
+  assert.doesNotMatch(css, /asign\{[^}]*display:none/);
+  assert.doesNotMatch(css, /^\.famt\.out\{/m, "outside the list spending stays ink");
 });
 
 test("zh-TW: the summary line and the card read as designed", () => {

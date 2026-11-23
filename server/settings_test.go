@@ -329,6 +329,34 @@ func TestSettingsNumberFormat(t *testing.T) {
 	}
 }
 
+func TestSettingsAmountStyle(t *testing.T) {
+	withTestStore(t)
+	if _, s := doSettings(t, http.MethodGet, ""); s.General.AmountStyle != "both" {
+		t.Fatalf("default: %q", s.General.AmountStyle)
+	}
+	for _, v := range []string{"sign", "color", "both"} {
+		if code, s := doSettings(t, http.MethodPut, `{"general":{"amountStyle":"`+v+`"}}`); code != 200 || s.General.AmountStyle != v {
+			t.Fatalf("%s: %d %q", v, code, s.General.AmountStyle)
+		}
+	}
+	doSettings(t, http.MethodPut, `{"general":{"amountStyle":"color"}}`)
+	if _, s := doSettings(t, http.MethodPut, `{"general":{"pageWidth":"wide"}}`); s.General.AmountStyle != "color" {
+		t.Fatalf("amount style lost: %+v", s.General)
+	}
+	for _, bad := range []string{"none", "Color", "signs"} {
+		if code, _ := doSettings(t, http.MethodPut, `{"general":{"amountStyle":"`+bad+`"}}`); code != 400 {
+			t.Errorf("amountStyle %q: want 400, got %d", bad, code)
+		}
+	}
+	// a row saved before the setting existed reads as the default
+	if err := testBook.setSetting("general", `{"defaultCurrency":"TWD","currencies":["TWD"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if code, s := doSettings(t, http.MethodGet, ""); code != 200 || s.General.AmountStyle != "both" {
+		t.Fatalf("old row: %d %q", code, s.General.AmountStyle)
+	}
+}
+
 func TestSettingsTimeZone(t *testing.T) {
 	withTestStore(t)
 	if _, s := doSettings(t, http.MethodGet, ""); s.General.TimeZone != "" {
