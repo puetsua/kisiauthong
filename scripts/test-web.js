@@ -45,7 +45,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, fmtNum, fmt, dayNet };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -236,6 +236,44 @@ test("amounts in several currencies (#62): default currency first and large, the
   // the tiles' labels are translated, the amounts are not
   t.setLang("zh-TW");
   try { assert.match(strip(t.moneyTile(vm.runInContext('__("Spent")', sandbox), { TWD: 100 })), /<span class="lab">已花費<\/span><span class="mamt">/); } finally { t.setLang("en"); }
+});
+
+test("one currency order everywhere (#71): the frequently used list in its Settings order, default first, then by code", () => {
+  const d = t.state.data, saved = { general: t.state.general, accounts: d.accounts, tags: d.tags, spending: d.spendingThisMonth };
+  const codes = (html, re) => [...strip(html).matchAll(re)].map((x) => x[1]).join(",");
+  try {
+    t.state.general = { defaultCurrency: "TWD", currencies: ["TWD", "USD", "JPY"] };
+    assert.strictEqual(t.curSort(["EUR", "JPY", "CHF", "TWD", "USD"]).join(), "TWD,USD,JPY,CHF,EUR");
+    assert.strictEqual(t.curOrder({ JPY: 1, EUR: 2, USD: 3, TWD: 4 }).map(([c]) => c).join(), "TWD,USD,JPY,EUR");
+    // the list's own order, not by code: USD before JPY; a new default moves to the front
+    t.state.general = { defaultCurrency: "JPY", currencies: ["TWD", "USD", "JPY"] };
+    assert.strictEqual(t.curSort(["USD", "TWD", "JPY", "AUD"]).join(), "JPY,TWD,USD,AUD");
+    t.state.general = { defaultCurrency: "TWD", currencies: ["TWD", "USD", "JPY"] };
+    // category cards, tag and reserve pages and day headers (moneyBlock, dayNet)
+    assert.strictEqual(codes(t.moneyBlock({ JPY: -300, EUR: -5, TWD: -100, USD: -20 }), /<span class="ccode">(\w+)<\/span>/g), "TWD,USD,JPY,EUR");
+    const mk = (id, cur, amount) => ({ id, fromAccountId: "a1", toAccountId: "acc-external", type: "transfer", amountMinor: amount, currency: cur, date: "2026-11-10", state: "posted", tagIds: [] });
+    assert.match(strip(t.dayNet([mk("x", "JPY", 300), mk("y", "TWD", 5000), mk("z", "USD", 100)])), /^−TWD 50 · −USD 1.00 · −JPY 300$/);
+    // Spending this month: the server's rows by code; the tabs in currency order, the default's tab shown
+    d.spendingThisMonth = ["EUR", "JPY", "TWD", "USD"].map((c, i) => ({ tagId: "", currency: c, amountMinor: 1000 + i }));
+    const spending = t.widgetBody("spending", { id: "sp71" });
+    assert.strictEqual(codes(spending, /data-spend-cur="(\w+)"/g), "TWD,USD,JPY,EUR");
+    assert.match(spending, /data-spend-cur="TWD" data-widget="sp71" class="on"/);
+    // no spending in the default currency: the first tab in that order (USD, not JPY by code)
+    d.spendingThisMonth = d.spendingThisMonth.filter((x) => x.currency !== "TWD");
+    assert.match(t.widgetBody("spending", { id: "sp71" }), /^<div class="seg curtabs"[^>]*><button type="button" data-spend-cur="USD" data-widget="sp71" class="on"/);
+    // Balances by currency cards and the Customize "Show" checkboxes, whatever the accounts' name order
+    const own = (id, name, currency) => ({ id, kind: "own", name, currency, balanceMinor: 100000, reservedMinor: 0, heldMinor: 0, freeMinor: 100000 });
+    d.accounts = [own("x1", "Alpha", "JPY"), own("x2", "Beta", "EUR"), own("x3", "Gamma", "USD"), own("x4", "Delta", "TWD"), own("x5", "Eta", "JPY")];
+    assert.strictEqual(codes(t.widgetBody("balances", {}), /<b>(\w{3}) /g), "TWD,USD,JPY,EUR");
+    assert.strictEqual(t.pickItems("currencies").map((x) => x.id).join(), "TWD,USD,JPY,EUR");
+    // currency pickers: the frequently used list, then the others in use and the current value by code
+    d.tags = [{ id: "g1", name: "Trip", currency: "GBP" }];
+    const top = (html) => codes(html.match(/<optgroup label="Frequently used">(.*?)<\/optgroup>/)[1], /<option value="(\w+)"/g);
+    assert.strictEqual(top(t.currencyOptions("CHF")), "TWD,USD,JPY,CHF,EUR,GBP");
+    assert.strictEqual(top(t.currencyOptions("USD")), "TWD,USD,JPY,EUR,GBP");
+  } finally {
+    t.state.general = saved.general; d.accounts = saved.accounts; d.tags = saved.tags; d.spendingThisMonth = saved.spending;
+  }
 });
 
 test("ended budgets (#59): below the running ones, in a closed Ended (n) section, on the Tags page and in the widget", () => {

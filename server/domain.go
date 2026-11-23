@@ -246,11 +246,13 @@ type TagSpend struct {
 }
 
 // SpendingByCategory sums posted expenses in ref's calendar month per
-// (category tag, currency), largest first. Currencies are never mixed. An
+// (category tag, currency), grouped by currency in curOrder (the user's
+// frequently used currencies, default first; others by code, issue #71) and
+// largest first within a currency. Currencies are never mixed. An
 // expense linked to two category tags counts toward both, as in BudgetSpent.
 // Unlike BudgetSpent it is gross spending: income never reduces it (ADR 0021).
 // Scheduled expenses (dated after today) count once they post.
-func (d *Data) SpendingByCategory(ref, today string) []TagSpend {
+func (d *Data) SpendingByCategory(ref, today string, curOrder []string) []TagSpend {
 	month := ref[:7]
 	cats := map[string][]string{}
 	for _, tt := range d.TransactionTags {
@@ -274,9 +276,10 @@ func (d *Data) SpendingByCategory(ref, today string) []TagSpend {
 	for k, v := range sums {
 		out = append(out, TagSpend{TagID: k.tag, Currency: k.cur, AmountMinor: v})
 	}
+	less := currencyLess(curOrder)
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Currency != out[j].Currency {
-			return out[i].Currency < out[j].Currency
+			return less(out[i].Currency, out[j].Currency)
 		}
 		if out[i].AmountMinor != out[j].AmountMinor {
 			return out[i].AmountMinor > out[j].AmountMinor
@@ -284,6 +287,29 @@ func (d *Data) SpendingByCategory(ref, today string) []TagSpend {
 		return out[i].TagID < out[j].TagID
 	})
 	return out
+}
+
+// currencyLess orders currency codes as every list of currencies is ordered
+// (issue #71, the web UI's curCmp): those in order first, in that order, then
+// any other code alphabetically.
+func currencyLess(order []string) func(a, b string) bool {
+	rank := map[string]int{}
+	for i, c := range order {
+		if _, ok := rank[c]; !ok {
+			rank[c] = i
+		}
+	}
+	return func(a, b string) bool {
+		ra, oka := rank[a]
+		rb, okb := rank[b]
+		switch {
+		case oka && okb:
+			return ra < rb
+		case oka != okb:
+			return oka
+		}
+		return a < b
+	}
 }
 
 func daysInMonth(y int, m time.Month) int {

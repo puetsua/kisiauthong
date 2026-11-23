@@ -96,6 +96,27 @@ func TestSettingsFrequentCurrencies(t *testing.T) {
 	}
 }
 
+// Issue #71: the currency order the Spending rows (GET /api/state, MCP) use follows the
+// frequently used currencies, default first, and changes when Settings do.
+func TestCurrencyOrderFollowsSettings(t *testing.T) {
+	withTestStore(t)
+	if got := strings.Join(testBook.currencyOrder(), ","); got != "TWD" {
+		t.Fatalf("default order: %s", got)
+	}
+	if code, _ := doSettings(t, http.MethodPut, `{"general":{"defaultCurrency":"TWD","currencies":["USD","JPY"]}}`); code != 200 {
+		t.Fatalf("PUT: %d", code)
+	}
+	if got := strings.Join(testBook.currencyOrder(), ","); got != "TWD,USD,JPY" {
+		t.Fatalf("order: %s", got)
+	}
+	if code, _ := doSettings(t, http.MethodPut, `{"general":{"defaultCurrency":"JPY"}}`); code != 200 {
+		t.Fatalf("PUT: %d", code)
+	}
+	if got := strings.Join(testBook.currencyOrder(), ","); got != "JPY,TWD,USD" {
+		t.Fatalf("order after a new default: %s", got)
+	}
+}
+
 func TestSettingsLanguage(t *testing.T) {
 	withTestStore(t)
 	if _, s := doSettings(t, http.MethodGet, ""); s.General.Language != "" {

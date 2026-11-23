@@ -28,6 +28,14 @@ const pageWidth = () => (state.general && WIDTH_L[state.general.pageWidth] ? sta
 const applyPageWidth = () => { document.documentElement.dataset.width = pageWidth(); };
 // The default currency is always in the frequently used list, first.
 const favCurs = () => { const d = defCur(), l = (state.general && state.general.currencies) || []; return [d, ...l.filter((c) => c !== d)]; };
+// One order wherever currencies are listed (issue #71): the frequently used list in its Settings order,
+// so the default currency first, then any other currency by code. A list with its own order setting
+// (the Settings chips themselves) is the only exception.
+const curCmp = (a, b) => {
+  const f = favCurs(), i = f.indexOf(a), j = f.indexOf(b);
+  return (i < 0 ? f.length : i) - (j < 0 ? f.length : j) || (a < b ? -1 : a > b ? 1 : 0);
+};
+const curSort = (list) => [...list].sort(curCmp);
 const ALL_CURRENCIES = (() => { try { return Intl.supportedValuesOf("currency"); } catch (e) { return []; } })();
 const curNames = {};
 const curName = (c) => {
@@ -35,11 +43,11 @@ const curName = (c) => {
 };
 const curOption = (c, sel) => `<option value="${esc(c)}" ${c === sel ? "selected" : ""}>${esc(c)} — ${esc(curName(c))}</option>`;
 // Top group: the frequently used list (Settings), then currencies your accounts and tags already
-// use, then the current value; below it every other ISO 4217 code under "All currencies".
+// use and the current value, by code; below it every other ISO 4217 code under "All currencies".
 function currencyOptions(selected) {
   const sel = selected || defCur(), d = state.data;
   const inUse = d ? [...d.accounts.map((a) => a.currency), ...d.tags.map((t) => t.currency)] : [];
-  const top = [...new Set([...favCurs(), ...inUse, sel].filter(Boolean))];
+  const top = curSort(new Set([...favCurs(), ...inUse, sel].filter(Boolean)));
   const rest = ALL_CURRENCIES.filter((c) => !top.includes(c));
   return `<optgroup label="${esc(__("Frequently used"))}">${top.map((c) => curOption(c, sel)).join("")}</optgroup>`
     + (rest.length ? `<optgroup label="${esc(__("All currencies"))}">${rest.map((c) => curOption(c, sel)).join("")}</optgroup>` : "");
@@ -259,7 +267,7 @@ function dashLayout() {
 // Items a widget can be narrowed to ("Show" checkboxes in Customize).
 function pickItems(kind) {
   const d = state.data;
-  if (kind === "currencies") return [...new Set(d.accounts.map((a) => a.currency))].map((c) => ({ id: c, label: c }));
+  if (kind === "currencies") return curSort(new Set(d.accounts.map((a) => a.currency))).map((c) => ({ id: c, label: c }));
   if (kind === "budgets") return d.tags.filter((t) => t.limitMinor !== undefined).map((t) => ({ id: t.id, label: t.name }));
   if (kind === "reserves") return d.reserves.map((r) => ({ id: r.id, label: r.name }));
   if (kind === "accounts") return d.accounts.map((a) => ({ id: a.id, label: a.name }));
@@ -319,13 +327,13 @@ document.addEventListener("toggle", (e) => {
 const phoneSwap = (tableHTML, phoneHTML) => `<div class="wdesk">${tableHTML}</div><div class="wphone">${phoneHTML}</div>`;
 const colTable = (cols, xs) => table(cols.map((c) => ({ t: c.label, num: c.num })), xs.map((x) => row(cols.map((c) => ({ l: c.label, v: c.v(x), num: c.num })))).join(""));
 // The currency tab a Spending widget shows, per widget and per device: the one picked last while it still
-// has spending this month, else the default currency, else the first.
+// has spending this month, else the first tab (curs is in currency order, so the default currency if it has any).
 const SPEND_CUR_KEY = "kisiauthong.spendingCurrency";
 let spendCurs = {};
 try { spendCurs = JSON.parse(localStorage.getItem(SPEND_CUR_KEY) || "{}") || {}; } catch (e) { /* storage unavailable: defaults */ }
 function spendCur(id, curs) {
   const picked = spendCurs[id || ""];
-  return curs.includes(picked) ? picked : curs.includes(defCur()) ? defCur() : curs[0];
+  return curs.includes(picked) ? picked : curs[0];
 }
 function setSpendCur(id, cur) {
   spendCurs[id || ""] = cur;
@@ -343,7 +351,7 @@ function widgetBody(type, o) {
           <li class="free"><span>${esc(__("Free"))}</span><span>${fmt(x.freeMinor, c)}</span></li>
           <li><span><span class="dot earmarked"></span>${esc(__("Reserved"))}</span><span>${fmt(x.reservedMinor, c)}</span></li>
           <li><span><span class="dot sched"></span>${esc(__("Scheduled"))}</span><span>${fmt(x.heldMinor, c)}</span></li></ul>` : "");
-      return `<div class="cards">${Object.entries(perCur).map(([c, x]) => `<div class="card"><span class="lab">${esc(__("Balance"))}</span><b>${fmt(x.balanceMinor, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span>${split(x, c)}</div>`).join("")}</div>`;
+      return `<div class="cards">${curOrder(perCur).map(([c, x]) => `<div class="card"><span class="lab">${esc(__("Balance"))}</span><b>${fmt(x.balanceMinor, c)}</b><span class="muted">${esc(__("{n} account(s)", { n: d.accounts.filter((a) => a.currency === c).length }))}</span>${split(x, c)}</div>`).join("")}</div>`;
     }
     case "budgets": {
       const list = d.tags.filter((t) => t.limitMinor !== undefined && inc(t.id)).map((t) => ({ ...t, pct: t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0 }));
@@ -356,10 +364,10 @@ function widgetBody(type, o) {
     }
     case "spending": {
       // server returns rows grouped by currency, largest first; bars compare within one currency only,
-      // and with two or more currencies the widget shows one at a time behind currency tabs
+      // and with two or more currencies the widget shows one at a time behind currency tabs, in currency order
       const byCur = {};
       (d.spendingThisMonth || []).forEach((x) => { (byCur[x.currency] = byCur[x.currency] || []).push(x); });
-      const curs = Object.keys(byCur);
+      const curs = curSort(Object.keys(byCur));
       if (!curs.length) return `<p class="muted">${esc(__("No posted expenses this month."))}</p>`;
       const cur = spendCur(o.id, curs), xs = byCur[cur];
       const total = xs.reduce((n, x) => n + x.amountMinor, 0);
@@ -1298,9 +1306,9 @@ function tagNet(list) {
   });
   return net;
 }
-// Amounts in several currencies (issue #62), never converted (ADR 0011): one fixed order, the default
-// currency (Settings) first and the others by code, whatever order the transactions came in.
-const curOrder = (m) => Object.entries(m).sort(([a], [b]) => (a === b ? 0 : a === defCur() ? -1 : b === defCur() ? 1 : a < b ? -1 : 1));
+// Amounts in several currencies (issue #62), never converted (ADR 0011): in currency order (curCmp, issue #71),
+// whatever order the transactions came in.
+const curOrder = (m) => Object.entries(m).sort(([a], [b]) => curCmp(a, b));
 // The first currency in that order is the large primary amount; the others sit below it, smaller, one per
 // line, each with its code as a small label apart from the digits. Spans only, so it fits inside a button.
 // sign "net": signed and colored by value — − out (ink), + in (green), 0 when they cancel out (muted);
