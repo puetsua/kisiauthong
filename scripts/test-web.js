@@ -714,6 +714,13 @@ test("transactions (#79): a filter on a category that is gone is dropped, also w
     assert.strictEqual(t.state.filter.tag, "");
     assert.strictEqual(t.state.filter.type, "expense", "the other filters stay");
     assert.strictEqual(location.hash, "#transactions?type=expense");
+    // an unknown account or type in an old or shared link: the same, for the same reason
+    t.state.filter = { q: "", account: "", type: "", tag: "" };
+    drawAt("#transactions?account=acc-elsewhere&type=refund&tag=g7");
+    assert.deepStrictEqual([t.state.filter.account, t.state.filter.type, t.state.filter.tag], ["", "", "g7"]);
+    assert.strictEqual(location.hash, "#transactions?tag=g7");
+    drawAt("#transactions?account=acc-external&type=income");
+    assert.deepStrictEqual([t.state.filter.account, t.state.filter.type], ["acc-external", "income"], "an external account and a known type stay");
     // a category that exists, and Uncategorised, stay
     html = drawAt("#transactions?tag=g7");
     assert.strictEqual(t.state.filter.tag, "g7");
@@ -769,7 +776,7 @@ later.push(["Settings → Servers: when the list cannot load, the section and it
   delete sandbox.kisiauthongApp;
 }]);
 later.push(["transactions (#79): a refresh keeps Uncategorised and drops a category merged away", async () => {
-  const was = { data: t.state.data, filter: t.state.filter };
+  const was = { data: t.state.data, filter: t.state.filter, general: t.state.general, dashboard: t.state.dashboard, about: t.state.about, dismissed: t.state.dismissed };
   const realApi = sandbox.api, realRender = sandbox.render;
   const fresh = () => ({ ...was.data, accounts: [acc, other, ext], tags: [{ id: "g7", name: "Pets" }] });
   sandbox.api = (url) => Promise.resolve(url === "/api/state" ? fresh() : { general: {}, about: {}, notifications: {} });
@@ -787,7 +794,8 @@ later.push(["transactions (#79): a refresh keeps Uncategorised and drops a categ
     assert.strictEqual(t.state.filter.tag, "g7");
   } finally {
     sandbox.api = realApi; sandbox.render = realRender;
-    t.state.data = was.data; t.state.filter = was.filter;
+    // load() also replaced the settings: put them back for the tests after this one
+    Object.assign(t.state, { data: was.data, filter: was.filter, general: was.general, dashboard: was.dashboard, about: was.about, dismissed: was.dismissed });
     t.setLang("en");
   }
 }]);

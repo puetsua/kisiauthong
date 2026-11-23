@@ -956,12 +956,16 @@ function filteredTxns() {
   else if (f.tag) list = list.filter((t) => txnCats(t).includes(f.tag));
   return list;
 }
-// A filter on a category that is gone (merged away elsewhere, an old bookmark) would match nothing while
-// the dropdown, having no such option, shows "All categories": it is dropped. Checked after each fetch and
-// whenever the filter is read from the address, which still carries the old id (issue #79).
-function dropGoneTagFilter() {
-  const tag = state.filter.tag;
-  if (tag && tag !== "none" && state.data && !state.data.tags.some((t) => t.id === tag)) state.filter.tag = "";
+// A filter whose value is gone or unknown (a category merged away elsewhere, an old or shared link) would
+// match nothing while its dropdown, having no such option, shows "All …": it is dropped. Checked after each
+// fetch and whenever the filters are read from the address, which may still carry the old value (issue #79).
+// An address from before a merge (browser Back) shows everything: only a filter on screen follows a merge.
+function dropGoneFilters() {
+  const f = state.filter, d = state.data;
+  if (!d) return;
+  if (f.tag && f.tag !== "none" && !d.tags.some((t) => t.id === f.tag)) f.tag = "";
+  if (f.account && !(d.allAccounts || d.accounts).some((a) => a.id === f.account)) f.account = "";
+  if (f.type && !(f.type in TYPE_L)) f.type = "";
 }
 // The search and filters live in the address (#transactions?q=…&account=…&page=2&per=50), so a
 // search can be bookmarked, shared and reloaded. A bare #transactions keeps what is on screen.
@@ -969,7 +973,7 @@ function readTxnURL() {
   const qs = hashParts().params;
   if (![...qs.keys()].length) return;
   state.filter = { q: qs.get("q") || "", account: qs.get("account") || "", type: qs.get("type") || "", tag: qs.get("tag") || "" };
-  dropGoneTagFilter(); // drawResults() then writes the address without it
+  dropGoneFilters(); // drawResults() then writes the address without them
   state.searchPage = Math.max(0, (parseInt(qs.get("page"), 10) || 1) - 1);
   const per = parseInt(qs.get("per"), 10);
   if (PAGE_SIZES.includes(per)) state.pageSize = per;
@@ -2972,7 +2976,7 @@ async function load() {
   } catch (e) { msg(__("Settings unavailable, using defaults: {message}", { message: e.message }), "error"); }
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();
-  dropGoneTagFilter(); // e.g. merged away
+  dropGoneFilters(); // e.g. a category merged away
   state.data.serverToday = state.data.today; // the server's today(user), which decides what is scheduled (ADR 0014)
   state.data.today = zoneParts(new Date(), displayTZ()).date; // "today" where the user is looking from
   render(true);

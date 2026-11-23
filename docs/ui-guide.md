@@ -122,9 +122,9 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   the filters in use ("Filters · 2"); the dropdowns and Clear unfold below
   it. A new filter goes inside `.fmore`, never beside the search box.
 - The search and filters live in the address (`#transactions?tag=…`). A
-  filter whose value no longer exists (a category merged away, an old
-  bookmark) is dropped from the screen and the address, never kept as a
-  hidden filter the dropdown cannot show (issue #79).
+  filter value the dropdown cannot show (a category merged away, an unknown
+  account or type in an old or shared link) is dropped from the screen and
+  the address, never kept as a hidden filter (issue #79).
 - Keep a page's own toolbar to one row of small buttons; more belongs in a
   menu.
 
