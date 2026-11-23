@@ -690,6 +690,45 @@ test("live updates (#77): the cursor in the search box or a filter does not hold
   }
 });
 
+test("transactions (#79): a filter on a category that is gone is dropped, also when the address still carries it", () => {
+  const was = { data: t.state.data, filter: t.state.filter };
+  const spend = (id, note, date, tagIds) => ({ ...tx(id, "a1", "acc-external", 12000, date, "posted", note), tagIds });
+  const drawAt = (hash) => { location.hash = hash; t.render(true); return $el("#txnResults").innerHTML; };
+  try {
+    docProps.activeElement = null; // nothing focused: render(true) draws the whole screen, reading the address
+    // "g-gone" was merged away into another category elsewhere
+    t.state.data = { ...was.data, accounts: [acc, other], externals: [ext], allAccounts: [acc, other, ext], tags: [{ id: "g7", name: "Pets" }],
+      transactions: [spend("t7", "Bus fare", "2026-11-11", []), spend("t8", "Coffee beans", "2026-11-10", ["g7"]), spend("t9", "Cat food", "2026-11-09", ["g7"])] };
+    // a live refresh after the merge: load() had cleared the filter, the address still has the old id
+    t.state.filter = { q: "", account: "", type: "", tag: "" };
+    let html = drawAt("#transactions?tag=g-gone");
+    assert.strictEqual(t.state.filter.tag, "", "the address does not bring the removed category back");
+    assert.strictEqual(location.hash, "#transactions", "and the address drops it too");
+    assert.match(html, /Bus fare/, "the period's transactions are listed, not an empty filter");
+    assert.match(html, /Coffee beans/);
+    assert.match(html, /Cat food/);
+    assert.doesNotMatch(html, /No transactions in this period/);
+    // a reload or an old bookmark: the same
+    t.state.filter = { q: "", account: "", type: "", tag: "" };
+    drawAt("#transactions?tag=g-gone&type=expense");
+    assert.strictEqual(t.state.filter.tag, "");
+    assert.strictEqual(t.state.filter.type, "expense", "the other filters stay");
+    assert.strictEqual(location.hash, "#transactions?type=expense");
+    // a category that exists, and Uncategorised, stay
+    html = drawAt("#transactions?tag=g7");
+    assert.strictEqual(t.state.filter.tag, "g7");
+    assert.strictEqual(location.hash, "#transactions?tag=g7");
+    html = drawAt("#transactions?tag=none");
+    assert.strictEqual(t.state.filter.tag, "none");
+    assert.match(html, /Bus fare/, "Uncategorised lists the spending without a category");
+    assert.doesNotMatch(html, /Coffee beans/);
+  } finally {
+    t.state.data = was.data; t.state.filter = was.filter;
+    location.hash = "";
+    delete docProps.activeElement;
+  }
+});
+
 // askConfirm is async; these run after the synchronous tests
 const later = [];
 later.push(["askConfirm: window.confirm() in a browser, the app's native dialog inside the app", async () => {
@@ -728,6 +767,29 @@ later.push(["Settings → Servers: when the list cannot load, the section and it
   assert.strictEqual($el("#set-servers").hidden, true);
   assert.strictEqual($el('.snav [data-goto="servers"]').hidden, true);
   delete sandbox.kisiauthongApp;
+}]);
+later.push(["transactions (#79): a refresh keeps Uncategorised and drops a category merged away", async () => {
+  const was = { data: t.state.data, filter: t.state.filter };
+  const realApi = sandbox.api, realRender = sandbox.render;
+  const fresh = () => ({ ...was.data, accounts: [acc, other, ext], tags: [{ id: "g7", name: "Pets" }] });
+  sandbox.api = (url) => Promise.resolve(url === "/api/state" ? fresh() : { general: {}, about: {}, notifications: {} });
+  sandbox.render = () => {};
+  try {
+    // the dropdown keeps focus after a choice, so the redraw after load() reads no address: load() alone decides
+    t.state.filter = { q: "", account: "", type: "", tag: "none" };
+    await sandbox.load();
+    assert.strictEqual(t.state.filter.tag, "none", "Uncategorised is not a category id, and it stays");
+    t.state.filter = { q: "", account: "", type: "", tag: "g-gone" };
+    await sandbox.load();
+    assert.strictEqual(t.state.filter.tag, "", "a category merged away is dropped");
+    t.state.filter = { q: "", account: "", type: "", tag: "g7" };
+    await sandbox.load();
+    assert.strictEqual(t.state.filter.tag, "g7");
+  } finally {
+    sandbox.api = realApi; sandbox.render = realRender;
+    t.state.data = was.data; t.state.filter = was.filter;
+    t.setLang("en");
+  }
 }]);
 (async () => {
   for (const [name, fn] of later) { await fn(); n++; console.log("ok", name); }
