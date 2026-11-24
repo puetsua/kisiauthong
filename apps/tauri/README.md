@@ -143,7 +143,12 @@ node ../../scripts/test-app.js # the screen's rules, strings and tokens
 ```
 
 Windows: `npx tauri build --bundles nsis` gives the setup `.exe` that
-releases ship (WebView2 is part of Windows 10/11). macOS releases are
+releases ship (WebView2 is part of Windows 10/11). It is built from our copy of
+Tauri's NSIS template, `src-tauri/windows/installer.nsi`, where running a newer
+or older setup over an installed app selects "Do not uninstall" (install over
+it) instead of Tauri's "Uninstall before installing". When `@tauri-apps/cli`
+is bumped, take the template of the new tag and apply the `kisiauthong:`
+change again. macOS releases are
 universal: `npx tauri build --target universal-apple-darwin --bundles app,dmg`
 (after `rustup target add aarch64-apple-darwin x86_64-apple-darwin`).
 
