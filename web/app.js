@@ -1306,8 +1306,9 @@ function screenTemplates(v) {
   bindDetails(v);
 }
 
-// One budget: how much of the limit is spent (net of tagged income, so it can be negative) and what is left per day. While the period runs, the fill turns
-// amber when spending is ahead of an even pace (a larger share spent than of the period gone), red when over.
+// One budget: how much of the limit is spent (net of tagged income, so it can be negative), what is left and, on the same line, how many days
+// the period still has (or when it starts / ended; issue #97). While the period runs, the fill turns amber when spending is ahead of an even
+// pace (a larger share spent than of the period gone), red when over.
 function budgetCard(t) {
   const today = state.data.today, p = t.limitMinor > 0 ? t.spentMinor / t.limitMinor * 100 : 0;
   const total = spanDays(t.periodStart, t.periodEnd);
@@ -1317,13 +1318,13 @@ function budgetCard(t) {
   const running = started && !ended, ahead = running && p <= 100 && p > elapsed;
   const cls = running ? (p > 100 ? "over" : ahead ? "warn" : "") : barCls(p);
   const left = t.remainingMinor >= 0 ? __("{amount} left", { amount: fmt(t.remainingMinor, t.currency) }) : __("{amount} over", { amount: fmt(-t.remainingMinor, t.currency) });
-  const pace = !started ? __("Starts {date}", { date: dayLabel(t.periodStart) }) : ended ? __("Ended {date}", { date: dayLabel(t.periodEnd) })
-    : t.remainingMinor > 0 ? __("{amount} a day for {n} day(s)", { amount: fmt(Math.floor(t.remainingMinor / daysLeft), t.currency, true), n: daysLeft }) : __("{n} day(s) left", { n: daysLeft });
+  const when = !started ? __("Starts {date}", { date: dayLabel(t.periodStart) }) : ended ? __("Ended {date}", { date: dayLabel(t.periodEnd) })
+    : __("{n} day(s) left", { n: daysLeft });
   return `<button type="button" class="tcard bcard ${cls}" data-detail-tag="${esc(t.id)}">
     <span class="thead"><b>${esc(t.name)}</b><small>${esc(budgetPeriodText(t, true))}</small></span>
     <span class="bamount"><b>${fmt(t.spentMinor, t.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(t.limitMinor, t.currency) }))}</small></span>
     <span class="bar"${ahead ? ` title="${esc(__("Spending faster than the period"))}"` : ""}><i class="${cls}" style="width:${Math.min(100, Math.max(0, p))}%"></i></span>
-    <span class="tfoot"><span class="${t.remainingMinor < 0 ? "neg" : ""}">${esc(left)}</span><small>${esc(pace)}</small></span></button>`;
+    <span class="tfoot"><span><span class="${t.remainingMinor < 0 ? "neg" : ""}">${esc(left)}</span> <small class="bwhen">· ${esc(when)}</small></span></span></button>`;
 }
 // spending this month per currency for one category, from the server's monthly summary
 /* ---------- categories: activity in a period, and a page per category ---------- */

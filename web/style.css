@@ -469,6 +469,7 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .bcard.over .bamount b{color:var(--red)}
 .tfoot{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;font-weight:600;font-size:.92rem}
 .tfoot .neg{color:var(--red)}
+.tfoot .bwhen{font-weight:400;white-space:nowrap}
 .ccard{gap:14px}
 .amt{font-variant-numeric:tabular-nums;font-weight:600}.amt.in{color:var(--pos)}.amt.zero{color:var(--muted)}
 /* amounts in several currencies (issue #62): the first (the default currency) large, the others smaller

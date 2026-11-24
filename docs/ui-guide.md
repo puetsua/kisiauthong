@@ -182,7 +182,11 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
 - **Cards** (`.tcard`, `.acard` …) are for things scanned at a glance (budgets,
   reserves, accounts); each card is a button that opens its details. A
   budget's or reserve's name comes first and its period or target date goes
-  on the line below; a reserve's name wraps rather than being cut off. The
+  on the line below; a reserve's name wraps rather than being cut off. A
+  budget card ends with one line: what is left (or over), then, lighter, the
+  days left in the period, or its start date before it starts and its end
+  date once it has ended (`剩 TWD 631 · 還有 7 天`); no per-day amount
+  (issue #97). The
   Accounts and Reserves pages start with their cards, with no summed total
   above them.
 - **Record pages** (a category: `#tag?id=…&range=month&at=2026-10-01`, a
