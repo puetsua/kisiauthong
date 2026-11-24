@@ -68,7 +68,10 @@ two colours.
   - *Sync the selected theme*: its own toggle, chosen independently. When it is
     on, the selected theme is stored as `general.theme.selected`, and a custom
     theme that is selected is uploaded to `themes[]` as well, even while custom
-    themes are not synced, so every other device can resolve it.
+    themes are not synced, so every other device can resolve it. Selecting a
+    theme the server does not have yet shows a plain notice that it will be
+    uploaded so other devices can use it (a statement of what happens, no
+    prompt or suggestion, ADR 0015).
 
 ## Consequences
 
