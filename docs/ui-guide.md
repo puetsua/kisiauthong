@@ -414,7 +414,8 @@ topmost popup only.
 | Segmented choice | `.seg` with `button.on` | one of a few modes (type, period) |
 | Theme cards | `.themecards` of `button.themecard` with `aria-pressed`, a `.themeprev` drawn in its own `data-theme` (custom themes: inline tokens too) | Settings → Appearance: one card per theme, built-in then *My themes*, the chosen one ringed |
 | Checkbox row | `label.checkrow` with an `input[type=checkbox]` and its text | an on/off choice inside a settings row or panel (theme sync, the editor's light/dark split) |
-| Sync state | `p.syncstate` (`.busy`, `.ok`, `.err`) with a `.dot` and the text in a `span`; Retry as a `.smallbtn` after it | where synced data stands: on this device only, syncing, synced at a time, failed with Retry |
+| Sync state | `p.syncstate` (`.busy`, `.ok`, `.err`, `.off`: a ring) with a `.dot` and the text in a `span`; Retry as a `.smallbtn` after it | where synced data stands: on this device only, syncing, synced at a time, failed with Retry; Settings → Sync's live updates (on, connecting, offline) |
+| Info button | `button.infobtn` (an (i) icon, 40px, `aria-haspopup="dialog"`, `aria-label` "About “{label}”") after a `label.checkrow`, both in a `div.checkline` | opens a short explanation of a choice in the dialog (`dialog.helpdlg`, a `.helplist` and Close); beside the label, never in it, so it toggles nothing. For a rule a label cannot carry, not for hints the layout already gives (Settings → Sync) |
 | Colour swatch | `.tswatches` of `button.tswatch` (`aria-pressed`) with the colour, its name and hex | the theme editor's main colours; the chosen one opens the picker under its group |
 | Colour picker | `.tpick`: `.tpsv` (`role=slider`, arrow keys), `.tphue` range, hex field, a plain contrast figure | the theme editor only; a figure, never a warning (ADR 0015) |
 | Toggle chips | `.tagpick` buttons with `aria-pressed` | many-of-many (categories) |

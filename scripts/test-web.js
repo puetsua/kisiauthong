@@ -46,7 +46,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -513,9 +513,11 @@ test("Settings → Appearance (#85): after Display, theme cards each drawn in th
   }
   assert.match(cards, /id="themeDup">Duplicate as a custom theme</);
   assert.doesNotMatch(cards, /My themes|themeEdit/, "no custom themes yet");
-  // sync is off until asked for, and says where the themes are
+  // sync is off until asked for, and says where the themes are; it is drawn in Settings → Sync (#104)
+  assert.doesNotMatch(html.slice(html.indexOf('id="set-appearance"'), html.indexOf('id="set-sync"')), /themeSync/, "not under Appearance");
   const sync = $el("#themeSync").innerHTML;
-  assert.match(sync, /<input type="checkbox" id="syncCustom" > Sync my custom themes with my account<\/label><label class="checkrow"><input type="checkbox" id="syncSelected" > Sync the selected theme with my account/);
+  assert.match(sync, /<div class="checkline"><label class="checkrow"><input type="checkbox" id="syncCustom" > Sync themes across devices<\/label><button type="button" class="infobtn" id="syncCustomHelp" aria-haspopup="dialog" aria-label="About “Sync themes across devices”"/);
+  assert.match(sync, /<div class="checkline"><label class="checkrow"><input type="checkbox" id="syncSelected" > Sync theme selection<\/label><button type="button" class="infobtn" id="syncSelectedHelp" aria-haspopup="dialog" aria-label="About “Sync theme selection”"/);
   assert.match(sync, /Themes are kept on this device only\./);
   assert.doesNotMatch(cards, /more contrast/, "no note while the system asks for nothing");
   assert.match(modes, /<button type="button" data-mode-pick="system" class="" aria-pressed="false">Follow system<\/button><button type="button" data-mode-pick="light" class="" aria-pressed="false">Light<\/button><button type="button" data-mode-pick="dark" class="on" aria-pressed="true">Dark<\/button>/);
@@ -621,7 +623,7 @@ test("theme sync (#85): Settings shows the custom themes, the sync choices and e
   assert.match(cards, /id="themeEdit">Edit Sand</);
   assert.match(sync, /id="syncCustom" checked>.*id="syncSelected" >/s);
   assert.match(sync, /class="syncstate ok" role="status"><span class="dot"><\/span><span>Synced at /);
-  assert.match(sync, /The light or dark mode is not synced: each device keeps its own\./);
+  assert.doesNotMatch(sync, /mode is not synced/, "the (i) help says it, not a line under the boxes");
   t.state.themeSync = { status: "syncing" };
   t.drawAppearance();
   assert.match($el("#themeSync").innerHTML, /class="syncstate busy" role="status"><span class="dot"><\/span><span>Syncing…/);
@@ -633,10 +635,111 @@ test("theme sync (#85): Settings shows the custom themes, the sync choices and e
   assert.match($el("#themeSync").innerHTML, /“Sand” was not on the server yet, so it was uploaded for your other devices\./);
   t.setLang("zh-TW");
   t.drawAppearance();
-  assert.match($el("#themeSync").innerHTML, /將我的自訂主題同步到帳號.*將目前選擇的主題同步到帳號.*伺服器上還沒有「Sand」/s);
+  assert.match($el("#themeSync").innerHTML, /> 跨裝置主題同步<\/label><button [^>]*aria-label="關於「跨裝置主題同步」".*> 主題選擇同步<\/label><button [^>]*aria-label="關於「主題選擇同步」".*伺服器上還沒有「Sand」/s);
   t.setLang("en");
   t.state.themeSync = {};
   sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+});
+
+test("Settings → Sync (#104): its own section after Appearance, with live updates, the last fetch and the theme sync choices", () => {
+  const v = view();
+  t.screenSettings(v);
+  const html = v.innerHTML;
+  assert.ok(html.indexOf('id="set-appearance"') < html.indexOf('id="set-sync"') && html.indexOf('id="set-sync"') < html.indexOf('id="set-data"'), "after Appearance, before Data");
+  assert.match(html, /data-goto="appearance">.*Appearance<\/button><button type="button" data-goto="sync"><svg[^>]*>.*<\/svg>Sync<\/button>/s);
+  const sec = html.slice(html.indexOf('id="set-sync"'), html.indexOf('id="set-data"'));
+  assert.match(sec, /<h3>Sync<\/h3>/);
+  assert.match(sec, /<span class="sl">Live updates<\/span><div class="sc"><div id="syncLive" role="status"><p class="syncstate/);
+  assert.match(sec, /<span class="sl">Last updated<\/span><div class="sc"><div id="syncLoaded">/);
+  assert.match(sec, /<span class="sl">Themes<\/span><div class="sc"><div id="themeSync"><\/div>/);
+  t.setLang("zh-TW");
+  t.screenSettings(v);
+  assert.match(v.innerHTML, /data-goto="sync">.*同步<\/button>.*>即時更新<.*>最後更新<.*>主題</s);
+  t.setLang("en");
+});
+
+test("Settings → Sync (#104): the live update line says what the page already knows of the stream", () => {
+  const saved = { nav: sandbox.navigator, es: sandbox.EventSource, liveEs: t.live.es };
+  try {
+    sandbox.navigator = { languages: ["en"], onLine: false };
+    assert.match(t.liveStateHTML(), /<p class="syncstate off"><span class="dot"><\/span><span>Offline: this device has no network\. Changes show here when it is back online\.<\/span><\/p>/);
+    sandbox.navigator = { languages: ["en"], onLine: true };
+    delete sandbox.EventSource;
+    assert.match(t.liveStateHTML(), /<p class="syncstate"><span class="dot"><\/span><span>Not available in this browser\. The page catches up when you come back to it\./);
+    sandbox.EventSource = function () {};
+    t.live.es = null;
+    assert.match(t.liveStateHTML(), /<p class="syncstate busy">.*Connecting to the server…/, "not open yet, or waiting to try again");
+    t.live.es = { readyState: 0 };
+    assert.match(t.liveStateHTML(), /syncstate busy/);
+    t.live.es = { readyState: 1 };
+    assert.match(t.liveStateHTML(), /<p class="syncstate ok">.*On: changes made on your other devices show here as they happen\./);
+    // drawn again only when it changed, so a screen reader hears each change once
+    let cur = "";
+    const writes = [];
+    elements.set("#syncLive", { get innerHTML() { return cur; }, set innerHTML(v) { cur = v; writes.push(v); } });
+    t.drawLiveState();
+    t.drawLiveState();
+    assert.strictEqual(writes.length, 1, "the same state again is not written");
+    assert.match(cur, /syncstate ok/);
+    t.live.es = { readyState: 0 };
+    t.drawLiveState();
+    assert.strictEqual(writes.length, 2, "a new state is");
+    assert.match(cur, /syncstate busy/);
+    elements.delete("#syncLive");
+    t.live.es = { readyState: 1 };
+    t.setLang("zh-TW");
+    assert.match(t.liveStateHTML(), /已開啟：你在其他裝置上的變更會立即顯示在這裡。/);
+    t.live.es = { readyState: 0 };
+    assert.match(t.liveStateHTML(), /正在連線到伺服器…/);
+    t.setLang("en");
+  } finally {
+    sandbox.navigator = saved.nav;
+    if (saved.es === undefined) delete sandbox.EventSource; else sandbox.EventSource = saved.es;
+    t.live.es = saved.liveEs;
+  }
+});
+
+test("Settings → Sync (#104): the last fetch of the books, a clock time today and with its date before", () => {
+  const saved = t.state.loadedAt;
+  t.state.loadedAt = null;
+  assert.match(t.loadedHTML(), /<span>—<\/span>/, "nothing fetched yet");
+  const now = new Date();
+  t.state.loadedAt = now.toISOString();
+  const clock = now.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
+  assert.strictEqual(t.loadedHTML(), `<p class="syncstate"><span>${clock}</span></p>`);
+  const before = new Date(now.getTime() - 3 * 86400000);
+  t.state.loadedAt = before.toISOString();
+  assert.strictEqual(t.loadedHTML(), `<p class="syncstate"><span>${before.toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span></p>`);
+  t.state.loadedAt = saved;
+});
+
+test("Settings → Sync (#104): each (i) opens what its choice does, per ADR 0027, in a dialog with a Close button", () => {
+  t.openSyncHelp("custom");
+  assert.strictEqual($el("#dialogTitle").textContent, "Sync themes across devices");
+  let body = $el("#dialogBody").innerHTML;
+  assert.match(body, /^<ul class="helplist"><li>Themes are kept on this device unless you turn on sync\./, "local by default");
+  assert.match(body, /custom themes on this device are uploaded to your account on the server/, "what it uploads");
+  assert.match(body, /The first time it is turned on, the themes here and on the server are merged: a theme on both sides is the same theme, and the copy changed last is kept\./, "first merge by id, newer wins");
+  assert.match(body, /Light or dark mode is not synced: each device keeps its own\./);
+  assert.match(body, /Turning it off stops syncing\. The copies already on the server stay there\./);
+  assert.match(body, /<button type="button" class="primarybtn" id="syncHelpOk">Close<\/button>/);
+  t.openSyncHelp("selected");
+  assert.strictEqual($el("#dialogTitle").textContent, "Sync theme selection");
+  body = $el("#dialogBody").innerHTML;
+  assert.match(body, /the theme you pick here is uploaded/, "what it uploads");
+  assert.match(body, /that theme itself is uploaded too, even when Sync themes across devices is off/);
+  assert.match(body, /If the server did not have that theme yet, a notice says it was uploaded\./);
+  assert.match(body, /Light or dark mode is not synced/);
+  assert.match(body, /Turning it off stops syncing\. What is already on the server stays there\./);
+  t.setLang("zh-TW");
+  t.openSyncHelp("selected");
+  assert.strictEqual($el("#dialogTitle").textContent, "主題選擇同步");
+  assert.match($el("#dialogBody").innerHTML, /即使「跨裝置主題同步」是關閉的，這個主題本身也會一起上傳.*>關閉<\/button>/s);
+  t.setLang("en");
+  // every line of the help is translated (scripts/check-i18n.js checks the strings themselves)
+  t.setLang("zh-TW");
+  for (const k of Object.keys(t.SYNC_HELP)) { t.openSyncHelp(k); assert.doesNotMatch($el("#dialogBody").innerHTML, /<li>[A-Z]/, k); }
+  t.setLang("en");
 });
 
 test("theme editor (#85): a Settings sub-page with the name, the split, grouped main colours, a picker, the JSON and a preview", () => {

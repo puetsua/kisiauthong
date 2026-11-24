@@ -85,8 +85,10 @@ two colours.
 
 - **Local first.** The selected theme, the custom themes and the mode are
   kept in the browser's storage for the server's origin. Sync is off until
-  the user turns it on, per device, with two separate checkboxes; the mode is
-  never synced.
+  the user turns it on, per device, with two separate checkboxes in Settings →
+  Sync (issue #104): *Sync themes across devices* (跨裝置主題同步) and *Sync
+  theme selection* (主題選擇同步). An (i) button after each label opens a short
+  explanation of the rules below in plain words. The mode is never synced.
 - **Storage on the server** is the settings object: `general.theme
   {selected}` (a built-in name or a custom id) and `themes[]` (id, name,
   basedOn, split, light, dark, updatedAt). The server checks the shape: at most
@@ -95,7 +97,7 @@ two colours.
   colours per mode, hex only (`#rgb` is stored as `#rrggbb`), dark only with
   split. A `themes` PUT replaces the list; devices merge before they send it.
   `api/openapi.yaml` describes it.
-- **Sync custom themes**: the device's and the server's lists are merged by
+- **Sync themes across devices** (the custom themes): the device's and the server's lists are merged by
   id, the newer `updatedAt` winning, on turning it on (the first sync) and
   whenever either side changes. A theme deleted on the device is deleted on
   the server too, and on every other device that syncs its custom themes: a
@@ -105,7 +107,7 @@ two colours.
   before a colour was added) gets it from its base theme instead of being
   dropped. Turning it off keeps the copies on the server; turning it on again
   is a fresh merge.
-- **Sync the selected theme**: its own choice. Turning it on, or picking a
+- **Sync theme selection**: its own choice. Turning it on, or picking a
   theme while it is on, sends this device's choice; with nothing chosen here
   since the last sync, the server's choice (another device's) is taken here
   instead. A custom theme that is selected goes up with the choice even when
@@ -116,6 +118,11 @@ two colours.
 - **States** under the checkboxes: kept on this device only (both off),
   syncing, synced at a time, or failed at a time with the error and Retry; a
   failed change stays on the device and goes up on the next sync.
+- **Settings → Sync** is its own section, after Appearance (issue #104; it
+  first sat under Appearance). Besides the theme choices it shows what the
+  page already knows of its link to the server: live updates (on, connecting,
+  offline, or not available in this browser, from the ADR 0023 stream) and
+  when the books were last fetched. It adds no new kind of sync.
 - Another device's changes arrive with the settings on every load and live
   update (ADR 0023); the device sends only when it has something the server
   lacks.
