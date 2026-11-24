@@ -300,11 +300,7 @@ func newMux(webDir string) *http.ServeMux {
 	// the books: every handler sees only the caller's own data
 	mux.HandleFunc("/api/settings", apiRW(ScopeSettings, handleSettings))
 	mux.HandleFunc("/api/export", api(ScopeRead, handleExport))
-	mux.HandleFunc("/api/state", api(ScopeRead, func(w http.ResponseWriter, r *http.Request, b *Book) {
-		st := stateView(b.data, b.today(), b.currencyOrder())
-		st["rev"] = b.s.live.revision(b.uid) // what a page compares live change events with (issue #55)
-		writeJSON(w, 200, st)
-	}))
+	mux.HandleFunc("/api/state", api(ScopeRead, handleState))
 	mux.HandleFunc("/api/events", handleEvents)
 	mux.HandleFunc("/api/accounts", api(ScopeAccounts, handleCreateAccount))
 	mux.HandleFunc("/api/accounts/", api(ScopeAccounts, handleUpdateAccount))
@@ -330,6 +326,17 @@ func newMux(webDir string) *http.ServeMux {
 		mux.Handle("/", http.FileServer(http.FS(embeddedWeb)))
 	}
 	return mux
+}
+
+// handleState serves GET /api/state: everything the web client shows, as of today.
+func handleState(w http.ResponseWriter, r *http.Request, b *Book) {
+	if r.Method != http.MethodGet {
+		writeErr(w, 405, "GET only") // issue #105: other methods used to get the state too
+		return
+	}
+	st := stateView(b.data, b.today(), b.currencyOrder())
+	st["rev"] = b.s.live.revision(b.uid) // what a page compares live change events with (issue #55)
+	writeJSON(w, 200, st)
 }
 
 func handleCreateAccount(w http.ResponseWriter, r *http.Request, b *Book) {

@@ -423,6 +423,23 @@ func TestExportDownloadsData(t *testing.T) {
 	}
 }
 
+// /api/state answers GET only, like the other read endpoints (issue #105).
+func TestStateIsGetOnly(t *testing.T) {
+	withTestStore(t)
+	rec := httptest.NewRecorder()
+	handleState(rec, httptest.NewRequest(http.MethodGet, "/api/state", nil), testBook)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"accounts"`) {
+		t.Fatalf("GET: %d %s", rec.Code, rec.Body.String())
+	}
+	for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
+		rec := httptest.NewRecorder()
+		handleState(rec, httptest.NewRequest(m, "/api/state", nil), testBook)
+		if rec.Code != 405 || strings.Contains(rec.Body.String(), `"accounts"`) {
+			t.Errorf("%s: %d %s", m, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 // themeJSON is one custom theme as a device uploads it (ADR 0027); fields override the defaults.
 func themeJSON(fields map[string]interface{}) map[string]interface{} {
 	t := map[string]interface{}{"id": "thm-abc123", "name": "Teal night", "basedOn": "cool", "split": false,
