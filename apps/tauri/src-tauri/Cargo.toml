@@ -7,7 +7,9 @@ authors = ["kisiauthong contributors"]
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/puetsua/kisiauthong"
 edition = "2021"
-rust-version = "1.80"
+# the oldest Rust the locked dependencies build with (tauri 2.12 needs 1.90);
+# CI checks the crate with exactly this version (app.yml)
+rust-version = "1.90"
 
 [lib]
 # staticlib and cdylib are what the iOS and Android builds link

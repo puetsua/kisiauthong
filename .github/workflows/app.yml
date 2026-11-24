@@ -51,6 +51,14 @@ jobs:
       - name: Rust tests
         working-directory: apps/tauri/src-tauri
         run: cargo test --locked
+      - name: Oldest supported Rust
+        # the rust-version in Cargo.toml must build the crate (issue #95)
+        working-directory: apps/tauri/src-tauri
+        run: |
+          v=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          test -n "$v"
+          rustup toolchain install "$v" --profile minimal
+          cargo "+$v" check --locked --all-targets
       - name: Build (debug, unsigned)
         run: npx tauri build --debug --bundles app -- --locked
 
