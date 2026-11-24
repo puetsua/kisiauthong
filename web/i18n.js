@@ -139,6 +139,11 @@ const I18N = {
     "Confirm expected transaction": "確認預計交易", "Delete": "刪除",
     // settings
     "Language": "語言", "Browser default": "依瀏覽器設定", "Language saved.": "語言已儲存。",
+    "Appearance": "外觀", "Theme": "主題", "Mode": "模式", "High contrast": "高對比", "Warm": "暖色系", "Cool": "冷色系",
+    "Follow system": "跟隨系統", "Light": "淺色", "Dark": "深色", "Theme saved.": "已儲存主題。", "Mode saved.": "已儲存模式。",
+    "Your system asks for more contrast, so High contrast is in use.": "系統要求較高的對比，所以目前使用高對比。",
+    "Theme and mode are kept on this device.": "主題和模式只存在這台裝置。",
+    "This browser keeps no settings, so the choice lasts until the page is closed.": "這個瀏覽器不保存設定，選擇只維持到關閉頁面為止。",
     "Page width": "頁面寬度", "Default": "預設", "Wide": "加寬", "Page width saved.": "頁面寬度已儲存。",
     "Spending and income": "收支顯示", "Signs and color": "符號和顏色", "Signs only (+ / −)": "只用 + / − 符號", "Color only": "只用顏色", "Spending and income display saved.": "收支顯示已儲存。",
     "With Color only, spending and income differ only by color and by the icon in front of each row.": "只用顏色時，收入和支出只靠顏色和每列前面的圖示分辨。",

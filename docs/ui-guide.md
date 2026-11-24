@@ -25,21 +25,42 @@ same change. Styles live in `web/style.css`, markup in `web/index.html` and
 
 ## Tokens
 
-Colours are CSS custom properties on `:root`; use them, not literal colours.
+Colours are theme tokens (issue #85, ADR 0027), set at the top of
+`web/style.css` once per theme and mode: `[data-theme=default|contrast|warm|cool]`
+for light and `[data-theme=X][data-mode=dark]` for dark. `web/theme.js` puts both
+attributes on `<html>`. Use the tokens, never a literal colour: a new colour is a
+new token in all eight blocks, and `node scripts/test-themes.js` fails on a
+literal colour in a rule, a token missing from a theme, or a text pair under
+WCAG AA (4.5:1; controls and icons 3:1).
 
 | Token | Use |
 |---|---|
-| `--ink`, `--muted` | text, secondary text |
-| `--bg`, `--panel`, `--soft` | page background, cards, subtle fills |
-| `--line`, `--rule`, `--track` | borders, row dividers, empty bar tracks |
-| `--hover`, `--hover2` | hover backgrounds |
-| `--side`, `--side2`, `--sidehover`, `--sidetext`, `--sidemuted` | the dark sidebar |
-| `--accent`, `--accent2`, `--accentsoft` | primary actions, selected state, selected fill |
+| `--bg`, `--panel`, `--surface` | page background; cards and panels; raised things on top of them: top bar, tab bar, menus, dialogs, the drawer, chips, outline buttons |
+| `--field`, `--fieldline` | form controls' fill and border (`--fieldline` is 3:1 against the field and the card) |
+| `--soft`, `--hover`, `--hover2` | subtle fills, hover backgrounds |
+| `--line`, `--rule`, `--track` | borders of cards and chips, row dividers, empty bar tracks |
+| `--ink`, `--muted` | text, secondary text (also placeholders) |
+| `--on-accent`, `--on-status` | text on an `--accent` fill; text on a solid `--amber` or `--red` (due chip, badge, error toast) |
+| `--side`, `--side2`, `--sidehover`, `--sidetext`, `--sidemuted`, `--sidestrong`, `--sideline` | the sidebar: background, current page, hover, text, secondary text, the brand and current page's text, the Administration link's border |
+| `--accent`, `--accent2`, `--accentsoft`, `--focus` | primary actions, selected state and hover, selected fill, focus rings |
+| `--amt-in`, `--amt-out` | income and spending amounts (issue #66); not `--pos` / `--red`, which mean good and over budget or danger |
 | `--pos`/`--posbg`, `--amber`/`--amberbg`, `--red`/`--redbg` | good, warning, bad/over |
-| `--neg` | spending in the Transactions list (issue #66); not `--red`, which means over budget or danger |
+| `--amberline`, `--amberink`, `--plannedbg` | border and text of an amber note; the planned row's fill |
 | `--sched`, `--schedbg`, `--schedink`, `--schedline` | scheduled (dated after today, ADR 0014): bar segment and dot, section/note fill, text on that fill, its border |
-| `--nightlybg`, `--nightlyline`, `--nightlyink` | the teal `nightly` chip beside the version (ADR 0018); solid `--nightlyline` on the dark sidebar |
+| `--ico-out`/`-bg`, `--ico-move`/`-bg`, `--ico-rsv`/`-bg` | the row icon of spending, a transfer, a reserve allocation (income uses `--pos`) |
+| `--nightlybg`, `--nightlyline`, `--nightlyink`, `--nightlysideink` | the teal `nightly` chip beside the version (ADR 0018); solid `--nightlyline` with `--nightlysideink` text on the sidebar |
+| `--peekbg` | a hidden amount being peeked at |
+| `--scrim`, `--shadow-rgb` | backdrops behind dialogs and sheets; shadows as `rgba(var(--shadow-rgb),alpha)` |
+| `--toast-bg`, `--toast-ink`, `--toast-line`, `--toast-hover` | toasts, the drag ghost, and the Undo button in a toast |
+| `--cropbg`, `--series-1` … `--series-5` | the photo cropper's backdrop; the reserve split bar's segments (`app.js`) |
 | `--page-max` | content width (Settings → Page width) |
+
+- Fixed on purpose, not tokens: avatar colours and their white initials (each
+  user's chosen colour), the white behind a QR code, mask gradients, the photo
+  cropper's canvas over the photo, and the Windows close button's red in the
+  app frame.
+- An element with `data-theme` and `data-mode` draws its contents in that
+  theme (the Settings theme cards).
 
 - Type: body in the system sans stack (Segoe UI, Microsoft JhengHei, PingFang
   TC, Noto Sans TC); headings, the brand and big amounts in Georgia / Noto Serif TC.
@@ -385,6 +406,7 @@ topmost popup only.
 | Outline button | `.ghostbtn` | a secondary action next to a primary one |
 | Icon button | `.iconbtn`, `.morebtn` | ✕, bell, ⋯; always with `aria-label` |
 | Segmented choice | `.seg` with `button.on` | one of a few modes (type, period) |
+| Theme cards | `.themecards` of `button.themecard` with `aria-pressed`, a `.themeprev` drawn in its own `data-theme` | Settings → Appearance: one card per theme, the chosen one ringed |
 | Toggle chips | `.tagpick` buttons with `aria-pressed` | many-of-many (categories) |
 | Status chip | `.chip` (`.due`, `.cur`) | a small state or value inside a row |
 | Version chip | `.verchip` after `.vertext` | marks a nightly build; never on a release or dev build |
@@ -454,11 +476,11 @@ topmost popup only.
   `107 4958` split by `FOUR_SEP` (a no-break space, so an amount never wraps
   inside its digits), or plain. Never parse displayed amounts back; a search
   that matches them treats any white space as a plain space.
-- Negative is shown with a minus; income in `--pos` where direction matters.
+- Negative is shown with a minus; income in `--amt-in` where direction matters.
 - The Transactions list (rows and each day's net, inside `.amtstyle`) follows
-  Settings → Display → Spending and income (issue #66), set as
-  `data-amounts` on `<html>`: `both` (default) signs plus `--pos` for income
-  and `--neg` for spending, `sign` only + / − in ink, `color` only the colors.
+  Settings → Appearance → Spending and income (issue #66), set as
+  `data-amounts` on `<html>`: `both` (default) signs plus `--amt-in` for income
+  and `--amt-out` for spending, `sign` only + / − in ink, `color` only the colors.
   The sign is always in the markup as `.asign`; `color` shrinks it to
   `font-size:0` (not `display:none`, not out of flow), so screen readers and
   copied text keep it on the same line. Transfers
