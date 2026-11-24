@@ -1,8 +1,8 @@
 ; Tauri's NSIS installer template (crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi
 ; at tag tauri-cli-v2.12.6, MIT OR Apache-2.0, https://github.com/tauri-apps/tauri), used through
 ; bundle.windows.nsis.template. One change, marked "kisiauthong:" in PageReinstall: an upgrade
-; or downgrade selects "Do not uninstall" by default. When @tauri-apps/cli is bumped, take the
-; template of the new tag and apply that change again.
+; or downgrade selects "Do not uninstall" by default, and focus starts on the selected button.
+; When @tauri-apps/cli is bumped, take the template of the new tag and apply that change again.
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -323,13 +323,15 @@ Function PageReinstall
     ; Check the first radio button if this the first time
     ; we enter this page or if the second button wasn't
     ; selected the last time we were on this page
+    ; kisiauthong: focus the checked button, so Space does not flip the choice
     ${If} $ReinstallPageCheck <> 2
       SendMessage $R2 ${BM_SETCHECK} ${BST_CHECKED} 0
+      ${NSD_SetFocus} $R2
     ${Else}
       SendMessage $R3 ${BM_SETCHECK} ${BST_CHECKED} 0
+      ${NSD_SetFocus} $R3
     ${EndIf}
 
-    ${NSD_SetFocus} $R2
     nsDialogs::Show
   ${EndIf}
 FunctionEnd
