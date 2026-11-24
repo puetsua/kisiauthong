@@ -349,7 +349,7 @@ test("budget card (#97): days left beside what is left, no per-day amount; start
     assert.match(html, /剩 TWD 631<\/span> <small class="bwhen">· 還有 13 天<\/small>/);
     assert.doesNotMatch(html, /每天/);
     assert.doesNotMatch(foot(card("2026-12-10", "2027-01-05", 610000)), /還有/, "not started: no days left");
-    assert.match(foot(card("2026-10-01", "2026-10-31", 5000)), /· [^<]*已結束</);
+    assert.match(foot(card("2026-10-01", "2026-10-31", 5000)), /· 2026年10月31日週六 已結束</);
   } finally {
     t.setLang("en");
   }
