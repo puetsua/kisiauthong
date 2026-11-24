@@ -2,7 +2,7 @@
 # 0027 — Themes: colour tokens, four built-in themes, light and dark
 
 Date: 2026-11-24
-Status: accepted (issue #85); the first part lands now, the theme editor and sync follow
+Status: accepted (issue #85); tokens and built-in themes in #100, the theme editor and sync after it
 
 ## Context
 
@@ -48,30 +48,83 @@ two colours.
   colour; the reserve chart colours are tokens; avatar colours stay fixed,
   since they are each user's chosen identity colour.
 
-## Later (the theme editor)
+## Custom themes and the editor
 
-- **Custom themes**: duplicate a built-in theme and edit its main colours
-  (grouped swatches, an inline picker with a neutral contrast figure and no
-  warnings, ADR 0015, a live preview, pinned on phones); hover, soft and other
-  derived colours are computed. A light/dark split is off by default; turning
-  it on copies light into dark; turning it off after edits warns in a dialog
-  with a Copy JSON button.
-- **Theme JSON** holds the full token set with `format` and `version`; a pasted
-  theme fills missing keys from its `basedOn` theme, ignores unknown keys with a
-  notice, and accepts hex colours only.
-- **Sync is opt-in, with two separate choices.** Both are stored in the
-  settings object (`general.theme {selected}` and `themes[]`, with validation
-  limits); the mode stays per device either way.
-  - *Sync custom themes*: the custom themes go to the server and are merged by
-    id, the newer `updatedAt` winning. Turning it off keeps the copies already
-    on the server.
-  - *Sync the selected theme*: its own toggle, chosen independently. When it is
-    on, the selected theme is stored as `general.theme.selected`, and a custom
-    theme that is selected is uploaded to `themes[]` as well, even while custom
-    themes are not synced, so every other device can resolve it. Selecting a
-    theme the server does not have yet shows a plain notice that it will be
-    uploaded so other devices can use it (a statement of what happens, no
-    prompt or suggestion, ADR 0015).
+- **A custom theme is a copy.** Settings → Appearance → *Duplicate as a custom
+  theme* copies the selected theme (built-in or custom) into the editor, a
+  Settings sub-page (`#theme?id=thm-…`). It is not kept until saved; a saved
+  new theme becomes the selected one. A device keeps at most 20.
+- **Main colours only.** The editor offers 14 main colours in groups
+  (amounts, page, accent, sidebar, status). Every other colour (hover and soft
+  fills, input borders, text on the accent, the sidebar's current page, status
+  fills, row icons, toasts) is derived from them by `deriveTheme` in
+  `web/theme.js` whenever one changes; the nightly chip, the cropper and the
+  chart colours after the first stay as in the theme it was copied from. A
+  derived input border is moved toward the text colour until it reaches 3:1.
+- **The picker** is inline (a saturation/brightness square, a hue slider, a
+  hex field), not the system's picker, so it is the same in every browser and
+  app. Beside it, a plain contrast figure ("Contrast with cards: 6.4:1"):
+  a fact, no warning, colour or verdict (ADR 0015).
+- **A live preview** (a small sidebar, rows with income and spending, a
+  budget bar, buttons) is drawn in the colours being edited; it stays in view
+  beside the form and is pinned at the top on phones.
+- **Light and dark.** A custom theme is light only until *Separate colours
+  for light and dark* is turned on, which copies the light colours into dark
+  to edit. Light only means light in either mode. Turning the split off when
+  the dark colours differ from the light ones asks first, in a dialog with a
+  Copy JSON button, since the dark colours are lost.
+- **Theme JSON**: the editor shows the theme as JSON (`format:
+  "kisiauthong-theme"`, `version: 1`, `name`, `basedOn`, `split`, and every
+  colour in `light` and `dark`). Copy JSON copies it; *Apply pasted JSON* reads
+  one: missing colours are filled from its `basedOn` theme, keys a theme does
+  not have are ignored and named in a notice, and anything but a hex colour is
+  refused with the key named. A pasted theme is applied to the editor, saved
+  only with Save.
+
+## Sync
+
+- **Local first.** The selected theme, the custom themes and the mode are
+  kept in the browser's storage for the server's origin. Sync is off until
+  the user turns it on, per device, with two separate checkboxes; the mode is
+  never synced.
+- **Storage on the server** is the settings object: `general.theme
+  {selected}` (a built-in name or a custom id) and `themes[]` (id, name,
+  basedOn, split, light, dark, updatedAt). The server checks the shape: at most
+  20 themes, ids `thm-` and 6-32 lower-case letters or digits, names 1-60
+  characters, a built-in `basedOn`, an RFC 3339 `updatedAt`, at most 100
+  colours per mode, hex only (`#rgb` is stored as `#rrggbb`), dark only with
+  split. A `themes` PUT replaces the list; devices merge before they send it.
+  `api/openapi.yaml` describes it.
+- **Sync custom themes**: the device's and the server's lists are merged by
+  id, the newer `updatedAt` winning, on turning it on (the first sync) and
+  whenever either side changes. A theme deleted on the device is deleted on
+  the server too, and on every other device that syncs its custom themes: a
+  device remembers which themes the server had at its last sync, and one of
+  those the server no longer has is deleted there as well (a delete wins over
+  an edit, as everywhere in sync). A saved theme with a colour missing (from
+  before a colour was added) gets it from its base theme instead of being
+  dropped. Turning it off keeps the copies on the server; turning it on again
+  is a fresh merge.
+- **Sync the selected theme**: its own choice. Turning it on, or picking a
+  theme while it is on, sends this device's choice; with nothing chosen here
+  since the last sync, the server's choice (another device's) is taken here
+  instead. A custom theme that is selected goes up with the choice even when
+  custom themes are not synced, so every other device can draw it, and a
+  device that takes such a choice keeps the theme. When the server did not
+  have the theme, a notice says it was uploaded so other devices can use it
+  (a statement of what happened, no prompt or suggestion, ADR 0015).
+- **States** under the checkboxes: kept on this device only (both off),
+  syncing, synced at a time, or failed at a time with the error and Retry; a
+  failed change stays on the device and goes up on the next sync.
+- Another device's changes arrive with the settings on every load and live
+  update (ADR 0023); the device sends only when it has something the server
+  lacks.
+
+## Sign-in screen
+
+- Signing out leaves a flag on the device, so a reload of the sign-in screen
+  is Default from the first frame instead of the device's theme for a moment
+  (issue #101). Signing in clears it.
 
 ## Consequences
 
@@ -79,4 +132,5 @@ two colours.
   otherwise, and fails on a literal colour in a rule.
 - The apps' server screen repeats Default's light and dark blocks;
   `scripts/test-app.js` checks they match `web/style.css`.
-- Users of the same browser share its theme until sync arrives.
+- Users of the same browser share its theme and custom themes (they are the
+  browser's, not the account's), and each user's sync choices on it.

@@ -4,8 +4,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -418,5 +420,148 @@ func TestExportDownloadsData(t *testing.T) {
 	}
 	if len(d.Accounts) == 0 || d.Version != 1 {
 		t.Fatalf("export missing seeded data: %+v", d)
+	}
+}
+
+// themeJSON is one custom theme as a device uploads it (ADR 0027); fields override the defaults.
+func themeJSON(fields map[string]interface{}) map[string]interface{} {
+	t := map[string]interface{}{"id": "thm-abc123", "name": "Teal night", "basedOn": "cool", "split": false,
+		"light": map[string]string{"bg": "#F2F6F9", "amt-out": "#b42350", "amt-in": "#0A7"}, "updatedAt": "2026-11-24T03:11:00Z"}
+	for k, v := range fields {
+		if v == nil {
+			delete(t, k)
+		} else {
+			t[k] = v
+		}
+	}
+	return t
+}
+
+func putJSON(t *testing.T, v interface{}) (int, Settings) {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doSettings(t, http.MethodPut, string(b))
+}
+
+func TestSettingsThemesDefaultEmpty(t *testing.T) {
+	withTestStore(t)
+	code, s := doSettings(t, http.MethodGet, "")
+	if code != 200 || s.Themes == nil || len(s.Themes) != 0 || s.General.Theme != nil {
+		t.Fatalf("defaults: %d %+v %+v", code, s.Themes, s.General.Theme)
+	}
+}
+
+func TestSettingsThemesStoredAndNormalised(t *testing.T) {
+	withTestStore(t)
+	dark := map[string]string{"bg": "#0c141c"}
+	code, s := putJSON(t, map[string]interface{}{"themes": []interface{}{
+		themeJSON(map[string]interface{}{"name": "  Teal night  ", "dark": dark}), // split off: the dark colours are dropped
+		themeJSON(map[string]interface{}{"id": "thm-def456", "split": true, "dark": dark}),
+	}})
+	if code != 200 || len(s.Themes) != 2 {
+		t.Fatalf("put: %d %+v", code, s.Themes)
+	}
+	a := s.Themes[0]
+	if a.Name != "Teal night" || a.Light["bg"] != "#f2f6f9" || a.Light["amt-in"] != "#00aa77" || a.Dark != nil {
+		t.Fatalf("normalised: %+v", a)
+	}
+	if s.Themes[1].Dark["bg"] != "#0c141c" {
+		t.Fatalf("split keeps dark: %+v", s.Themes[1])
+	}
+	// a later PUT of other settings keeps them; a themes PUT replaces the list
+	if _, s = doSettings(t, http.MethodPut, `{"general":{"pageWidth":"wide"}}`); len(s.Themes) != 2 {
+		t.Fatalf("kept: %+v", s.Themes)
+	}
+	if _, s = putJSON(t, map[string]interface{}{"themes": []interface{}{themeJSON(nil)}}); len(s.Themes) != 1 || s.Themes[0].ID != "thm-abc123" {
+		t.Fatalf("replaced: %+v", s.Themes)
+	}
+	if _, s = putJSON(t, map[string]interface{}{"themes": []interface{}{}}); len(s.Themes) != 0 {
+		t.Fatalf("emptied: %+v", s.Themes)
+	}
+}
+
+func TestSettingsSelectedTheme(t *testing.T) {
+	withTestStore(t)
+	for _, v := range []string{"default", "contrast", "warm", "cool", "thm-abc123"} {
+		if code, s := putJSON(t, map[string]interface{}{"general": map[string]interface{}{"theme": map[string]string{"selected": v}}}); code != 200 || s.General.Theme == nil || s.General.Theme.Selected != v {
+			t.Fatalf("selected %q: %d %+v", v, code, s.General.Theme)
+		}
+	}
+	// other general fields keep it; the mode is never stored
+	if _, s := doSettings(t, http.MethodPut, `{"general":{"pageWidth":"full"}}`); s.General.Theme == nil || s.General.Theme.Selected != "thm-abc123" {
+		t.Fatalf("kept: %+v", s.General.Theme)
+	}
+	for _, bad := range []string{"", "neon", "thm-", "thm-UPPER1", "custom:thm-abc123"} {
+		if code, _ := putJSON(t, map[string]interface{}{"general": map[string]interface{}{"theme": map[string]string{"selected": bad}}}); code != 400 {
+			t.Errorf("selected %q: want 400, got %d", bad, code)
+		}
+	}
+}
+
+func TestSettingsThemesRejectInvalid(t *testing.T) {
+	withTestStore(t)
+	many := []interface{}{}
+	for i := 0; i < maxCustomThemes+1; i++ {
+		many = append(many, themeJSON(map[string]interface{}{"id": fmt.Sprintf("thm-many%02d", i)}))
+	}
+	tooManyColours := map[string]string{}
+	for i := 0; i <= maxThemeTokens; i++ {
+		tooManyColours[fmt.Sprintf("c%d", i)] = "#000000"
+	}
+	long := strings.Repeat("名", maxThemeName+1)
+	cases := map[string][]interface{}{
+		"bad id":           {themeJSON(map[string]interface{}{"id": "theme-1"})},
+		"duplicate id":     {themeJSON(nil), themeJSON(nil)},
+		"empty name":       {themeJSON(map[string]interface{}{"name": "   "})},
+		"long name":        {themeJSON(map[string]interface{}{"name": long})},
+		"unknown base":     {themeJSON(map[string]interface{}{"basedOn": "neon"})},
+		"no updatedAt":     {themeJSON(map[string]interface{}{"updatedAt": nil})},
+		"bad updatedAt":    {themeJSON(map[string]interface{}{"updatedAt": "yesterday"})},
+		"no colours":       {themeJSON(map[string]interface{}{"light": map[string]string{}})},
+		"not hex":          {themeJSON(map[string]interface{}{"light": map[string]string{"bg": "rgb(0,0,0)"}})},
+		"named colour":     {themeJSON(map[string]interface{}{"light": map[string]string{"bg": "white"}})},
+		"bad name":         {themeJSON(map[string]interface{}{"light": map[string]string{"--bg": "#000000"}})},
+		"split no dark":    {themeJSON(map[string]interface{}{"split": true})},
+		"too many colours": {themeJSON(map[string]interface{}{"light": tooManyColours})},
+		"too many themes":  many,
+	}
+	for name, list := range cases {
+		if code, _ := putJSON(t, map[string]interface{}{"themes": list}); code != 400 {
+			t.Errorf("%s: want 400, got %d", name, code)
+		}
+	}
+	if _, s := doSettings(t, http.MethodGet, ""); len(s.Themes) != 0 {
+		t.Fatalf("nothing stored: %+v", s.Themes)
+	}
+}
+
+// api/openapi.yaml describes the theme fields with the limits the server enforces.
+func TestOpenAPIDescribesThemes(t *testing.T) {
+	b, err := os.ReadFile("../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := string(b)
+	for _, want := range []string{
+		"/api/settings:",
+		fmt.Sprintf("maxItems: %d", maxCustomThemes),
+		fmt.Sprintf("name: { type: string, minLength: 1, maxLength: %d }", maxThemeName),
+		fmt.Sprintf("maxProperties: %d", maxThemeTokens),
+		fmt.Sprintf("id: { type: string, pattern: \"%s\" }", themeIDRe.String()),
+		fmt.Sprintf("propertyNames: { pattern: \"%s\" }", themeTokenRe.String()),
+		"basedOn: { type: string, enum: [default, contrast, warm, cool] }",
+		"themes:", "theme:", "selected:", "updatedAt: { type: string, format: date-time }",
+	} {
+		if !strings.Contains(spec, want) {
+			t.Errorf("api/openapi.yaml lacks %q", want)
+		}
+	}
+	for k := range builtinThemes {
+		if !strings.Contains(spec, k) {
+			t.Errorf("api/openapi.yaml lacks the built-in theme %s", k)
+		}
 	}
 }

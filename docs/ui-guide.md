@@ -60,7 +60,13 @@ WCAG AA (4.5:1; controls and icons 3:1).
   cropper's canvas over the photo, and the Windows close button's red in the
   app frame.
 - An element with `data-theme` and `data-mode` draws its contents in that
-  theme (the Settings theme cards).
+  theme (the Settings theme cards); a custom theme adds its colours as inline
+  tokens on top (`setThemeTokens` in `web/theme.js`, the editor's preview).
+- The theme editor (`#theme?id=…`, a Settings sub-page): the form on the
+  left (name, the light/dark split, grouped main colours with the picker under
+  the chosen one's group, the theme JSON, then Delete · Cancel · Save) and the
+  live preview on the right, sticky; on phones the preview is pinned under the
+  top bar. A live refresh does not redraw it.
 
 - Type: body in the system sans stack (Segoe UI, Microsoft JhengHei, PingFang
   TC, Noto Sans TC); headings, the brand and big amounts in Georgia / Noto Serif TC.
@@ -406,7 +412,11 @@ topmost popup only.
 | Outline button | `.ghostbtn` | a secondary action next to a primary one |
 | Icon button | `.iconbtn`, `.morebtn` | ✕, bell, ⋯; always with `aria-label` |
 | Segmented choice | `.seg` with `button.on` | one of a few modes (type, period) |
-| Theme cards | `.themecards` of `button.themecard` with `aria-pressed`, a `.themeprev` drawn in its own `data-theme` | Settings → Appearance: one card per theme, the chosen one ringed |
+| Theme cards | `.themecards` of `button.themecard` with `aria-pressed`, a `.themeprev` drawn in its own `data-theme` (custom themes: inline tokens too) | Settings → Appearance: one card per theme, built-in then *My themes*, the chosen one ringed |
+| Checkbox row | `label.checkrow` with an `input[type=checkbox]` and its text | an on/off choice inside a settings row or panel (theme sync, the editor's light/dark split) |
+| Sync state | `p.syncstate` (`.busy`, `.ok`, `.err`) with a `.dot` and the text in a `span`; Retry as a `.smallbtn` after it | where synced data stands: on this device only, syncing, synced at a time, failed with Retry |
+| Colour swatch | `.tswatches` of `button.tswatch` (`aria-pressed`) with the colour, its name and hex | the theme editor's main colours; the chosen one opens the picker under its group |
+| Colour picker | `.tpick`: `.tpsv` (`role=slider`, arrow keys), `.tphue` range, hex field, a plain contrast figure | the theme editor only; a figure, never a warning (ADR 0015) |
 | Toggle chips | `.tagpick` buttons with `aria-pressed` | many-of-many (categories) |
 | Status chip | `.chip` (`.due`, `.cur`) | a small state or value inside a row |
 | Version chip | `.verchip` after `.vertext` | marks a nightly build; never on a release or dev build |
