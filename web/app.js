@@ -1799,6 +1799,7 @@ const SET_ICON = {
   money: ACCOUNT_ICONS.coins[1],
   display: "M3 4h18v16H3zM3 9h18M9 9v11",
   appearance: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 3v18M12 8l5.5-3.5M12 13l8.5-4.5M12 18l6.5-3",
+  sync: "M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4",
   dashboard: "M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z",
   data: "M12 3v12M7 10l5 5 5-5M4 19h16",
   servers: "M4 5h16v6H4zM4 13h16v6H4zM8 8h.01M8 16h.01",
@@ -2002,10 +2003,44 @@ function themeSyncOnLoad(s) {
   themeSyncDone(sp, { notice: (state.themeSync && state.themeSync.notice) || "", known: plan.known }, true);
   drawAppearance();
 }
+// Settings → Sync (issue #104): each theme sync choice has an (i) button after its label that opens what it
+// does, in plain words (ADR 0027). The button sits beside the label, not in it, so it never toggles the box.
+const SYNC_HELP = {
+  custom: [N_("Sync themes across devices"), [
+    N_("Themes are kept on this device unless you turn on sync. This choice is per device: turn it on on each device that should share themes."),
+    N_("When it is on, the custom themes on this device are uploaded to your account on the server, and the custom themes your other devices uploaded are added here."),
+    N_("Each time it is turned on, the themes here and on the server are merged: when the same theme is on both sides, the copy changed last is kept. Themes made separately stay separate, even with the same name."),
+    N_("A custom theme deleted on one device that syncs is deleted on the others too."),
+    N_("Light or dark mode is not synced: each device keeps its own."),
+    N_("Turning it off stops syncing. The copies already on the server stay there."),
+  ]],
+  selected: [N_("Sync theme selection"), [
+    N_("Themes are kept on this device unless you turn on sync. This choice is per device: turn it on on each device that should share themes."),
+    N_("When it is on, the theme you pick here is uploaded, and a theme picked on another device that syncs is used here too."),
+    N_("When the selected theme is a custom theme, that theme itself is uploaded too, even when Sync themes across devices is off, so your other devices can show it."),
+    N_("If the server did not have that theme yet, a notice says it was uploaded."),
+    N_("Light or dark mode is not synced: each device keeps its own."),
+    N_("Turning it off stops syncing. What is already on the server stays there."),
+  ]],
+};
+const INFO_SVG = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v6M12 7.5h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+const infoBtn = (id, label) => `<button type="button" class="infobtn" id="${id}" aria-haspopup="dialog" aria-label="${esc(__("About “{name}”", { name: label }))}" title="${esc(__("About “{name}”", { name: label }))}">${INFO_SVG}</button>`;
+// a clock time in the display zone (Settings → Time zone), for when something last happened today
+const clockTime = (iso) => new Date(iso).toLocaleTimeString(LANG, { hour: "2-digit", minute: "2-digit", timeZone: displayTZ() });
+function openSyncHelp(which) {
+  const [title, lines] = SYNC_HELP[which], back = which === "custom" ? "syncCustomHelp" : "syncSelectedHelp";
+  const dlg = $("#dialog");
+  openDialog(__(title), `<ul class="helplist">${lines.map((l) => `<li>${esc(__(l))}</li>`).join("")}</ul>`
+    + `<div class="formactions"><span class="grow"></span><button type="button" class="primarybtn" id="syncHelpOk">${esc(__("Close"))}</button></div>`);
+  dlg.classList.add("helpdlg");
+  $("#syncHelpOk").addEventListener("click", () => dlg.close());
+  // back to the (i) that opened it, also when a sync redrew the section meanwhile
+  dlg.addEventListener("close", () => { dlg.classList.remove("helpdlg"); const b = document.getElementById(back); if (b) b.focus(); }, { once: true });
+}
 function themeSyncHTML() {
   const sp = themeSyncPrefs(), st = state.themeSync || {};
-  const box = (id, on, label) => `<label class="checkrow"><input type="checkbox" id="${id}" ${on ? "checked" : ""}> ${esc(label)}</label>`;
-  const time = (iso) => new Date(iso).toLocaleTimeString(LANG, { hour: "2-digit", minute: "2-digit" });
+  const box = (id, on, label) => `<div class="checkline"><label class="checkrow"><input type="checkbox" id="${id}" ${on ? "checked" : ""}> ${esc(label)}</label>${infoBtn(id + "Help", label)}</div>`;
+  const time = clockTime;
   let line;
   if (!themeSyncOn(sp)) line = `<p class="syncstate">${esc(__("Themes are kept on this device only."))}</p>`;
   else if (st.status === "syncing") line = `<p class="syncstate busy" role="status"><span class="dot"></span><span>${esc(__("Syncing…"))}</span></p>`;
@@ -2013,8 +2048,8 @@ function themeSyncHTML() {
   else if (sp.at) line = `<p class="syncstate ok" role="status"><span class="dot"></span><span>${esc(__("Synced at {time}", { time: time(sp.at) }))}</span></p>`;
   else line = `<p class="syncstate"><span class="dot"></span><span>${esc(__("Not synced yet."))}</span></p>`;
   const notice = st.notice ? `<p class="shint">${esc(__("“{name}” was not on the server yet, so it was uploaded for your other devices.", { name: st.notice }))}</p>` : "";
-  return box("syncCustom", sp.custom, __("Sync my custom themes with my account")) + box("syncSelected", sp.selected, __("Sync the selected theme with my account"))
-    + line + notice + (themeSyncOn(sp) ? `<p class="shint">${esc(__("The light or dark mode is not synced: each device keeps its own."))}</p>` : "");
+  return box("syncCustom", sp.custom, __("Sync themes across devices")) + box("syncSelected", sp.selected, __("Sync theme selection"))
+    + line + notice;
 }
 function setThemeSync(patch) {
   const sp = Object.assign(themeSyncPrefs(), patch);
@@ -2035,7 +2070,7 @@ function drawAppearance(focus) {
   if (!tp || !mp) return;
   const a = document.activeElement;
   const had = a && a.dataset;
-  focus = focus || (had && had.themePick ? `[data-theme-pick="${had.themePick}"]` : had && had.modePick ? `[data-mode-pick="${had.modePick}"]` : a && a.id && /^(syncCustom|syncSelected|syncRetry|themeDup|themeEdit)$/.test(a.id) ? "#" + a.id : "");
+  focus = focus || (had && had.themePick ? `[data-theme-pick="${had.themePick}"]` : had && had.modePick ? `[data-mode-pick="${had.modePick}"]` : a && a.id && /^(syncCustom|syncSelected|syncCustomHelp|syncSelectedHelp|syncRetry|themeDup|themeEdit)$/.test(a.id) ? "#" + a.id : "");
   const prefs = readThemePrefs(), sys = systemAppearance(), shown = resolveTheme(prefs, sys), customs = readCustomThemes();
   const sel = customTheme(prefs.theme, customs);
   tp.innerHTML = `<div class="themecards">${THEMES.map((t) => themeCardHTML(t, prefs, shown.mode)).join("")}</div>`
@@ -2054,6 +2089,8 @@ function drawAppearance(focus) {
     $("#syncCustom").addEventListener("change", (e) => setThemeSync({ custom: e.target.checked }));
     $("#syncSelected").addEventListener("change", (e) => setThemeSync({ selected: e.target.checked }));
     if ($("#syncRetry")) $("#syncRetry").addEventListener("click", syncThemes);
+    $("#syncCustomHelp").addEventListener("click", () => openSyncHelp("custom"));
+    $("#syncSelectedHelp").addEventListener("click", () => openSyncHelp("selected"));
   }
   const back = focus && $(focus);
   if (back && typeof back.focus === "function") back.focus(); // the redrawn control keeps the keyboard focus
@@ -2281,6 +2318,11 @@ async function deleteCustomTheme(d) {
   if (sp.custom || (sp.selected && picked)) syncThemes();
 }
 function screenSettings(v) {
+  // a redraw (a live refresh, held back while a dialog such as an (i) help was open) gives the keyboard focus
+  // back to the control that had it (issue #104)
+  const a = document.activeElement, inView = !!(a && a.closest && a.closest("#view"));
+  const keep = !inView ? "" : a.id ? "#" + a.id : a.dataset && a.dataset.themePick ? `[data-theme-pick="${a.dataset.themePick}"]`
+    : a.dataset && a.dataset.modePick ? `[data-mode-pick="${a.dataset.modePick}"]` : "";
   const src = state.about && state.about.sourceUrl;
   const pref = (state.general && state.general.language) || "";
   const langOpts = [["", __("Browser default")], ...Object.entries(LANGS)].map(([k, name]) => `<option value="${esc(k)}" ${k === pref ? "selected" : ""} ${k ? `lang="${esc(k)}"` : ""}>${esc(name)}</option>`).join("");
@@ -2305,9 +2347,15 @@ function screenSettings(v) {
     ["appearance", __("Appearance"), [
       row(__("Theme"), `<div id="themePick"></div>`),
       row(__("Mode"), `<div id="modePick"></div>`),
-      row(__("Sync"), `<div id="themeSync"></div>`),
       row(__("Spending and income"), `<select id="setAmtStyle" aria-describedby="setAmtHint">${enumOptions(AMTSTYLE_L, Object.keys(AMTSTYLE_L), amountStyle())}</select>`
         + `<p class="shint" id="setAmtHint">${esc(__("With Color only, spending and income differ only by color and by the icon in front of each row."))}</p>`, "setAmtStyle"),
+    ]],
+    // Sync (issue #104): where this device stands with the server: live updates, the last fetch of the
+    // books, and the theme sync choices (ADR 0023, 0027). Nothing here is a new kind of sync.
+    ["sync", __("Sync"), [
+      row(__("Live updates"), `<div id="syncLive" role="status">${liveStateHTML()}</div>`),
+      row(__("Last updated"), `<div id="syncLoaded">${loadedHTML()}</div>`),
+      row(__("Themes"), `<div id="themeSync"></div>`),
     ]],
     ["data", __("Data"), [
       row(__("Export all data"), `<div class="sbtns"><a class="smallbtn" href="api/export" download>${esc(__("Export JSON"))}</a></div>`),
@@ -2344,7 +2392,7 @@ function screenSettings(v) {
   $("#setNumFmt").addEventListener("change", (e) => saveGeneral({ numberFormat: e.target.value }, () => __("Number format saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
   $("#setAmtStyle").addEventListener("change", (e) => saveGeneral({ amountStyle: e.target.value }, () => __("Spending and income display saved.")));
-  drawAppearance();
+  drawAppearance(keep);
   $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
   if ($("#copyCommit")) $("#copyCommit").addEventListener("click", async () => { try { await navigator.clipboard.writeText(verAbout().commit); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } });
   if (state.goAbout) { state.goAbout = false; $("#set-about").scrollIntoView({ block: "start" }); }
@@ -3458,6 +3506,7 @@ async function load() {
   if (seq < loads.applied) return false;
   loads.applied = seq;
   state.data = data;
+  state.loadedAt = new Date().toISOString(); // Settings → Sync: when the books were last fetched (issue #104)
   state.data.allAccounts = state.data.accounts;
   state.data.externals = state.data.accounts.filter((a) => a.kind === "external");
   state.data.accounts = state.data.accounts.filter((a) => a.kind !== "external");
@@ -3538,13 +3587,47 @@ function liveOnChange(data) {
   liveSchedule();
   return true;
 }
+// Settings → Sync (issue #104): the state of the stream, as the page already knows it
+// offline: the device says it has no network; none: no EventSource here (the page catches up when it comes
+// back to view); on: the stream is open; connecting: opening, or waiting to try again
+function liveState() {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline";
+  if (typeof EventSource === "undefined") return "none";
+  return live.es && live.es.readyState === 1 ? "on" : "connecting";
+}
+const LIVE_L = {
+  on: ["ok", N_("On: changes made on your other devices show here as they happen.")],
+  connecting: ["busy", N_("Connecting to the server…")],
+  offline: ["off", N_("Offline: this device has no network. Changes show here when it is back online.")],
+  none: ["", N_("Not available in this browser. The page catches up when you come back to it.")],
+};
+function liveStateHTML() {
+  const [cls, text] = LIVE_L[liveState()];
+  return `<p class="syncstate${cls ? " " + cls : ""}"><span class="dot"></span><span>${esc(__(text))}</span></p>`;
+}
+// when this page last fetched the books (on load, after a write, on every live update): a clock time today,
+// with the date before today
+function loadedHTML() {
+  const at = state.loadedAt ? new Date(state.loadedAt) : null, tz = displayTZ();
+  const text = !at ? "—" : zoneParts(at, tz).date === zoneParts(new Date(), tz).date ? clockTime(state.loadedAt)
+    : at.toLocaleString(LANG, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: tz });
+  return `<p class="syncstate"><span>${esc(text)}</span></p>`;
+}
+// redraws the live update line when it changes (only then, so a screen reader hears each change once)
+function drawLiveState() {
+  const el = $("#syncLive"), html = liveStateHTML();
+  if (el && el.innerHTML !== html) el.innerHTML = html;
+}
 function liveStart() {
   if (live.es || !state.me || typeof EventSource === "undefined") return;
   const es = new EventSource(rel("/api/events"));
   live.es = es;
-  es.addEventListener("ready", (e) => { live.wait = 2000; liveOnChange(e.data); });
+  drawLiveState();
+  es.addEventListener("open", drawLiveState);
+  es.addEventListener("ready", (e) => { live.wait = 2000; drawLiveState(); liveOnChange(e.data); });
   es.addEventListener("change", (e) => liveOnChange(e.data));
   es.addEventListener("error", () => {
+    drawLiveState();
     if (es.readyState !== 2) return; // CONNECTING: the browser retries by itself
     es.close();
     if (live.es !== es) return;
@@ -3559,6 +3642,7 @@ function liveStop() {
   if (live.es) live.es.close();
   Object.assign(live, { es: null, timer: 0, retry: 0, wait: 2000, rev: "", force: false });
   loads.asked = "";
+  drawLiveState();
 }
 // back from the background, focus, or back online: reconnect if needed. After a long background pause
 // or a network change the stream may look open but be dead (phones), so it is opened anew; its ready
@@ -3579,7 +3663,8 @@ document.addEventListener("visibilitychange", () => {
   else liveWake(Date.now() - live.hiddenAt > 10000);
 });
 window.addEventListener("focus", () => liveWake(false));
-window.addEventListener("online", () => liveWake(true));
+window.addEventListener("online", () => { drawLiveState(); liveWake(true); });
+window.addEventListener("offline", drawLiveState);
 
 setLang(pickLang(""));
 boot();

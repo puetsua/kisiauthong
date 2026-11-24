@@ -647,6 +647,17 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .syncstate.ok .dot{background:var(--pos)}
 .syncstate.busy .dot{background:var(--sched)}
 .syncstate.err{color:var(--red)}.syncstate.err .dot{background:var(--red)}
+.syncstate.off .dot{background:none;border:2px solid var(--muted);box-sizing:border-box;width:10px;height:10px}
+#syncLive .syncstate,#syncLoaded .syncstate{margin:0} /* alone in their row, level with its label */
+/* a checkbox row with an (i) after its label (Settings → Sync, issue #104): the button is beside the label, not in it */
+.checkline{display:flex;align-items:center;gap:2px;margin:0 0 4px}
+.checkline .checkrow{margin:0}
+.infobtn{flex:none;display:grid;place-items:center;width:40px;height:40px;margin:-6px 0;padding:0;border:0;border-radius:50%;background:none;color:var(--muted);cursor:pointer}
+.infobtn:hover{background:var(--hover);color:var(--accent)}
+.infobtn:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;color:var(--accent)}
+dialog.helpdlg{width:min(560px,calc(100vw - 32px))}
+.helplist{margin:4px 0 0;padding-left:1.2em;line-height:1.55}
+.helplist li+li{margin-top:8px}
 .shint.err{color:var(--red)}
 /* the theme editor (#theme?id=…): the form beside a live preview, which stays in view; on phones it is pinned at the top */
 .themeed{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
