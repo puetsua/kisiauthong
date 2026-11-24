@@ -18,7 +18,7 @@ const I18N = {
     "Every {n} days": "每 {n} 天", "Every {n} weeks": "每 {n} 週", "Every {n} months": "每 {n} 個月", "Every {n} years": "每 {n} 年",
     "days": "天", "weeks": "週", "months": "個月", "years": "年", "Date range": "指定期間", "Custom…": "自訂…",
     "{amount} left": "剩 {amount}", "{amount} over": "超支 {amount}", "Starts {date}": "{date} 開始", "Ended {date}": "{date} 已結束",
-    "{amount} a day for {n} day(s)": "每天 {amount}，還有 {n} 天", "{n} day(s) left": "還有 {n} 天", "of {limit}": "／{limit}",
+    "{n} day(s) left": "還有 {n} 天", "of {limit}": "／{limit}",
     "Categories": "分類",
     "API keys": "API 金鑰", "Read your books": "讀取你的帳本", "Add and edit transactions": "新增與編輯交易", "Add and edit accounts": "新增與編輯帳戶",
     "Add and edit templates, generate due ones": "新增與編輯範本、產生到期交易",

@@ -45,7 +45,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -323,6 +323,35 @@ test("ended budgets (#59): below the running ones, in a closed Ended (n) section
   } finally {
     data.tags = saved;
     sandbox.localStorage = ls;
+  }
+});
+
+test("budget card (#97): days left beside what is left, no per-day amount; start and end dates for the other states", () => {
+  const card = (start, end, remaining) => strip(t.budgetCard({ id: "b1", name: "Living", currency: "TWD", limitMinor: 610000, cycle: "monthly",
+    periodStart: start, periodEnd: end, spentMinor: 610000 - remaining, remainingMinor: remaining }));
+  const foot = (html) => html.slice(html.indexOf('class="tfoot"'));
+  try {
+    // today is 2026-11-18: a running month with 13 days to go, one line on the left
+    let html = foot(card("2026-11-01", "2026-11-30", 63100));
+    assert.match(html, /<span class="">TWD 631 left<\/span> <small class="bwhen">· 13 day\(s\) left<\/small>/);
+    assert.doesNotMatch(html, /a day|per day/i, "no per-day average");
+    assert.match(foot(card("2026-11-01", "2026-11-30", -22000)), /<span class="neg">TWD 220 over<\/span> <small class="bwhen">· 13 day\(s\) left</, "over: days still shown");
+    assert.match(foot(card("2026-11-01", "2026-11-18", 1000)), /· 1 day\(s\) left</, "the last day counts");
+    // not started / ended: the date, never a day count
+    html = foot(card("2026-12-10", "2027-01-05", 610000));
+    assert.match(html, /· Starts Thu, Dec 10, 2026</);
+    assert.doesNotMatch(html, /day\(s\) left/);
+    html = foot(card("2026-10-01", "2026-10-31", 5000));
+    assert.match(html, /· Ended Sat, Oct 31, 2026</);
+    assert.doesNotMatch(html, /day\(s\) left/);
+    t.setLang("zh-TW");
+    html = foot(card("2026-11-01", "2026-11-30", 63100));
+    assert.match(html, /剩 TWD 631<\/span> <small class="bwhen">· 還有 13 天<\/small>/);
+    assert.doesNotMatch(html, /每天/);
+    assert.doesNotMatch(foot(card("2026-12-10", "2027-01-05", 610000)), /還有/, "not started: no days left");
+    assert.match(foot(card("2026-10-01", "2026-10-31", 5000)), /· [^<]*已結束</);
+  } finally {
+    t.setLang("en");
   }
 });
 
