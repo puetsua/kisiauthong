@@ -33,9 +33,8 @@ import (
 // such actions belong in the spec in the same change as the handler.
 
 // anyMethod lists the paths whose handlers answer every method alike; the spec
-// documents GET for them (it says so in their descriptions). /api/state is a
-// bug (issue #105): drop it here once its handler answers 405.
-var anyMethod = map[string]bool{"/healthz": true, "/api/auth/status": true, "/api/state": true}
+// documents GET for them (it says so in their descriptions).
+var anyMethod = map[string]bool{"/healthz": true, "/api/auth/status": true}
 
 // notAPI lists registered patterns that are not part of the API: "/" is the web
 // UI's files, registered only when there is a web UI to serve.
