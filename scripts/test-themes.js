@@ -280,10 +280,14 @@ test("theme.js: theme JSON — the full set out, missing colours filled from bas
   assert.deepStrictEqual(err({ format: "kisiauthong-theme", version: 1, light: { bg: "red" } }), { error: "hex", key: "light.bg" });
 });
 
-test("theme.js: custom themes are kept on the device; broken entries are dropped; a choice of a gone theme is Default", () => {
+test("theme.js: custom themes are kept on the device; missing colours come from the base; a choice of a gone theme is Default", () => {
   const s = loadTheme();
-  assert.strictEqual(s.t.writeCustomThemes([mine(), { id: "nope" }, mine({ id: "thm-broken1", light: { bg: "#ffffff" } })]), true);
-  assert.deepStrictEqual(s.t.readCustomThemes().map((x) => x.id), ["thm-abc123"], "incomplete themes are not used");
+  assert.strictEqual(s.t.writeCustomThemes([mine(), { id: "nope" }, mine({ id: "thm-older1", light: { bg: "#ffffff" } })]), true);
+  const kept = s.t.readCustomThemes();
+  assert.deepStrictEqual(kept.map((x) => x.id), ["thm-abc123", "thm-older1"], "what is not a theme is dropped");
+  // a theme saved before a colour existed (here: all but one) gets the missing ones from its base theme
+  assert.strictEqual(kept[1].light.bg, "#ffffff");
+  assert.strictEqual(kept[1].light.panel, builtin("cool", "light").panel);
   assert.strictEqual(s.t.normTheme(mine({ split: true }), null), null, "split without dark colours");
   assert.ok(s.t.normTheme(mine({ split: true, dark: {} }), (th, m) => builtin(th, m)).dark.bg, "filled when a base is given");
   s.store["kisiauthong.theme"] = JSON.stringify({ theme: "thm-gone99", mode: "dark" });

@@ -1900,26 +1900,34 @@ function themeCardHTML(id, prefs, mode, custom) {
 const THEME_SYNC_KEY = "kisiauthong.themeSync";
 // custom: sync the custom themes; selected: sync the selected theme; pending: a choice made here that
 // is not on the server yet (a token, so a newer pick is not marked done by an older upload);
-// deleted: custom themes deleted here that the server still has; at: the last successful sync
+// deleted: custom themes deleted here that the server still has; known: the custom themes the server had
+// at the last sync (one of them missing there now was deleted on another device); at: the last successful sync
 function themeSyncPrefs() {
   let v = null;
   try { v = JSON.parse(localStorage.getItem(THEME_SYNC_KEY) || "null"); } catch (e) { /* blocked storage: off */ }
   v = v && typeof v === "object" ? v : {};
   return { custom: v.custom === true, selected: v.selected === true, pending: typeof v.pending === "string" ? v.pending : "",
-    deleted: Array.isArray(v.deleted) ? v.deleted.filter((x) => THEME_ID_RE.test(x)).slice(0, 50) : [], at: typeof v.at === "string" ? v.at : "" };
+    deleted: Array.isArray(v.deleted) ? v.deleted.filter((x) => THEME_ID_RE.test(x)).slice(0, 50) : [],
+    known: Array.isArray(v.known) ? v.known.filter((x) => THEME_ID_RE.test(x)).slice(0, MAX_CUSTOM_THEMES * 2) : [], at: typeof v.at === "string" ? v.at : "" };
 }
 function writeThemeSyncPrefs(p) { try { localStorage.setItem(THEME_SYNC_KEY, JSON.stringify(p)); } catch (e) { /* stays for this page only */ } }
 // What a sync does, from the server's settings, this device's sync choices, custom themes and choice
-// (no network, no storage): → { local, prefs (a choice to take, or null), upload (a PUT body, or null), notice }
-// - custom themes on: both sides merged by id, the newer updatedAt winning; a theme deleted here leaves the server
+// (no network, no storage): → { local, prefs (a choice to take, or null), upload (a PUT body, or null), notice, known }
+// - custom themes on: both sides merged by id, the newer updatedAt winning; a theme deleted here leaves the server,
+//   and one the server had at the last sync but no longer has was deleted on another device: it goes here too
+//   (a delete wins over an edit, as everywhere in sync)
 // - selected theme on: a choice made here goes up, with its custom theme if the server lacks it (even when custom
 //   themes are not synced: other devices must be able to draw it), and the notice names that theme; otherwise the
 //   server's choice (another device's) is taken here, with its theme
 function themeSyncPlan(server, sp, local, prefs) {
-  const remote = (server.themes || []).map((t) => normTheme(t)).filter(Boolean);
+  const remote = (server.themes || []).map((t) => normTheme(t, builtinTokens)).filter(Boolean);
   const remoteSel = server.general && server.general.theme ? server.general.theme.selected : "";
   let list = remote.filter((t) => !sp.deleted.includes(t.id)), out = local, take = null, notice = "", selected;
-  if (sp.custom) { out = mergeThemes(local, list); list = out.slice(); }
+  if (sp.custom) {
+    const kept = local.filter((t) => !(sp.known.includes(t.id) && !remote.some((r) => r.id === t.id)));
+    out = mergeThemes(kept, list);
+    list = out.slice();
+  }
   if (sp.selected) {
     const there = THEMES.includes(remoteSel) ? true : customTheme(remoteSel, remote);
     if (!sp.pending && remoteSel && there) {
@@ -1935,7 +1943,7 @@ function themeSyncPlan(server, sp, local, prefs) {
     }
   }
   const changed = !sameThemes(list, remote) || (selected !== undefined && selected !== remoteSel);
-  return { local: out, prefs: take, notice, upload: changed ? Object.assign({ themes: list }, selected !== undefined ? { general: { theme: { selected } } } : {}) : null };
+  return { local: out, prefs: take, notice, known: list.map((t) => t.id), upload: changed ? Object.assign({ themes: list }, selected !== undefined ? { general: { theme: { selected } } } : {}) : null };
 }
 let themeSyncBusy = false, themeSyncAgain = false;
 const themeSyncOn = (sp) => sp.custom || sp.selected;
@@ -1945,25 +1953,29 @@ function themeSyncTake(plan) {
   if (plan.prefs) writeThemePrefs(plan.prefs);
   applyTheme();
 }
-function themeSyncDone(sp0, notice) {
+// quiet: a load that found both sides the same (keeps the notice on screen, no toast)
+function themeSyncDone(sp0, plan, quiet) {
+  const notice = plan.notice;
   const sp = themeSyncPrefs(), at = new Date().toISOString();
   if (sp.pending === sp0.pending) sp.pending = ""; // a pick made meanwhile is still to go up
   sp.deleted = sp.deleted.filter((id) => !sp0.deleted.includes(id));
+  if (sp.custom) sp.known = plan.known;
   sp.at = at;
   writeThemeSyncPrefs(sp);
   state.themeSync = { status: "ok", notice };
-  if (notice) msg(__("“{name}” was not on the server yet, so it was uploaded for your other devices.", { name: notice }));
+  if (notice && !quiet) msg(__("“{name}” was not on the server yet, so it was uploaded for your other devices.", { name: notice }));
 }
 // a full sync: the server's latest settings, the plan, its upload
 async function syncThemes() {
   if (themeSyncBusy) { themeSyncAgain = true; return; }
-  const sp = themeSyncPrefs();
-  if (!themeSyncOn(sp)) return;
+  if (!themeSyncOn(themeSyncPrefs())) return;
   themeSyncBusy = true;
   state.themeSync = { status: "syncing" };
   drawAppearance();
   try {
     const s = await api("/api/settings");
+    // read again: a theme picked (or a toggle changed) while the request was out counts
+    const sp = themeSyncPrefs();
     const plan = themeSyncPlan(s, sp, readCustomThemes(), readThemePrefs());
     themeSyncTake(plan);
     if (plan.upload) {
@@ -1971,7 +1983,7 @@ async function syncThemes() {
       state.general = res.general;
       settingsApplied();
     }
-    themeSyncDone(sp, plan.notice);
+    themeSyncDone(sp, plan);
   } catch (e) {
     state.themeSync = { status: "error", at: new Date().toISOString(), error: e.message };
   }
@@ -1987,7 +1999,7 @@ function themeSyncOnLoad(s) {
   const plan = themeSyncPlan(s, sp, readCustomThemes(), readThemePrefs());
   themeSyncTake(plan);
   if (plan.upload) { syncThemes(); return; }
-  if (!state.themeSync || state.themeSync.status !== "ok") themeSyncDone(sp, "");
+  themeSyncDone(sp, { notice: (state.themeSync && state.themeSync.notice) || "", known: plan.known }, true);
   drawAppearance();
 }
 function themeSyncHTML() {
@@ -2007,6 +2019,7 @@ function themeSyncHTML() {
 function setThemeSync(patch) {
   const sp = Object.assign(themeSyncPrefs(), patch);
   if (patch.selected) sp.pending = String(Date.now()); // turning it on sends this device's choice
+  if (patch.custom) sp.known = []; // turning it on merges both sides, deleting nothing
   writeThemeSyncPrefs(sp);
   if (!themeSyncOn(sp)) state.themeSync = {};
   drawAppearance("#" + (patch.custom !== undefined ? "syncCustom" : "syncSelected"));
@@ -2069,11 +2082,13 @@ function duplicateTheme() {
     split: !!(src && src.split), light: Object.assign({}, src ? src.light : builtinTokens(base, "light")), dark: src && src.split ? Object.assign({}, src.dark) : null,
     editing: "light", sel: "amt-out", hue: null, saved: "",
   };
+  state.themeDraft.initial = themeToJSON(state.themeDraft);
   location.hash = "#theme?id=" + state.themeDraft.id;
 }
 const draftOf = (t) => ({ id: t.id, isNew: false, name: t.name, basedOn: t.basedOn, split: t.split, light: Object.assign({}, t.light), dark: t.dark ? Object.assign({}, t.dark) : null, editing: "light", sel: "amt-out", hue: null, saved: themeToJSON(t) });
 const draftMode = (d) => (d.split ? d.editing : "light");
-const draftDirty = (d) => d.isNew || themeToJSON(d) !== d.saved;
+// changed since it was opened (a new copy: since it was made), name and split included
+const draftDirty = (d) => themeToJSON(d) !== (d.isNew ? d.initial : d.saved);
 function screenThemeEditor(v) {
   const id = hashParts().params.get("id");
   let d = state.themeDraft;
@@ -2129,7 +2144,7 @@ function screenThemeEditor(v) {
 function themeSplitOff(d) { d.split = false; d.dark = null; d.editing = "light"; render(); }
 async function copyText(text) { try { await navigator.clipboard.writeText(text); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } }
 async function leaveThemeEditor(e, d) {
-  if (!draftDirty(d) || d.isNew && !d.touched) { state.themeDraft = null; return; }
+  if (!draftDirty(d)) { state.themeDraft = null; return; }
   e.preventDefault();
   if (await askConfirm(__("Leave without saving the changes to this theme?"), __("Leave"))) { state.themeDraft = null; location.hash = "#settings"; }
 }
@@ -2187,7 +2202,6 @@ function setDraftColour(hex, sv, fromHex) {
   for (const k of THEME_MAIN) main[k] = cur[k];
   main[d.sel] = hex;
   d[mode] = deriveTheme(main, cur);
-  d.touched = true;
   const sw = $(`[data-swatch="${d.sel}"]`);
   if (sw) { sw.querySelector("i").style.background = hex; sw.querySelector("small").textContent = hex; }
   const dot = $("#tpDot"), chip = $("#tpChip"), hexIn = $("#tpHex"), svEl = $("#tpSV");
@@ -2225,7 +2239,7 @@ function applyThemeJSON(d) {
     note.className = "shint err";
     return;
   }
-  Object.assign(d, { basedOn: r.theme.basedOn, split: r.theme.split, light: r.theme.light, dark: r.theme.dark, editing: "light", hue: null, touched: true });
+  Object.assign(d, { basedOn: r.theme.basedOn, split: r.theme.split, light: r.theme.light, dark: r.theme.dark, editing: "light", hue: null });
   if (r.theme.name) d.name = r.theme.name;
   render();
   const n = $("#themeJSONNote");
@@ -2245,7 +2259,7 @@ function saveThemeDraft(d) {
   const prefs = readThemePrefs(), wasNew = d.isNew;
   if (wasNew) writeThemePrefs({ theme: t.id, mode: prefs.mode });
   applyTheme();
-  Object.assign(d, { isNew: false, touched: false, name, saved: themeToJSON(t) });
+  Object.assign(d, { isNew: false, name, saved: themeToJSON(t) });
   msg(kept ? __("Theme saved.") : __("This browser keeps no settings, so the choice lasts until the page is closed."), kept ? "" : "error");
   const sp = themeSyncPrefs();
   if (sp.selected && (wasNew || readThemePrefs().theme === t.id)) { sp.pending = String(Date.now()); writeThemeSyncPrefs(sp); }
@@ -2254,10 +2268,9 @@ function saveThemeDraft(d) {
 }
 async function deleteCustomTheme(d) {
   if (!(await askConfirm(__("Delete the theme “{name}”?", { name: d.name }), __("Delete")))) return;
+  const prefs = readThemePrefs(), sp = themeSyncPrefs(), picked = prefs.theme === d.id; // before it is gone
   writeCustomThemes(readCustomThemes().filter((t) => t.id !== d.id));
-  const prefs = readThemePrefs(), sp = themeSyncPrefs();
-  let picked = false;
-  if (prefs.theme === d.id || !customTheme(prefs.theme)) { writeThemePrefs({ theme: d.basedOn, mode: prefs.mode }); picked = true; }
+  if (picked) writeThemePrefs({ theme: d.basedOn, mode: prefs.mode });
   if (sp.custom) sp.deleted = [...new Set([...sp.deleted, d.id])];
   if (sp.selected && picked) sp.pending = String(Date.now());
   writeThemeSyncPrefs(sp);

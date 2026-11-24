@@ -46,7 +46,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, themeSyncPlan, themeSyncPrefs, screenThemeEditor };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -566,7 +566,7 @@ const fakeTheme = (id, name, updatedAt) => {
 test("theme sync (#85): what a sync does, per ADR 0027", () => {
   const A1 = fakeTheme("thm-aaaaaa", "Teal", "2026-11-24T01:00:00.000Z"), A2 = fakeTheme("thm-aaaaaa", "Teal 2", "2026-11-24T02:00:00.000Z");
   const B = fakeTheme("thm-bbbbbb", "Dusk", "2026-11-24T01:00:00.000Z"), C = fakeTheme("thm-cccccc", "Sand", "2026-11-24T01:00:00.000Z");
-  const sp = (o) => Object.assign({ custom: false, selected: false, pending: "", deleted: [], at: "" }, o);
+  const sp = (o) => Object.assign({ custom: false, selected: false, pending: "", deleted: [], known: [], at: "" }, o);
   const plan = (server, o, local, prefs) => JSON.parse(JSON.stringify(t.themeSyncPlan(server, sp(o), local, prefs || { theme: "default", mode: "system" })));
   const ids = (l) => l.map((x) => x.id + "@" + x.name);
   // custom themes on, first time: both sides merged by id, the newer copy wins, and the result goes up
@@ -579,6 +579,13 @@ test("theme sync (#85): what a sync does, per ADR 0027", () => {
   // deleted here: it leaves the server
   p = plan({ themes: [A2, B], general: {} }, { custom: true, deleted: ["thm-bbbbbb"] }, [A2]);
   assert.deepStrictEqual(ids(p.upload.themes), ["thm-aaaaaa@Teal 2"]);
+  assert.deepStrictEqual(p.known, ["thm-aaaaaa"], "what the server has after this sync");
+  // deleted on another device: the server had B at the last sync and no longer has it, so it goes here too
+  // instead of coming back; C, new here, still goes up
+  p = plan({ themes: [A2], general: {} }, { custom: true, known: ["thm-aaaaaa", "thm-bbbbbb"] }, [A2, B, C]);
+  assert.deepStrictEqual(ids(p.local), ["thm-aaaaaa@Teal 2", "thm-cccccc@Sand"]);
+  assert.deepStrictEqual(ids(p.upload.themes), ["thm-aaaaaa@Teal 2", "thm-cccccc@Sand"]);
+  assert.strictEqual(plan({ themes: [A2], general: {} }, { custom: true, known: ["thm-aaaaaa", "thm-bbbbbb"] }, [A2, B]).upload, null, "nothing to send back");
   // selected theme on, custom off: a custom choice made here goes up with its theme, and the notice names it
   p = plan({ themes: [B], general: {} }, { selected: true, pending: "1" }, [C], { theme: "thm-cccccc", mode: "dark" });
   assert.deepStrictEqual(ids(p.upload.themes), ["thm-bbbbbb@Dusk", "thm-cccccc@Sand"], "the server's others stay");
@@ -1299,6 +1306,61 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     location.hash = "";
     delete docProps.activeElement;
     t.setLang("en");
+  }
+}]);
+later.push(["theme sync (#85): a theme picked while a sync is under way is the one that goes up, not the server's older one", async () => {
+  const realApi = sandbox.api, realSet = sandbox.setTimeout, realMsg = sandbox.msg;
+  const tick = () => new Promise((r) => realSet(r, 0));
+  const store = { "kisiauthong.theme": JSON.stringify({ theme: "default", mode: "system" }), "kisiauthong.themeSync": JSON.stringify({ selected: true, at: "2026-11-24T03:00:00.000Z" }) };
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, val) => { store[k] = String(val); }, removeItem: (k) => { delete store[k]; } };
+  const server = { themes: [], general: { theme: { selected: "warm" } }, about: {} }, puts = [];
+  let release; const gate = new Promise((r) => { release = r; });
+  sandbox.api = async (url, opts) => {
+    if (opts && opts.method === "PUT") { const b = JSON.parse(opts.body); puts.push(b); if (b.themes) server.themes = b.themes; if (b.general) Object.assign(server.general, b.general); return JSON.parse(JSON.stringify(server)); }
+    if (url === "/api/settings") { await gate; return JSON.parse(JSON.stringify(server)); }
+    return new Promise(() => {});
+  };
+  sandbox.msg = () => {};
+  try {
+    const run = t.syncThemes(); // nothing pending: on its own it would take the server's Warm
+    await tick();
+    t.pickTheme({ theme: "cool" }); // while the GET is out
+    release();
+    await run;
+    for (let i = 0; i < 10; i++) await tick(); // the second sync the pick asked for
+    assert.deepStrictEqual(JSON.parse(store["kisiauthong.theme"]), { theme: "cool", mode: "system" }, "the pick stays");
+    assert.deepStrictEqual(server.general.theme, { selected: "cool" }, "and is what the server keeps");
+    assert.strictEqual(JSON.parse(store["kisiauthong.themeSync"]).pending, "", "nothing left to send");
+  } finally {
+    sandbox.api = realApi; sandbox.msg = realMsg;
+    sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+    t.state.themeSync = {};
+  }
+}]);
+later.push(["theme editor (#85): deleting a theme that is not the selected one keeps the choice; renaming a new copy counts as a change", async () => {
+  const realAsk = sandbox.askConfirm, realMsg = sandbox.msg;
+  const store = { "kisiauthong.themes": JSON.stringify([fakeTheme("thm-cccccc", "Sand", "2026-11-24T01:00:00.000Z")]), "kisiauthong.theme": JSON.stringify({ theme: "warm", mode: "dark" }) };
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, val) => { store[k] = String(val); }, removeItem: (k) => { delete store[k]; } };
+  sandbox.askConfirm = async () => true; sandbox.msg = () => {};
+  try {
+    await t.deleteCustomTheme({ id: "thm-cccccc", name: "Sand", basedOn: "cool" });
+    assert.deepStrictEqual(JSON.parse(store["kisiauthong.themes"]), []);
+    assert.deepStrictEqual(JSON.parse(store["kisiauthong.theme"]), { theme: "warm", mode: "dark" }, "Warm stays chosen");
+    // a new copy (duplicated from a custom theme, so no stylesheet is read here)
+    store["kisiauthong.themes"] = JSON.stringify([fakeTheme("thm-cccccc", "Sand", "2026-11-24T01:00:00.000Z")]);
+    store["kisiauthong.theme"] = JSON.stringify({ theme: "thm-cccccc", mode: "dark" });
+    t.duplicateTheme();
+    const d = t.state.themeDraft;
+    assert.strictEqual(d.name, "Sand (copy)");
+    assert.strictEqual(t.draftDirty(d), false, "an untouched copy can be left without asking");
+    d.name = "Mine";
+    assert.strictEqual(t.draftDirty(d), true, "a renamed one asks first");
+    d.name = "Sand (copy)"; d.split = true; d.dark = Object.assign({}, d.light);
+    assert.strictEqual(t.draftDirty(d), true, "so does turning the split on");
+  } finally {
+    sandbox.askConfirm = realAsk; sandbox.msg = realMsg;
+    sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+    t.state.themeDraft = null; location.hash = "";
   }
 }]);
 later.push(["settings (#87): a setting saved while a fetch runs is not put back by that fetch's answer", async () => {

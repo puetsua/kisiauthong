@@ -97,8 +97,14 @@ two colours.
   `api/openapi.yaml` describes it.
 - **Sync custom themes**: the device's and the server's lists are merged by
   id, the newer `updatedAt` winning, on turning it on (the first sync) and
-  whenever either side changes; a theme deleted on the device is deleted on
-  the server too. Turning it off keeps the copies on the server.
+  whenever either side changes. A theme deleted on the device is deleted on
+  the server too, and on every other device that syncs its custom themes: a
+  device remembers which themes the server had at its last sync, and one of
+  those the server no longer has is deleted there as well (a delete wins over
+  an edit, as everywhere in sync). A saved theme with a colour missing (from
+  before a colour was added) gets it from its base theme instead of being
+  dropped. Turning it off keeps the copies on the server; turning it on again
+  is a fresh merge.
 - **Sync the selected theme**: its own choice. Turning it on, or picking a
   theme while it is on, sends this device's choice; with nothing chosen here
   since the last sync, the server's choice (another device's) is taken here

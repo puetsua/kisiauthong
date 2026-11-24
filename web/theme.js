@@ -111,8 +111,13 @@ function normTheme(t, fill) {
   const name = String(t.name || "").trim().slice(0, 60);
   if (!name) return null;
   const colours = (src, mode) => {
-    const base = fill ? fill(t.basedOn, mode) : null, out = {};
-    for (const k of THEME_TOKENS) { const v = normHex(src && src[k]) || (base && base[k]); if (v) out[k] = v; }
+    let base = null; // read only when a colour is missing (a theme saved before a colour was added)
+    const out = {};
+    for (const k of THEME_TOKENS) {
+      let v = normHex(src && src[k]);
+      if (!v && fill) { base = base || fill(t.basedOn, mode); v = base[k]; }
+      if (v) out[k] = v;
+    }
     return THEME_TOKENS.every((k) => out[k]) ? out : null;
   };
   const split = !!t.split, light = colours(t.light, "light"), dark = split ? colours(t.dark, "dark") : null;
@@ -122,7 +127,8 @@ function normTheme(t, fill) {
 function readCustomThemes() {
   let v = themesKept;
   if (!v) try { v = JSON.parse(lsGet(THEMES_KEY) || "[]"); } catch (e) { v = []; }
-  return (Array.isArray(v) ? v : []).map((t) => normTheme(t)).filter(Boolean).slice(0, MAX_CUSTOM_THEMES);
+  // a colour added in a later version is filled from the theme it is based on, so older themes keep working
+  return (Array.isArray(v) ? v : []).map((t) => normTheme(t, builtinTokens)).filter(Boolean).slice(0, MAX_CUSTOM_THEMES);
 }
 function writeCustomThemes(list) {
   const v = list.slice(0, MAX_CUSTOM_THEMES);
