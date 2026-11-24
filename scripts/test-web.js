@@ -699,6 +699,45 @@ test("Settings → Sync (#104): the live update line says what the page already 
   }
 });
 
+test("Settings → Sync (#104): a redraw of Settings gives the focus back to the control that had it", () => {
+  let hits = 0;
+  elements.set("#syncCustomHelp", { focus: () => { hits++; }, addEventListener: () => {} });
+  docProps.activeElement = { id: "syncCustomHelp", dataset: {}, closest: (sel) => sel === "#view" };
+  try {
+    t.screenSettings(view()); // a live refresh after the (i) help was closed
+    assert.strictEqual(hits, 1);
+    docProps.activeElement = { id: "syncHelpOk", dataset: {}, closest: () => null }; // the focus is in the help dialog
+    t.screenSettings(view());
+    assert.strictEqual(hits, 1, "not taken from outside the page");
+  } finally { elements.delete("#syncCustomHelp"); delete docProps.activeElement; }
+});
+
+test("Settings → Sync (#104): the stream's open, error and stop redraw the live update line", () => {
+  const saved = { es: sandbox.EventSource, me: t.state.me };
+  let cur = "", es = null;
+  elements.set("#syncLive", { get innerHTML() { return cur; }, set innerHTML(v) { cur = v; } });
+  sandbox.EventSource = function () { es = this; this.readyState = 0; this.on = {}; this.addEventListener = (k, f) => { this.on[k] = f; }; this.close = () => {}; };
+  try {
+    t.liveStop();
+    t.state.me = { id: "usr-x" };
+    t.liveStart();
+    assert.match(cur, /syncstate busy/, "opening");
+    es.readyState = 1; es.on.open();
+    assert.match(cur, /syncstate ok/, "open");
+    es.readyState = 0; es.on.error();
+    assert.match(cur, /syncstate busy/, "the browser retries");
+    es.readyState = 1; es.on.ready({ data: "{}" });
+    assert.match(cur, /syncstate ok/);
+    t.liveStop();
+    assert.match(cur, /syncstate busy/, "stopped: not on");
+  } finally {
+    t.liveStop();
+    elements.delete("#syncLive");
+    if (saved.es === undefined) delete sandbox.EventSource; else sandbox.EventSource = saved.es;
+    t.state.me = saved.me;
+  }
+});
+
 test("Settings → Sync (#104): the last fetch of the books, a clock time today and with its date before", () => {
   const saved = t.state.loadedAt;
   t.state.loadedAt = null;
@@ -719,7 +758,7 @@ test("Settings → Sync (#104): each (i) opens what its choice does, per ADR 002
   let body = $el("#dialogBody").innerHTML;
   assert.match(body, /^<ul class="helplist"><li>Themes are kept on this device unless you turn on sync\./, "local by default");
   assert.match(body, /custom themes on this device are uploaded to your account on the server/, "what it uploads");
-  assert.match(body, /The first time it is turned on, the themes here and on the server are merged: a theme on both sides is the same theme, and the copy changed last is kept\./, "first merge by id, newer wins");
+  assert.match(body, /Each time it is turned on, the themes here and on the server are merged: when the same theme is on both sides, the copy changed last is kept\. Themes made separately stay separate, even with the same name\./, "merge by id, newer wins");
   assert.match(body, /Light or dark mode is not synced: each device keeps its own\./);
   assert.match(body, /Turning it off stops syncing\. The copies already on the server stay there\./);
   assert.match(body, /<button type="button" class="primarybtn" id="syncHelpOk">Close<\/button>/);
@@ -736,6 +775,23 @@ test("Settings → Sync (#104): each (i) opens what its choice does, per ADR 002
   assert.strictEqual($el("#dialogTitle").textContent, "主題選擇同步");
   assert.match($el("#dialogBody").innerHTML, /即使「跨裝置主題同步」是關閉的，這個主題本身也會一起上傳.*>關閉<\/button>/s);
   t.setLang("en");
+  // closing it (Close, ✕ or Esc) drops its width and gives the focus back to the (i) that opened it, found by id
+  // so a section redrawn meanwhile still gets it
+  const listeners = {}, classes = new Set(), focused = [];
+  const dlg = { showModal: () => {}, classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c) },
+    addEventListener: (k, f) => { listeners[k] = f; }, close: () => { const f = listeners.close; delete listeners.close; if (f) f(); } };
+  elements.set("#dialog", dlg);
+  docProps.getElementById = (id) => ({ focus: () => focused.push(id) });
+  try {
+    t.openSyncHelp("custom");
+    assert.ok(classes.has("helpdlg"));
+    dlg.close();
+    assert.ok(!classes.has("helpdlg"), "other dialogs keep their width");
+    assert.deepStrictEqual(focused, ["syncCustomHelp"]);
+    t.openSyncHelp("selected");
+    dlg.close();
+    assert.deepStrictEqual(focused, ["syncCustomHelp", "syncSelectedHelp"]);
+  } finally { elements.delete("#dialog"); delete docProps.getElementById; }
   // every line of the help is translated (scripts/check-i18n.js checks the strings themselves)
   t.setLang("zh-TW");
   for (const k of Object.keys(t.SYNC_HELP)) { t.openSyncHelp(k); assert.doesNotMatch($el("#dialogBody").innerHTML, /<li>[A-Z]/, k); }
@@ -1573,8 +1629,10 @@ later.push(["live refresh (#88): the scroll position is put back only on the scr
     // on the same screen: the position is kept
     open("#accounts");
     let done = begin("r-1"); await tick();
+    t.state.loadedAt = null;
     held.pop()(books("r-1")); await done;
     assert.deepStrictEqual(scrolls, [640], "same screen: scrolled back");
+    assert.ok(t.state.loadedAt && !isNaN(Date.parse(t.state.loadedAt)), "Settings → Sync (#104): when the books were drawn");
     // another screen opened while the refresh ran (deleting a reserve opens Reserves): not scrolled
     scrolls.length = 0;
     open("#accounts");
@@ -1601,7 +1659,9 @@ later.push(["live refresh (#88): the scroll position is put back only on the scr
     done = begin("r-5"); await tick();
     const n = held.length, write = sandbox.load();
     held[n](books("r-6")); await write;
+    t.state.loadedAt = "2026-01-01T00:00:00.000Z";
     held[n - 1](books("r-5")); await done;
+    assert.strictEqual(t.state.loadedAt, "2026-01-01T00:00:00.000Z", "a dropped answer is not a fetch of the books on screen");
     assert.strictEqual(t.state.data.rev, "r-6", "the newer books stay");
     assert.deepStrictEqual(scrolls, [], "not scrolled by an answer that was dropped");
   } finally {

@@ -2009,7 +2009,7 @@ const SYNC_HELP = {
   custom: [N_("Sync themes across devices"), [
     N_("Themes are kept on this device unless you turn on sync. This choice is per device: turn it on on each device that should share themes."),
     N_("When it is on, the custom themes on this device are uploaded to your account on the server, and the custom themes your other devices uploaded are added here."),
-    N_("The first time it is turned on, the themes here and on the server are merged: a theme on both sides is the same theme, and the copy changed last is kept."),
+    N_("Each time it is turned on, the themes here and on the server are merged: when the same theme is on both sides, the copy changed last is kept. Themes made separately stay separate, even with the same name."),
     N_("A custom theme deleted on one device that syncs is deleted on the others too."),
     N_("Light or dark mode is not synced: each device keeps its own."),
     N_("Turning it off stops syncing. The copies already on the server stay there."),
@@ -2025,8 +2025,8 @@ const SYNC_HELP = {
 };
 const INFO_SVG = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v6M12 7.5h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`;
 const infoBtn = (id, label) => `<button type="button" class="infobtn" id="${id}" aria-haspopup="dialog" aria-label="${esc(__("About “{name}”", { name: label }))}" title="${esc(__("About “{name}”", { name: label }))}">${INFO_SVG}</button>`;
-// a clock time on this device, for when something last happened today
-const clockTime = (iso) => new Date(iso).toLocaleTimeString(LANG, { hour: "2-digit", minute: "2-digit" });
+// a clock time in the display zone (Settings → Time zone), for when something last happened today
+const clockTime = (iso) => new Date(iso).toLocaleTimeString(LANG, { hour: "2-digit", minute: "2-digit", timeZone: displayTZ() });
 function openSyncHelp(which) {
   const [title, lines] = SYNC_HELP[which], back = which === "custom" ? "syncCustomHelp" : "syncSelectedHelp";
   const dlg = $("#dialog");
@@ -2318,6 +2318,11 @@ async function deleteCustomTheme(d) {
   if (sp.custom || (sp.selected && picked)) syncThemes();
 }
 function screenSettings(v) {
+  // a redraw (a live refresh, held back while a dialog such as an (i) help was open) gives the keyboard focus
+  // back to the control that had it (issue #104)
+  const a = document.activeElement, inView = !!(a && a.closest && a.closest("#view"));
+  const keep = !inView ? "" : a.id ? "#" + a.id : a.dataset && a.dataset.themePick ? `[data-theme-pick="${a.dataset.themePick}"]`
+    : a.dataset && a.dataset.modePick ? `[data-mode-pick="${a.dataset.modePick}"]` : "";
   const src = state.about && state.about.sourceUrl;
   const pref = (state.general && state.general.language) || "";
   const langOpts = [["", __("Browser default")], ...Object.entries(LANGS)].map(([k, name]) => `<option value="${esc(k)}" ${k === pref ? "selected" : ""} ${k ? `lang="${esc(k)}"` : ""}>${esc(name)}</option>`).join("");
@@ -2387,7 +2392,7 @@ function screenSettings(v) {
   $("#setNumFmt").addEventListener("change", (e) => saveGeneral({ numberFormat: e.target.value }, () => __("Number format saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
   $("#setAmtStyle").addEventListener("change", (e) => saveGeneral({ amountStyle: e.target.value }, () => __("Spending and income display saved.")));
-  drawAppearance();
+  drawAppearance(keep);
   $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
   if ($("#copyCommit")) $("#copyCommit").addEventListener("click", async () => { try { await navigator.clipboard.writeText(verAbout().commit); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } });
   if (state.goAbout) { state.goAbout = false; $("#set-about").scrollIntoView({ block: "start" }); }
@@ -3603,9 +3608,9 @@ function liveStateHTML() {
 // when this page last fetched the books (on load, after a write, on every live update): a clock time today,
 // with the date before today
 function loadedHTML() {
-  const at = state.loadedAt ? new Date(state.loadedAt) : null;
-  const text = !at ? "—" : at.toDateString() === new Date().toDateString() ? clockTime(state.loadedAt)
-    : at.toLocaleString(LANG, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const at = state.loadedAt ? new Date(state.loadedAt) : null, tz = displayTZ();
+  const text = !at ? "—" : zoneParts(at, tz).date === zoneParts(new Date(), tz).date ? clockTime(state.loadedAt)
+    : at.toLocaleString(LANG, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: tz });
   return `<p class="syncstate"><span>${esc(text)}</span></p>`;
 }
 // redraws the live update line when it changes (only then, so a screen reader hears each change once)

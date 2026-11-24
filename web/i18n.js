@@ -173,7 +173,7 @@ const I18N = {
     "Not available in this browser. The page catches up when you come back to it.": "這個瀏覽器不支援。回到這個頁面時會自動更新。",
     "Themes are kept on this device unless you turn on sync. This choice is per device: turn it on on each device that should share themes.": "除非開啟同步，主題只會存在這台裝置。這個選項是每台裝置各自設定的：要共用主題的裝置都要各自開啟。",
     "When it is on, the custom themes on this device are uploaded to your account on the server, and the custom themes your other devices uploaded are added here.": "開啟後，這台裝置上的自訂主題會上傳到伺服器上你的帳號，其他裝置上傳的自訂主題也會加到這台裝置。",
-    "The first time it is turned on, the themes here and on the server are merged: a theme on both sides is the same theme, and the copy changed last is kept.": "第一次開啟時，這台裝置和伺服器上的主題會合併：兩邊都有的同一個主題，保留最後修改的那一份。",
+    "Each time it is turned on, the themes here and on the server are merged: when the same theme is on both sides, the copy changed last is kept. Themes made separately stay separate, even with the same name.": "每次開啟時，這台裝置和伺服器上的主題會合併：同一個主題兩邊都有時，保留最後修改的那一份。分別建立的主題即使同名，也會各自保留。",
     "A custom theme deleted on one device that syncs is deleted on the others too.": "在一台有同步的裝置上刪除的自訂主題，其他有同步的裝置上也會刪除。",
     "Light or dark mode is not synced: each device keeps its own.": "淺色或深色模式不會同步，每台裝置各自保留。",
     "Turning it off stops syncing. The copies already on the server stay there.": "關閉後就不再同步，已經在伺服器上的副本會保留。",
