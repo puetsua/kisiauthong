@@ -10,18 +10,18 @@ const THEMES = ["default", "contrast", "warm", "cool"];
 const THEME_MODES = ["system", "light", "dark"];
 const THEME_KEY = "kisiauthong.theme";
 const THEME_DEFAULTS = { theme: "default", mode: "system" };
-let themeKept = null; // the choice for this page when the browser keeps no storage (private window, blocked)
+let themeKept = null; // a choice the browser would not store (private window, blocked or full storage): it wins for this page
 
 // the saved choice, or the defaults when there is none or it cannot be read
 function readThemePrefs() {
   let v = themeKept;
-  try { v = JSON.parse(localStorage.getItem(THEME_KEY) || "null") || themeKept; } catch (e) { /* private window, blocked storage, bad JSON */ }
+  if (!v) try { v = JSON.parse(localStorage.getItem(THEME_KEY) || "null"); } catch (e) { /* private window, blocked storage, bad JSON */ }
   v = v && typeof v === "object" ? v : {};
   return { theme: THEMES.includes(v.theme) ? v.theme : THEME_DEFAULTS.theme, mode: THEME_MODES.includes(v.mode) ? v.mode : THEME_DEFAULTS.mode };
 }
 function writeThemePrefs(p) {
-  themeKept = { theme: p.theme, mode: p.mode };
-  try { localStorage.setItem(THEME_KEY, JSON.stringify({ theme: p.theme, mode: p.mode })); return true; } catch (e) { return false; }
+  try { localStorage.setItem(THEME_KEY, JSON.stringify({ theme: p.theme, mode: p.mode })); themeKept = null; return true; }
+  catch (e) { themeKept = { theme: p.theme, mode: p.mode }; return false; }
 }
 // What the page shows. A system that asks for more contrast (or forces its own colours)
 // gets High contrast whatever theme was chosen; "system" mode follows the system's light/dark.
@@ -60,4 +60,4 @@ if (typeof matchMedia === "function") {
   }
 }
 // another tab of this site changed the choice
-if (typeof addEventListener === "function") addEventListener("storage", (e) => { if (e.key === THEME_KEY) { applyTheme(); if (typeof onThemeChange === "function") onThemeChange(); } });
+if (typeof addEventListener === "function") addEventListener("storage", (e) => { if (e.key === THEME_KEY) { themeKept = null; applyTheme(); if (typeof onThemeChange === "function") onThemeChange(); } });

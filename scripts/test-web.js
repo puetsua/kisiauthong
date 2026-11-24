@@ -46,7 +46,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -525,6 +525,47 @@ test("Settings → Appearance (#85): after Display, theme cards each drawn in th
   t.setLang("en");
   sandbox.matchMedia = () => ({ matches: false, addEventListener: () => {} });
   sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+});
+
+test("Settings → Appearance (#85): a card or mode button keeps the choice and applies it; storage that refuses still applies it", () => {
+  const store = {};
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, val) => { store[k] = String(val); } };
+  docProps.documentElement = { dataset: {} };
+  t.pickTheme({ theme: "cool" });
+  assert.deepStrictEqual(JSON.parse(store["kisiauthong.theme"]), { theme: "cool", mode: "system" });
+  assert.strictEqual(docProps.documentElement.dataset.theme, "cool");
+  assert.strictEqual($el("#toast").textContent, "Theme saved.");
+  assert.match($el("#themePick").innerHTML, /data-theme-pick="cool" aria-pressed="true"/, "the cards are redrawn");
+  t.pickTheme({ mode: "dark" });
+  assert.deepStrictEqual(JSON.parse(store["kisiauthong.theme"]), { theme: "cool", mode: "dark" }, "a mode keeps the theme");
+  assert.strictEqual(docProps.documentElement.dataset.mode, "dark");
+  assert.strictEqual($el("#toast").textContent, "Mode saved.");
+  // readable but not writable (full or blocked): the pick still shows, and the toast says it will not last
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: () => { throw new Error("full"); } };
+  t.pickTheme({ theme: "warm" });
+  assert.strictEqual(docProps.documentElement.dataset.theme, "warm", "the refused choice wins over the stored one");
+  assert.match($el("#toast").textContent, /keeps no settings/);
+  assert.match($el("#toast").className, /error/);
+  sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+  sandbox.writeThemePrefs({ theme: "default", mode: "system" });
+  delete docProps.documentElement;
+});
+
+test("theme (#85): the sign-in screen is Default whatever this device chose; signing in brings the choice back", () => {
+  const store = { "kisiauthong.theme": JSON.stringify({ theme: "warm", mode: "light" }) };
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, val) => { store[k] = String(val); } };
+  docProps.documentElement = { dataset: {} };
+  const keep = { data: t.state.data, me: t.state.me }; // showAuth signs out: put the made-up books back afterwards
+  t.showAuth("login");
+  assert.deepStrictEqual({ ...docProps.documentElement.dataset }, { theme: "default", mode: "light" });
+  // boot() clears the override once a user is signed in, before anything of theirs is drawn
+  const boot = read("app.js").match(/async function boot\(\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(boot.indexOf("setThemeSignedOut(false)") > boot.indexOf("state.me = st.user") && boot.indexOf("setThemeSignedOut(false)") < boot.indexOf("await load()"));
+  sandbox.setThemeSignedOut(false);
+  assert.deepStrictEqual({ ...docProps.documentElement.dataset }, { theme: "warm", mode: "light" });
+  Object.assign(t.state, keep);
+  sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+  delete docProps.documentElement;
 });
 
 test("zh-TW: the summary line and the card read as designed", () => {

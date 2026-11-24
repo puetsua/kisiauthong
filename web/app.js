@@ -1877,25 +1877,29 @@ function themeCardHTML(t, prefs, mode) {
     + `<span class="themeprev" data-theme="${t}" data-mode="${mode}" aria-hidden="true"><i class="tps"></i><span class="tpm"><span class="tpp"><i class="tpl"></i><span class="tpa"><i class="tpin"></i><i class="tpout"></i></span></span><i class="tpacc"></i></span></span>`
     + `<b>${esc(__(THEME_L[t]))}</b></button>`;
 }
-function drawAppearance() {
+// focus: the [data-theme-pick] or [data-mode-pick] button to give the keyboard back after the redraw;
+// by default the one that had it (a system or other-tab change redraws under the user's hands)
+function drawAppearance(focus) {
   const tp = $("#themePick"), mp = $("#modePick");
   if (!tp || !mp) return;
+  const had = document.activeElement && document.activeElement.dataset;
+  focus = focus || (had && had.themePick ? `[data-theme-pick="${had.themePick}"]` : had && had.modePick ? `[data-mode-pick="${had.modePick}"]` : "");
   const prefs = readThemePrefs(), shown = resolveTheme(prefs, systemAppearance());
   tp.innerHTML = `<div class="themecards">${THEMES.map((t) => themeCardHTML(t, prefs, shown.mode)).join("")}</div>`
     + (shown.theme !== prefs.theme ? `<p class="shint">${esc(__("Your system asks for more contrast, so High contrast is in use."))}</p>` : "")
     + `<p class="shint">${esc(__("Theme and mode are kept on this device."))}</p>`;
   mp.innerHTML = `<div class="seg modeseg">${THEME_MODES.map((m) => `<button type="button" data-mode-pick="${m}" class="${prefs.mode === m ? "on" : ""}" aria-pressed="${prefs.mode === m}">${esc(__(MODE_L[m]))}</button>`).join("")}</div>`;
-  const save = (patch, done) => {
-    const next = Object.assign(readThemePrefs(), patch);
-    const kept = writeThemePrefs(next);
-    applyTheme();
-    drawAppearance();
-    const back = $(patch.theme ? `[data-theme-pick="${patch.theme}"]` : `[data-mode-pick="${patch.mode}"]`);
-    if (back) back.focus(); // the redrawn button keeps the keyboard focus
-    msg(kept ? done : __("This browser keeps no settings, so the choice lasts until the page is closed."), kept ? "" : "error");
-  };
-  tp.querySelectorAll("[data-theme-pick]").forEach((b) => b.addEventListener("click", () => save({ theme: b.dataset.themePick }, __("Theme saved."))));
-  mp.querySelectorAll("[data-mode-pick]").forEach((b) => b.addEventListener("click", () => save({ mode: b.dataset.modePick }, __("Mode saved."))));
+  tp.querySelectorAll("[data-theme-pick]").forEach((b) => b.addEventListener("click", () => pickTheme({ theme: b.dataset.themePick })));
+  mp.querySelectorAll("[data-mode-pick]").forEach((b) => b.addEventListener("click", () => pickTheme({ mode: b.dataset.modePick })));
+  const back = focus && $(focus);
+  if (back && typeof back.focus === "function") back.focus(); // the redrawn button keeps the keyboard focus
+}
+// a theme card or mode button: keep the choice on this device, show it at once
+function pickTheme(patch) {
+  const kept = writeThemePrefs(Object.assign(readThemePrefs(), patch));
+  applyTheme();
+  drawAppearance(patch.theme ? `[data-theme-pick="${patch.theme}"]` : `[data-mode-pick="${patch.mode}"]`);
+  msg(kept ? (patch.theme ? __("Theme saved.") : __("Mode saved.")) : __("This browser keeps no settings, so the choice lasts until the page is closed."), kept ? "" : "error");
 }
 // theme.js calls this when the system's light/dark or contrast changes, or another tab picks a theme
 function onThemeChange() { drawAppearance(); }
