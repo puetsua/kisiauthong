@@ -54,13 +54,15 @@ test("every theme sets the same tokens, all of them used, none missing", () => {
   const app = read("web/app.js");
   const used = new Set([...(css + app).matchAll(/var\(--([a-z0-9-]+)/g)].map((m) => "--" + m[1]));
   for (const k of names) assert.ok(used.has(k) || (k.startsWith("--series-") && app.includes("var(--series-${n})")), `${k} is used`);
-  for (const k of used) assert.ok(names.includes(k) || k === "--page-max" || k === "--series-", `${k} is a token`);
+  // not colours: the page width, the series template in app.js, the colour picker's hue
+  for (const k of used) assert.ok(names.includes(k) || ["--page-max", "--series-", "--hue"].includes(k), `${k} is a token`);
 });
 
 test("no colour outside the theme blocks, apart from the listed fixed ones", () => {
   // fixed on purpose: avatar initials sit on the avatar's own (user-chosen, unthemed) colour; a QR code
-  // needs a white quiet zone to scan; a mask gradient's colour is only its alpha
-  const fixed = [/^\.avatar\{.*color:#fff/, /^\.totpsetup \.qr\{.*background:#fff/, /^\.tilebody\{.*mask-image:linear-gradient\(#000/];
+  // needs a white quiet zone to scan; a mask gradient's colour is only its alpha; the theme editor's
+  // colour picker shows the colour space itself (black, white, the hues) whatever the theme
+  const fixed = [/^\.avatar\{.*color:#fff/, /^\.totpsetup \.qr\{.*background:#fff/, /^\.tilebody\{.*mask-image:linear-gradient\(#000/, /^\.tp(sv|hue)[\s{:,]/];
   const lines = css.split("\n").filter((l) => !/^\[data-theme=/.test(l));
   for (const l of lines) {
     const bare = l.replace(/^\s+/, "");
@@ -127,7 +129,8 @@ test("the browser's bar colour starts as Default's sidebar; the manifest matches
 
 // web/theme.js in a sandbox with a fake localStorage, matchMedia and <html>
 function loadTheme({ store = {}, media = {}, throws = false } = {}) {
-  const html = { dataset: {} };
+  const props = {};
+  const html = { dataset: {}, style: { setProperty: (k, v) => { props[k] = v; }, removeProperty: (k) => { delete props[k]; } } };
   const meta = { content: "#2a1740", setAttribute(k, v) { this[k] = v; } };
   const listeners = {};
   const sandbox = {
@@ -135,18 +138,24 @@ function loadTheme({ store = {}, media = {}, throws = false } = {}) {
     localStorage: {
       getItem: (k) => { if (throws) throw new Error("blocked"); return k in store ? store[k] : null; },
       setItem: (k, v) => { if (throws) throw new Error("blocked"); store[k] = String(v); },
+      removeItem: (k) => { if (throws) throw new Error("blocked"); delete store[k]; },
     },
     matchMedia: (q) => ({ get matches() { return !!media[q]; }, addEventListener: (ev, fn) => { (listeners[q] = listeners[q] || []).push(fn); } }),
-    document: { documentElement: html, querySelector: (s) => (s === 'meta[name="theme-color"]' ? meta : null) },
-    getComputedStyle: (el) => ({ getPropertyValue: (k) => (k === "--side" ? (B[el.dataset.theme] || {})[el.dataset.mode]["--side"] : "") }),
+    document: {
+      documentElement: html, querySelector: (s) => (s === 'meta[name="theme-color"]' ? meta : null),
+      createElement: () => ({ dataset: {}, remove() {} }), body: { appendChild() {} },
+    },
+    // the page's inline tokens (a custom theme) over its [data-theme] block, as in a browser
+    getComputedStyle: (el) => ({ getPropertyValue: (k) => (el === html && k in props ? props[k] : (B[el.dataset.theme] || {})[el.dataset.mode][k] || "") }),
+    crypto: { getRandomValues: (a) => { for (let i = 0; i < a.length; i++) a[i] = (i * 37 + 11) % 256; return a; } },
     addEventListener: () => {},
   };
   vm.createContext(sandbox);
-  vm.runInContext(read("web/theme.js") + "\nthis.__t = { readThemePrefs, writeThemePrefs, resolveTheme, applyTheme, setThemeSignedOut };", sandbox);
+  vm.runInContext(read("web/theme.js") + "\nthis.__t = { readThemePrefs, writeThemePrefs, resolveTheme, applyTheme, setThemeSignedOut, THEME_TOKENS, THEME_MAIN, normHex, hexToHsv, hsvToHex, contrastRatio, deriveTheme, normTheme, readCustomThemes, writeCustomThemes, mergeThemes, sameThemes, themeToJSON, themeFromJSON, builtinTokens, newThemeId };", sandbox);
   // results come back as plain objects of this realm, so deepStrictEqual compares values only
   const plain = (f) => (...a) => { const r = f(...a); return r && typeof r === "object" ? JSON.parse(JSON.stringify(r)) : r; };
-  const t = Object.fromEntries(Object.entries(sandbox.__t).map(([k, f]) => [k, plain(f)]));
-  return { t, html, meta, store, media, fire: (q) => (listeners[q] || []).forEach((fn) => fn()) };
+  const t = Object.fromEntries(Object.entries(sandbox.__t).map(([k, f]) => [k, typeof f === "function" ? plain(f) : JSON.parse(JSON.stringify(f))]));
+  return { t, html, props, meta, store, media, fire: (q) => (listeners[q] || []).forEach((fn) => fn()) };
 }
 
 test("theme.js: nothing saved is Default following the system; a saved choice is applied before the page draws", () => {
@@ -199,6 +208,132 @@ test("theme.js: signed out is Default in the system's light or dark, whatever th
   const s = loadTheme({ store: { "kisiauthong.theme": JSON.stringify({ theme: "warm", mode: "light" }) }, media: { "(prefers-color-scheme: dark)": true } });
   assert.deepStrictEqual(s.t.setThemeSignedOut(true), { theme: "default", mode: "dark" });
   assert.deepStrictEqual(s.t.setThemeSignedOut(false), { theme: "warm", mode: "light" });
+});
+
+// a complete custom theme: Cool's colours with its own spending colour
+// the plain colours, as Default light has them (High contrast dark writes --toast-line as a hex colour too)
+const COLOURS = Object.keys(B.default.light).filter((k) => k.startsWith("--") && B.default.light[k].startsWith("#"));
+const builtin = (th, m) => Object.fromEntries(Object.entries(B[th][m]).filter(([k]) => COLOURS.includes(k)).map(([k, v]) => [k.slice(2), v.length === 4 ? "#" + [...v.slice(1)].map((c) => c + c).join("") : v]));
+const mine = (over = {}) => Object.assign({ id: "thm-abc123", name: "Teal night", basedOn: "cool", split: false, light: Object.assign(builtin("cool", "light"), { "amt-out": "#b42350" }), dark: null, updatedAt: "2026-11-24T03:00:00.000Z" }, over);
+
+test("theme.js: THEME_TOKENS is every plain colour of style.css's blocks, in order; the editor's main colours are among them", () => {
+  const { t } = loadTheme();
+  assert.deepStrictEqual(t.THEME_TOKENS, Object.keys(builtin("default", "light")));
+  for (const k of t.THEME_MAIN) assert.ok(t.THEME_TOKENS.includes(k), k);
+  assert.deepStrictEqual(t.builtinTokens("warm", "dark"), builtin("warm", "dark"), "read from the stylesheet, #rgb written out");
+});
+
+test("theme.js: colour helpers — hex only, HSV both ways", () => {
+  const { t } = loadTheme();
+  assert.strictEqual(t.normHex("#ABC"), "#aabbcc");
+  assert.strictEqual(t.normHex(" #1A2b3C "), "#1a2b3c");
+  for (const bad of ["white", "rgb(0,0,0)", "#12345", "#1234567", "123456", "", null]) assert.strictEqual(t.normHex(bad), null, String(bad));
+  for (const h of ["#5b2a86", "#000000", "#ffffff", "#0b6a80", "#ffe14d"]) assert.strictEqual(t.hsvToHex(...t.hexToHsv(h)), h);
+  assert.strictEqual(Math.round(t.contrastRatio("#000000", "#ffffff")), 21);
+});
+
+test("theme.js: derived colours follow the main ones and keep inputs and text on accents readable", () => {
+  const { t } = loadTheme();
+  for (const th of ["default", "contrast", "warm", "cool"]) for (const m of ["light", "dark"]) {
+    const base = builtin(th, m), main = Object.fromEntries(t.THEME_MAIN.map((k) => [k, base[k]]));
+    const d = t.deriveTheme(main, base);
+    assert.deepStrictEqual(Object.keys(d).sort(), [...t.THEME_TOKENS].sort());
+    for (const v of Object.values(d)) assert.ok(t.normHex(v) === v, v);
+    for (const k of t.THEME_MAIN) assert.strictEqual(d[k], base[k], `${th} ${m} ${k} kept`);
+    assert.ok(t.contrastRatio(d.fieldline, d.panel) >= 3 && t.contrastRatio(d.fieldline, d.bg) >= 3, `${th} ${m}: input borders 3:1`);
+    assert.ok(t.contrastRatio(d["on-accent"], d.accent) >= 4.5, `${th} ${m}: text on the accent`);
+    assert.ok(t.contrastRatio(d.sidestrong, d.side) >= 4.5, `${th} ${m}: the sidebar's strong text`);
+    assert.strictEqual(d.nightlybg, base.nightlybg, "colours with no rule stay as they were");
+    for (const k of ["out", "move", "rsv"]) assert.ok(t.contrastRatio(d["ico-" + k], d["ico-" + k + "-bg"]) >= 3, `${th} ${m}: row icon ${k} 3:1`);
+  }
+  const base = builtin("default", "light");
+  const d = t.deriveTheme(Object.assign({}, base, { panel: "#fff8e1", accent: "#006d5b" }), base);
+  assert.strictEqual(d.surface, "#fff8e1"); assert.strictEqual(d.field, "#fff8e1");
+  assert.strictEqual(d["series-1"], "#006d5b"); assert.notStrictEqual(d.accentsoft, base.accentsoft);
+});
+
+test("theme.js: theme JSON — the full set out, missing colours filled from basedOn, unknown keys listed, hex only", () => {
+  const { t } = loadTheme();
+  const fill = (th, m) => builtin(th, m);
+  const out = JSON.parse(t.themeToJSON(mine()));
+  assert.deepStrictEqual(Object.keys(out), ["format", "version", "name", "basedOn", "split", "light", "dark"]);
+  assert.strictEqual(out.format, "kisiauthong-theme"); assert.strictEqual(out.version, 1); assert.strictEqual(out.dark, null);
+  assert.deepStrictEqual(Object.keys(out.light), t.THEME_TOKENS);
+  // round trip
+  assert.deepStrictEqual(t.themeFromJSON(t.themeToJSON(mine()), fill), { theme: { name: "Teal night", basedOn: "cool", split: false, light: mine().light, dark: null }, ignored: [] });
+  // a short paste: the rest from Warm, its unknown keys named, #RGB accepted
+  const r = t.themeFromJSON(JSON.stringify({ format: "kisiauthong-theme", version: 1, name: " Sunset ", basedOn: "warm", split: true, light: { "amt-out": "#C00", glow: "#123456" }, dark: { bg: "#101010" }, extra: 1 }), fill);
+  assert.strictEqual(r.theme.name, "Sunset");
+  assert.strictEqual(r.theme.light["amt-out"], "#cc0000");
+  assert.strictEqual(r.theme.light.bg, builtin("warm", "light").bg);
+  assert.strictEqual(r.theme.dark.bg, "#101010");
+  assert.strictEqual(r.theme.dark.panel, builtin("warm", "dark").panel);
+  assert.deepStrictEqual(r.ignored, ["extra", "light.glow"]);
+  assert.deepStrictEqual(t.themeFromJSON(JSON.stringify({ format: "kisiauthong-theme", version: 1, basedOn: "cool", light: {}, dark: { bg: "#000" } }), fill).ignored, ["dark"], "dark colours of a light-only theme");
+  const err = (o) => t.themeFromJSON(typeof o === "string" ? o : JSON.stringify(o), fill);
+  assert.deepStrictEqual(err("{not json"), { error: "json" });
+  assert.deepStrictEqual(err([1]), { error: "json" });
+  assert.deepStrictEqual(err({ version: 1 }), { error: "format" });
+  assert.deepStrictEqual(err({ format: "kisiauthong-theme", version: 2 }), { error: "version" });
+  assert.deepStrictEqual(err({ format: "kisiauthong-theme", version: 1, basedOn: "neon" }), { error: "basedOn" });
+  assert.deepStrictEqual(err({ format: "kisiauthong-theme", version: 1, light: { bg: "rgb(0,0,0)" } }), { error: "hex", key: "light.bg" });
+  assert.deepStrictEqual(err({ format: "kisiauthong-theme", version: 1, light: { bg: "red" } }), { error: "hex", key: "light.bg" });
+});
+
+test("theme.js: custom themes are kept on the device; broken entries are dropped; a choice of a gone theme is Default", () => {
+  const s = loadTheme();
+  assert.strictEqual(s.t.writeCustomThemes([mine(), { id: "nope" }, mine({ id: "thm-broken1", light: { bg: "#ffffff" } })]), true);
+  assert.deepStrictEqual(s.t.readCustomThemes().map((x) => x.id), ["thm-abc123"], "incomplete themes are not used");
+  assert.strictEqual(s.t.normTheme(mine({ split: true }), null), null, "split without dark colours");
+  assert.ok(s.t.normTheme(mine({ split: true, dark: {} }), (th, m) => builtin(th, m)).dark.bg, "filled when a base is given");
+  s.store["kisiauthong.theme"] = JSON.stringify({ theme: "thm-gone99", mode: "dark" });
+  assert.deepStrictEqual(s.t.readThemePrefs(), { theme: "default", mode: "dark" });
+  assert.match(s.t.newThemeId(), /^thm-[a-z0-9]{6,32}$/);
+});
+
+test("theme.js: a custom theme's colours go on <html> over its base; light-only themes stay light in dark mode", () => {
+  const s = loadTheme({ media: { "(prefers-color-scheme: dark)": true } });
+  s.t.writeCustomThemes([mine(), mine({ id: "thm-split01", split: true, dark: Object.assign(builtin("cool", "dark"), { "amt-out": "#ff8fb0" }) })]);
+  s.t.writeThemePrefs({ theme: "thm-abc123", mode: "system" });
+  assert.deepStrictEqual(s.t.applyTheme(), { theme: "cool", mode: "light", custom: "thm-abc123" });
+  assert.deepStrictEqual({ ...s.html.dataset }, { theme: "cool", mode: "light" });
+  assert.strictEqual(s.props["--amt-out"], "#b42350");
+  assert.strictEqual(s.meta.content, mine().light.side);
+  s.t.writeThemePrefs({ theme: "thm-split01", mode: "system" });
+  assert.deepStrictEqual(s.t.applyTheme(), { theme: "cool", mode: "dark", custom: "thm-split01" });
+  assert.strictEqual(s.props["--amt-out"], "#ff8fb0");
+  s.t.writeThemePrefs({ theme: "warm", mode: "system" });
+  s.t.applyTheme();
+  assert.deepStrictEqual(s.props, {}, "a built-in theme leaves no inline colours");
+  // the system asking for more contrast wins over a custom theme too
+  s.t.writeThemePrefs({ theme: "thm-abc123", mode: "light" });
+  s.media["(prefers-contrast: more)"] = true;
+  assert.deepStrictEqual(s.t.applyTheme(), { theme: "contrast", mode: "light" });
+  assert.deepStrictEqual(s.props, {});
+});
+
+test("theme.js: merging synced themes by id keeps the newer copy", () => {
+  const { t } = loadTheme();
+  const a = [mine({ name: "Old", updatedAt: "2026-11-24T01:00:00Z" }), mine({ id: "thm-local01" })];
+  const b = [mine({ name: "New", updatedAt: "2026-11-24T02:00:00Z" }), mine({ id: "thm-remote1" })];
+  const m = t.mergeThemes(a, b);
+  assert.deepStrictEqual(m.map((x) => [x.id, x.name]), [["thm-abc123", "New"], ["thm-local01", "Teal night"], ["thm-remote1", "Teal night"]]);
+  assert.strictEqual(t.mergeThemes(b.slice().reverse(), a)[1].name, "New", "whichever side it comes from");
+  assert.strictEqual(t.sameThemes(m, m.slice().reverse()), true);
+  assert.strictEqual(t.sameThemes(a, b), false);
+});
+
+test("theme.js: signed out is Default from the first frame after a reload (issue #101)", () => {
+  const store = { "kisiauthong.theme": JSON.stringify({ theme: "warm", mode: "light" }) };
+  let s = loadTheme({ store });
+  assert.strictEqual(s.html.dataset.theme, "warm");
+  s.t.setThemeSignedOut(true);
+  assert.strictEqual(store["kisiauthong.signedOut"], "1");
+  s = loadTheme({ store }); // the reload, before app.js has asked the server anything
+  assert.strictEqual(s.html.dataset.theme, "default");
+  s.t.setThemeSignedOut(false);
+  assert.ok(!("kisiauthong.signedOut" in store));
+  assert.strictEqual(loadTheme({ store }).html.dataset.theme, "warm");
 });
 
 require("./run-tests.js")(tests);

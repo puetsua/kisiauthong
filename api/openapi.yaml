@@ -1,0 +1,159 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 kisiauthong contributors
+#
+# The HTTP API contract (AGENTS.md §2, §5). It starts with the settings
+# endpoint, which carries the synced themes (ADR 0027); the other endpoints
+# are still described in README.md and the server code, and move here as they
+# change.
+openapi: 3.1.0
+info:
+  title: kisiauthong API
+  version: "1"
+  license:
+    name: AGPL-3.0-or-later
+    identifier: AGPL-3.0-or-later
+servers:
+  - url: /
+paths:
+  /api/settings:
+    get:
+      summary: The signed-in user's settings
+      description: Every user has their own; a user never sees another's.
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: The settings, with defaults for anything never saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "401": { $ref: "#/components/responses/Error" }
+    put:
+      summary: Change some settings
+      description: >-
+        Send any of dashboard, general, notifications and themes. Sections left
+        out stay as they are; fields left out of general keep their stored
+        value; themes replaces the whole list (devices merge by id first, the
+        newer updatedAt winning, ADR 0027). Answers with all the settings.
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                dashboard: { $ref: "#/components/schemas/DashboardSettings" }
+                general: { $ref: "#/components/schemas/GeneralSettings" }
+                notifications: { $ref: "#/components/schemas/NotificationSettings" }
+                themes:
+                  type: array
+                  maxItems: 20
+                  items: { $ref: "#/components/schemas/CustomTheme" }
+      responses:
+        "200":
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    session: { type: apiKey, in: cookie, name: kst_session }
+    apiKey: { type: http, scheme: bearer }
+  responses:
+    Error:
+      description: What went wrong, in English.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties: { error: { type: string } }
+  schemas:
+    Settings:
+      type: object
+      required: [dashboard, general, notifications, themes, about]
+      properties:
+        dashboard: { $ref: "#/components/schemas/DashboardSettings" }
+        general: { $ref: "#/components/schemas/GeneralSettings" }
+        notifications: { $ref: "#/components/schemas/NotificationSettings" }
+        themes:
+          description: Custom themes a device uploaded (ADR 0027); empty until one syncs.
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/CustomTheme" }
+        about: { $ref: "#/components/schemas/AboutInfo" }
+    DashboardSettings:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, type]
+            properties:
+              id: { type: string, pattern: "^[A-Za-z0-9_-]{1,64}$" }
+              type: { type: string, enum: [balances, budgets, spending, reserves, accounts, recent] }
+              size: { type: string, enum: [full, half] }
+              title: { type: string }
+              rows: { type: integer, minimum: 0 }
+              include: { type: array, items: { type: string } }
+              columns: { type: array, items: { type: string } }
+    GeneralSettings:
+      type: object
+      properties:
+        defaultCurrency: { type: string, pattern: "^[A-Z]{3}$" }
+        currencies: { type: array, maxItems: 50, items: { type: string, pattern: "^[A-Z]{3}$" } }
+        language: { type: string, enum: ["", en, zh-TW] }
+        pageWidth: { type: string, enum: [default, wide, full] }
+        openDays: { type: integer, minimum: 1, maximum: 90 }
+        timeZone: { type: string, description: 'An IANA zone; "" follows the device.' }
+        numberFormat: { type: string, enum: [grouped, four, plain] }
+        amountStyle: { type: string, enum: [both, sign, color] }
+        theme:
+          description: >-
+            The selected theme, present only once a device syncs the selected
+            theme (ADR 0027). The light/dark mode is never stored here.
+          type: object
+          required: [selected]
+          properties:
+            selected:
+              type: string
+              description: A built-in theme, or the id of one of themes.
+              pattern: "^(default|contrast|warm|cool|thm-[a-z0-9]{6,32})$"
+    NotificationSettings:
+      type: object
+      properties:
+        dismissed: { type: array, maxItems: 500, items: { type: string, maxLength: 120 } }
+    CustomTheme:
+      description: >-
+        A user's own theme (ADR 0027). light holds every colour of the theme by
+        token name (without the leading --); dark only when split is on, and it
+        is dropped otherwise. Colours are hex only; #rgb is stored as #rrggbb.
+      type: object
+      required: [id, name, basedOn, light, updatedAt]
+      properties:
+        id: { type: string, pattern: "^thm-[a-z0-9]{6,32}$" }
+        name: { type: string, minLength: 1, maxLength: 60 }
+        basedOn: { type: string, enum: [default, contrast, warm, cool] }
+        split: { type: boolean, default: false }
+        light: { $ref: "#/components/schemas/ThemeColours" }
+        dark: { $ref: "#/components/schemas/ThemeColours" }
+        updatedAt: { type: string, format: date-time }
+    ThemeColours:
+      type: object
+      minProperties: 1
+      maxProperties: 100
+      propertyNames: { pattern: "^[a-z][a-z0-9-]{0,31}$" }
+      additionalProperties: { type: string, pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" }
+    AboutInfo:
+      type: object
+      readOnly: true
+      properties:
+        sourceUrl: { type: string }
+        version: { type: string }
+        commit: { type: string }
+        buildTime: { type: string }
+        nightly: { type: boolean }

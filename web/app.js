@@ -1867,42 +1867,406 @@ async function drawAppAbout() {
   if ($("#appUpdates")) $("#appUpdates").addEventListener("click", () => shell.updates(LANG).catch((e) => msg(String((e && e.message) || e), "error")));
 }
 const setIcon = (k) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="${SET_ICON[k]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-// Settings → Appearance (issue #85, ADR 0027): theme cards, each drawn in its own theme, and the light/dark
-// mode. Both are kept on this device (theme.js); a change applies at once, no reload.
+// Settings → Appearance (issue #85, ADR 0027): theme cards, each drawn in its own theme, custom themes,
+// the light/dark mode and theme sync. The choice and the custom themes are kept on this device
+// (theme.js) unless the user turns on sync; the mode is always this device's own.
 const THEME_L = { default: N_("Default"), contrast: N_("High contrast"), warm: N_("Warm"), cool: N_("Cool") };
 const MODE_L = { system: N_("Follow system"), light: N_("Light"), dark: N_("Dark") };
-function themeCardHTML(t, prefs, mode) {
-  const on = prefs.theme === t;
-  return `<button type="button" class="themecard" data-theme-pick="${t}" aria-pressed="${on}">`
-    + `<span class="themeprev" data-theme="${t}" data-mode="${mode}" aria-hidden="true"><i class="tps"></i><span class="tpm"><span class="tpp"><i class="tpl"></i><span class="tpa"><i class="tpin"></i><i class="tpout"></i></span></span><i class="tpacc"></i></span></span>`
-    + `<b>${esc(__(THEME_L[t]))}</b></button>`;
+// the editor's main colours, in groups; every other colour is derived from these (theme.js deriveTheme)
+const THEME_GROUPS = [
+  [N_("Amounts"), [["amt-in", N_("Income")], ["amt-out", N_("Spending")]]],
+  [N_("Page"), [["bg", N_("Background")], ["panel", N_("Cards")], ["ink", N_("Text")], ["muted", N_("Secondary text")], ["line", N_("Borders")]]],
+  [N_("Accent"), [["accent", N_("Accent")]]],
+  [N_("Sidebar"), [["side", N_("Sidebar")], ["sidetext", N_("Sidebar text")]]],
+  [N_("Status"), [["pos", N_("Good")], ["amber", N_("Warning")], ["red", N_("Over budget")], ["sched", N_("Scheduled")]]],
+];
+// the picker's contrast figure: a plain fact, no verdict (ADR 0015); measured against cards unless listed
+const THEME_AGAINST = { bg: "ink", panel: "ink", ink: "panel", side: "sidetext", sidetext: "side" };
+const EDITING_L = { light: N_("Edit light"), dark: N_("Edit dark") };
+const CONTRAST_L = { panel: N_("Contrast with cards: {ratio}:1"), ink: N_("Contrast with text: {ratio}:1"), side: N_("Contrast with the sidebar: {ratio}:1"), sidetext: N_("Contrast with sidebar text: {ratio}:1") };
+// a small drawing of a theme: its sidebar, a card with text and the income and spending colours, the accent
+function themePrevHTML(base, mode, colours) {
+  const keys = ["bg", "panel", "line", "ink", "amt-in", "amt-out", "accent", "side"];
+  const style = colours ? ` style="${keys.map((k) => `--${k}:${colours[k]}`).join(";")}"` : "";
+  return `<span class="themeprev" data-theme="${base}" data-mode="${mode}"${style} aria-hidden="true"><i class="tps"></i><span class="tpm"><span class="tpp"><i class="tpl"></i><span class="tpa"><i class="tpin"></i><i class="tpout"></i></span></span><i class="tpacc"></i></span></span>`;
 }
-// focus: the [data-theme-pick] or [data-mode-pick] button to give the keyboard back after the redraw;
-// by default the one that had it (a system or other-tab change redraws under the user's hands)
+function themeCardHTML(id, prefs, mode, custom) {
+  const on = prefs.theme === id;
+  const prev = custom ? themePrevHTML(custom.basedOn, custom.split ? mode : "light", custom.split && mode === "dark" ? custom.dark : custom.light) : themePrevHTML(id, mode);
+  return `<button type="button" class="themecard" data-theme-pick="${esc(id)}" aria-pressed="${on}">${prev}<b>${esc(custom ? custom.name : __(THEME_L[id]))}</b></button>`;
+}
+
+// ---- sync (ADR 0027): two separate opt-ins, both off by default, kept per device ----
+const THEME_SYNC_KEY = "kisiauthong.themeSync";
+// custom: sync the custom themes; selected: sync the selected theme; pending: a choice made here that
+// is not on the server yet (a token, so a newer pick is not marked done by an older upload);
+// deleted: custom themes deleted here that the server still has; at: the last successful sync
+function themeSyncPrefs() {
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(THEME_SYNC_KEY) || "null"); } catch (e) { /* blocked storage: off */ }
+  v = v && typeof v === "object" ? v : {};
+  return { custom: v.custom === true, selected: v.selected === true, pending: typeof v.pending === "string" ? v.pending : "",
+    deleted: Array.isArray(v.deleted) ? v.deleted.filter((x) => THEME_ID_RE.test(x)).slice(0, 50) : [], at: typeof v.at === "string" ? v.at : "" };
+}
+function writeThemeSyncPrefs(p) { try { localStorage.setItem(THEME_SYNC_KEY, JSON.stringify(p)); } catch (e) { /* stays for this page only */ } }
+// What a sync does, from the server's settings, this device's sync choices, custom themes and choice
+// (no network, no storage): → { local, prefs (a choice to take, or null), upload (a PUT body, or null), notice }
+// - custom themes on: both sides merged by id, the newer updatedAt winning; a theme deleted here leaves the server
+// - selected theme on: a choice made here goes up, with its custom theme if the server lacks it (even when custom
+//   themes are not synced: other devices must be able to draw it), and the notice names that theme; otherwise the
+//   server's choice (another device's) is taken here, with its theme
+function themeSyncPlan(server, sp, local, prefs) {
+  const remote = (server.themes || []).map((t) => normTheme(t)).filter(Boolean);
+  const remoteSel = server.general && server.general.theme ? server.general.theme.selected : "";
+  let list = remote.filter((t) => !sp.deleted.includes(t.id)), out = local, take = null, notice = "", selected;
+  if (sp.custom) { out = mergeThemes(local, list); list = out.slice(); }
+  if (sp.selected) {
+    const there = THEMES.includes(remoteSel) ? true : customTheme(remoteSel, remote);
+    if (!sp.pending && remoteSel && there) {
+      if (there !== true) out = mergeThemes(out, [there]);
+      if (remoteSel !== prefs.theme) take = { theme: remoteSel, mode: prefs.mode };
+    } else {
+      selected = prefs.theme;
+      const t = customTheme(selected, out);
+      if (t) {
+        const i = list.findIndex((x) => x.id === t.id);
+        if (i < 0) { list.push(t); notice = t.name; } else if (Date.parse(t.updatedAt) > Date.parse(list[i].updatedAt)) list[i] = t;
+      }
+    }
+  }
+  const changed = !sameThemes(list, remote) || (selected !== undefined && selected !== remoteSel);
+  return { local: out, prefs: take, notice, upload: changed ? Object.assign({ themes: list }, selected !== undefined ? { general: { theme: { selected } } } : {}) : null };
+}
+let themeSyncBusy = false, themeSyncAgain = false;
+const themeSyncOn = (sp) => sp.custom || sp.selected;
+// take a plan's local side: the custom themes and the choice on this device
+function themeSyncTake(plan) {
+  writeCustomThemes(plan.local);
+  if (plan.prefs) writeThemePrefs(plan.prefs);
+  applyTheme();
+}
+function themeSyncDone(sp0, notice) {
+  const sp = themeSyncPrefs(), at = new Date().toISOString();
+  if (sp.pending === sp0.pending) sp.pending = ""; // a pick made meanwhile is still to go up
+  sp.deleted = sp.deleted.filter((id) => !sp0.deleted.includes(id));
+  sp.at = at;
+  writeThemeSyncPrefs(sp);
+  state.themeSync = { status: "ok", notice };
+  if (notice) msg(__("“{name}” was not on the server yet, so it was uploaded for your other devices.", { name: notice }));
+}
+// a full sync: the server's latest settings, the plan, its upload
+async function syncThemes() {
+  if (themeSyncBusy) { themeSyncAgain = true; return; }
+  const sp = themeSyncPrefs();
+  if (!themeSyncOn(sp)) return;
+  themeSyncBusy = true;
+  state.themeSync = { status: "syncing" };
+  drawAppearance();
+  try {
+    const s = await api("/api/settings");
+    const plan = themeSyncPlan(s, sp, readCustomThemes(), readThemePrefs());
+    themeSyncTake(plan);
+    if (plan.upload) {
+      const res = await put("/api/settings", plan.upload);
+      state.general = res.general;
+      settingsApplied();
+    }
+    themeSyncDone(sp, plan.notice);
+  } catch (e) {
+    state.themeSync = { status: "error", at: new Date().toISOString(), error: e.message };
+  }
+  themeSyncBusy = false;
+  drawAppearance();
+  if (themeSyncAgain) { themeSyncAgain = false; syncThemes(); }
+}
+// load(): the settings just fetched. Another device's changes are taken here without a request;
+// a sync runs only when this device has something the server lacks.
+function themeSyncOnLoad(s) {
+  const sp = themeSyncPrefs();
+  if (!themeSyncOn(sp) || themeSyncBusy) return;
+  const plan = themeSyncPlan(s, sp, readCustomThemes(), readThemePrefs());
+  themeSyncTake(plan);
+  if (plan.upload) { syncThemes(); return; }
+  if (!state.themeSync || state.themeSync.status !== "ok") themeSyncDone(sp, "");
+  drawAppearance();
+}
+function themeSyncHTML() {
+  const sp = themeSyncPrefs(), st = state.themeSync || {};
+  const box = (id, on, label) => `<label class="checkrow"><input type="checkbox" id="${id}" ${on ? "checked" : ""}> ${esc(label)}</label>`;
+  const time = (iso) => new Date(iso).toLocaleTimeString(LANG, { hour: "2-digit", minute: "2-digit" });
+  let line;
+  if (!themeSyncOn(sp)) line = `<p class="syncstate">${esc(__("Themes are kept on this device only."))}</p>`;
+  else if (st.status === "syncing") line = `<p class="syncstate busy" role="status"><span class="dot"></span><span>${esc(__("Syncing…"))}</span></p>`;
+  else if (st.status === "error") line = `<p class="syncstate err" role="alert"><span class="dot"></span><span>${esc(__("Sync failed at {time}: {message}. The themes are still on this device.", { time: time(st.at), message: st.error }))}</span> <button type="button" class="smallbtn" id="syncRetry">${esc(__("Retry"))}</button></p>`;
+  else if (sp.at) line = `<p class="syncstate ok" role="status"><span class="dot"></span><span>${esc(__("Synced at {time}", { time: time(sp.at) }))}</span></p>`;
+  else line = `<p class="syncstate"><span class="dot"></span><span>${esc(__("Not synced yet."))}</span></p>`;
+  const notice = st.notice ? `<p class="shint">${esc(__("“{name}” was not on the server yet, so it was uploaded for your other devices.", { name: st.notice }))}</p>` : "";
+  return box("syncCustom", sp.custom, __("Sync my custom themes with my account")) + box("syncSelected", sp.selected, __("Sync the selected theme with my account"))
+    + line + notice + (themeSyncOn(sp) ? `<p class="shint">${esc(__("The light or dark mode is not synced: each device keeps its own."))}</p>` : "");
+}
+function setThemeSync(patch) {
+  const sp = Object.assign(themeSyncPrefs(), patch);
+  if (patch.selected) sp.pending = String(Date.now()); // turning it on sends this device's choice
+  writeThemeSyncPrefs(sp);
+  if (!themeSyncOn(sp)) state.themeSync = {};
+  drawAppearance("#" + (patch.custom !== undefined ? "syncCustom" : "syncSelected"));
+  if (patch.custom === false) msg(__("Custom themes are no longer synced. The copies on the server stay."));
+  else if (patch.selected === false) msg(__("The selected theme is no longer synced."));
+  else syncThemes();
+}
+
+// focus: the selector of the control to give the keyboard back after the redraw; by default the one
+// that had it (a system or other-tab change redraws under the user's hands)
 function drawAppearance(focus) {
-  const tp = $("#themePick"), mp = $("#modePick");
+  const tp = $("#themePick"), mp = $("#modePick"), sy = $("#themeSync");
   if (!tp || !mp) return;
-  const had = document.activeElement && document.activeElement.dataset;
-  focus = focus || (had && had.themePick ? `[data-theme-pick="${had.themePick}"]` : had && had.modePick ? `[data-mode-pick="${had.modePick}"]` : "");
-  const prefs = readThemePrefs(), shown = resolveTheme(prefs, systemAppearance());
+  const a = document.activeElement;
+  const had = a && a.dataset;
+  focus = focus || (had && had.themePick ? `[data-theme-pick="${had.themePick}"]` : had && had.modePick ? `[data-mode-pick="${had.modePick}"]` : a && a.id && /^(syncCustom|syncSelected|syncRetry|themeDup|themeEdit)$/.test(a.id) ? "#" + a.id : "");
+  const prefs = readThemePrefs(), sys = systemAppearance(), shown = resolveTheme(prefs, sys), customs = readCustomThemes();
+  const sel = customTheme(prefs.theme, customs);
   tp.innerHTML = `<div class="themecards">${THEMES.map((t) => themeCardHTML(t, prefs, shown.mode)).join("")}</div>`
-    + (shown.theme !== prefs.theme ? `<p class="shint">${esc(__("Your system asks for more contrast, so High contrast is in use."))}</p>` : "")
-    + `<p class="shint">${esc(__("Theme and mode are kept on this device."))}</p>`;
+    + (customs.length ? `<p class="setlabel">${esc(__("My themes"))}</p><div class="themecards">${customs.map((t) => themeCardHTML(t.id, prefs, shown.mode, t)).join("")}</div>` : "")
+    + `<div class="sbtns themebtns"><button type="button" class="smallbtn" id="themeDup"${customs.length >= MAX_CUSTOM_THEMES ? " disabled" : ""}>${esc(__("Duplicate as a custom theme"))}</button>`
+    + (sel ? `<button type="button" class="smallbtn" id="themeEdit">${esc(__("Edit {name}", { name: sel.name }))}</button>` : "") + `</div>`
+    + (customs.length >= MAX_CUSTOM_THEMES ? `<p class="shint">${esc(__("{n} custom themes is the most a device keeps.", { n: MAX_CUSTOM_THEMES }))}</p>` : "")
+    + (sys.moreContrast ? `<p class="shint">${esc(__("Your system asks for more contrast, so High contrast is in use."))}</p>` : "");
   mp.innerHTML = `<div class="seg modeseg">${THEME_MODES.map((m) => `<button type="button" data-mode-pick="${m}" class="${prefs.mode === m ? "on" : ""}" aria-pressed="${prefs.mode === m}">${esc(__(MODE_L[m]))}</button>`).join("")}</div>`;
+  if (sy) sy.innerHTML = themeSyncHTML();
   tp.querySelectorAll("[data-theme-pick]").forEach((b) => b.addEventListener("click", () => pickTheme({ theme: b.dataset.themePick })));
   mp.querySelectorAll("[data-mode-pick]").forEach((b) => b.addEventListener("click", () => pickTheme({ mode: b.dataset.modePick })));
+  $("#themeDup").addEventListener("click", duplicateTheme);
+  if (sel) $("#themeEdit").addEventListener("click", () => { state.themeDraft = null; location.hash = "#theme?id=" + sel.id; });
+  if (sy) {
+    $("#syncCustom").addEventListener("change", (e) => setThemeSync({ custom: e.target.checked }));
+    $("#syncSelected").addEventListener("change", (e) => setThemeSync({ selected: e.target.checked }));
+    if ($("#syncRetry")) $("#syncRetry").addEventListener("click", syncThemes);
+  }
   const back = focus && $(focus);
-  if (back && typeof back.focus === "function") back.focus(); // the redrawn button keeps the keyboard focus
+  if (back && typeof back.focus === "function") back.focus(); // the redrawn control keeps the keyboard focus
 }
-// a theme card or mode button: keep the choice on this device, show it at once
+// a theme card or mode button: keep the choice on this device, show it at once; with the selected
+// theme synced, a new theme choice goes up too (the mode never does)
 function pickTheme(patch) {
   const kept = writeThemePrefs(Object.assign(readThemePrefs(), patch));
   applyTheme();
+  const sp = themeSyncPrefs();
+  if (patch.theme && sp.selected) { sp.pending = String(Date.now()); writeThemeSyncPrefs(sp); state.themeSync = { status: "syncing" }; }
   drawAppearance(patch.theme ? `[data-theme-pick="${patch.theme}"]` : `[data-mode-pick="${patch.mode}"]`);
   msg(kept ? (patch.theme ? __("Theme saved.") : __("Mode saved.")) : __("This browser keeps no settings, so the choice lasts until the page is closed."), kept ? "" : "error");
+  if (patch.theme && sp.selected) syncThemes();
 }
 // theme.js calls this when the system's light/dark or contrast changes, or another tab picks a theme
 function onThemeChange() { drawAppearance(); }
+
+// ---- the theme editor: Settings → Appearance → a custom theme (#theme?id=…) ----
+// a copy of the selected theme (built-in or custom) as a new, unsaved custom theme; light only, like
+// every new theme (the light/dark split starts off)
+function duplicateTheme() {
+  const prefs = readThemePrefs(), src = customTheme(prefs.theme), base = src ? src.basedOn : prefs.theme;
+  state.themeDraft = {
+    id: newThemeId(), isNew: true, name: __("{name} (copy)", { name: src ? src.name : __(THEME_L[base]) }), basedOn: base,
+    split: !!(src && src.split), light: Object.assign({}, src ? src.light : builtinTokens(base, "light")), dark: src && src.split ? Object.assign({}, src.dark) : null,
+    editing: "light", sel: "amt-out", hue: null, saved: "",
+  };
+  location.hash = "#theme?id=" + state.themeDraft.id;
+}
+const draftOf = (t) => ({ id: t.id, isNew: false, name: t.name, basedOn: t.basedOn, split: t.split, light: Object.assign({}, t.light), dark: t.dark ? Object.assign({}, t.dark) : null, editing: "light", sel: "amt-out", hue: null, saved: themeToJSON(t) });
+const draftMode = (d) => (d.split ? d.editing : "light");
+const draftDirty = (d) => d.isNew || themeToJSON(d) !== d.saved;
+function screenThemeEditor(v) {
+  const id = hashParts().params.get("id");
+  let d = state.themeDraft;
+  if (!d || d.id !== id) {
+    const t = customTheme(id);
+    if (!t) { history.replaceState(null, "", "#settings"); screenSettings(v); return; } // gone (deleted, another tab)
+    d = state.themeDraft = draftOf(t);
+  }
+  $("#pageTitle").textContent = __("Edit theme");
+  v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#settings" id="themeBack">‹ ${esc(__("Settings"))}</a></div>
+    <div class="themeed">
+      <div class="themeedmain">
+        <section class="panel">
+          <label class="tfield"><span>${esc(__("Name"))}</span><input id="themeName" maxlength="60" value="${esc(d.name)}"></label>
+          <p class="shint">${esc(__("Based on {name}", { name: __(THEME_L[d.basedOn]) }))}</p>
+          <label class="checkrow"><input type="checkbox" id="themeSplit" ${d.split ? "checked" : ""}> ${esc(__("Separate colours for light and dark"))}</label>
+          ${d.split ? `<div class="seg modeseg" id="themeEditing">${["light", "dark"].map((m) => `<button type="button" data-editing="${m}" class="${d.editing === m ? "on" : ""}" aria-pressed="${d.editing === m}">${esc(__(EDITING_L[m]))}</button>`).join("")}</div>` : ""}
+        </section>
+        <section class="panel" id="themeColours" aria-label="${esc(__("Colours"))}"></section>
+        <section class="panel themejson">
+          <h3><label for="themeJSON">${esc(__("Theme JSON"))}</label></h3>
+          <textarea id="themeJSON" spellcheck="false" autocapitalize="off" rows="8"></textarea>
+          <div class="sbtns"><button type="button" class="smallbtn" id="themeCopy">${esc(__("Copy JSON"))}</button><button type="button" class="smallbtn" id="themePaste">${esc(__("Apply pasted JSON"))}</button></div>
+          <p class="shint" id="themeJSONNote" role="status"></p>
+        </section>
+        <div class="themeedfoot">${d.isNew ? "" : `<button type="button" class="smallbtn danger" id="themeDel">${esc(__("Delete theme"))}</button>`}<span class="grow"></span><a class="ghostbtn" href="#settings" id="themeCancel">${esc(__("Cancel"))}</a><button type="button" class="primarybtn" id="themeSave">${esc(__("Save theme"))}</button></div>
+      </div>
+      <aside class="themepvbox" aria-label="${esc(__("Preview"))}"><h3>${esc(__("Preview"))}</h3><div id="themePreview"></div></aside>
+    </div>`;
+  drawThemeColours();
+  drawThemePreview();
+  $("#themeJSON").value = themeToJSON(d);
+  $("#themeName").addEventListener("input", (e) => { d.name = e.target.value; drawThemeJSON(); });
+  $("#themeSplit").addEventListener("click", (e) => {
+    if (!d.split) { d.split = true; d.dark = Object.assign({}, d.light); d.editing = "dark"; render(); return; } // the dark colours start as the light ones
+    e.preventDefault(); // stays on until decided
+    if (JSON.stringify(d.dark) === JSON.stringify(d.light)) { themeSplitOff(d); return; }
+    openDialog(__("Turn off separate dark colours?"), `<p>${esc(__("The dark colours you set will be removed, and the theme will use its light colours in dark mode too."))}</p>
+      <p>${esc(__("To keep them, copy the theme JSON first: it holds both."))}</p>
+      <div class="formactions"><button type="button" class="smallbtn" id="splitCopy">${esc(__("Copy JSON"))}</button><span class="grow"></span><button type="button" class="ghostbtn" id="splitKeep">${esc(__("Cancel"))}</button><button type="button" class="primarybtn danger" id="splitOff">${esc(__("Turn off"))}</button></div>`);
+    $("#splitCopy").addEventListener("click", () => copyText(themeToJSON(d)));
+    $("#splitKeep").addEventListener("click", () => $("#dialog").close());
+    $("#splitOff").addEventListener("click", () => { $("#dialog").close(); themeSplitOff(d); });
+  });
+  v.querySelectorAll("[data-editing]").forEach((b) => b.addEventListener("click", () => { d.editing = b.dataset.editing; d.hue = null; render(); }));
+  $("#themeCopy").addEventListener("click", () => copyText(themeToJSON(d)));
+  $("#themePaste").addEventListener("click", () => applyThemeJSON(d));
+  $("#themeSave").addEventListener("click", () => saveThemeDraft(d));
+  if ($("#themeDel")) $("#themeDel").addEventListener("click", () => deleteCustomTheme(d));
+  $("#themeBack").addEventListener("click", (e) => leaveThemeEditor(e, d));
+  $("#themeCancel").addEventListener("click", (e) => leaveThemeEditor(e, d));
+}
+function themeSplitOff(d) { d.split = false; d.dark = null; d.editing = "light"; render(); }
+async function copyText(text) { try { await navigator.clipboard.writeText(text); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } }
+async function leaveThemeEditor(e, d) {
+  if (!draftDirty(d) || d.isNew && !d.touched) { state.themeDraft = null; return; }
+  e.preventDefault();
+  if (await askConfirm(__("Leave without saving the changes to this theme?"), __("Leave"))) { state.themeDraft = null; location.hash = "#settings"; }
+}
+const draftColours = (d) => d[draftMode(d)];
+function drawThemeColours() {
+  const d = state.themeDraft, box = $("#themeColours");
+  if (!d || !box) return;
+  const c = draftColours(d);
+  box.innerHTML = THEME_GROUPS.map(([g, items]) => `<div class="tgroup"><h3>${esc(__(g))}</h3><div class="tswatches">${items.map(([k, label]) =>
+    `<button type="button" class="tswatch" data-swatch="${k}" aria-pressed="${d.sel === k}"><i style="background:${c[k]}"></i><span>${esc(__(label))}<small>${c[k]}</small></span></button>`).join("")}</div>`
+    + (items.some(([k]) => k === d.sel) ? `<div id="themePicker"></div>` : "") + `</div>`).join("");
+  box.querySelectorAll("[data-swatch]").forEach((b) => b.addEventListener("click", () => { d.sel = b.dataset.swatch; d.hue = null; drawThemeColours(); const s = $(`[data-swatch="${d.sel}"]`); if (s) s.focus(); }));
+  drawThemePicker();
+}
+// the inline picker: a saturation/brightness square, a hue slider, the hex field and the contrast figure
+function drawThemePicker() {
+  const d = state.themeDraft, box = $("#themePicker");
+  if (!d || !box) return;
+  const hex = draftColours(d)[d.sel], [h0, s, v] = hexToHsv(hex), h = d.hue == null ? h0 : d.hue;
+  box.innerHTML = `<div class="tpick" style="--hue:${Math.round(h)}">
+      <div class="tpsv" id="tpSV" role="slider" tabindex="0" aria-label="${esc(__("Saturation and brightness"))}" aria-valuetext="${hex}"><b id="tpDot" style="left:${s * 100}%;top:${(1 - v) * 100}%"></b></div>
+      <input type="range" class="tphue" id="tpHue" min="0" max="359" step="1" value="${Math.round(h)}" aria-label="${esc(__("Hue"))}">
+      <div class="tpside"><span class="tpchip" id="tpChip" style="background:${hex}"></span>
+        <label class="tfield"><span>${esc(__("Hex"))}</span><input id="tpHex" value="${hex}" maxlength="7" spellcheck="false" autocapitalize="off"></label>
+        <p class="tpratio" id="tpRatio"></p></div>
+    </div>`;
+  drawThemeRatio();
+  const sv = $("#tpSV"), hue = $("#tpHue"), hexIn = $("#tpHex");
+  const fromSV = (x, y) => { const r = sv.getBoundingClientRect(); const ss = Math.min(1, Math.max(0, (x - r.left) / r.width)), vv = Math.min(1, Math.max(0, 1 - (y - r.top) / r.height)); setDraftColour(hsvToHex(d.hue == null ? hexToHsv(draftColours(d)[d.sel])[0] : d.hue, ss, vv), { s: ss, v: vv }); };
+  sv.addEventListener("pointerdown", (e) => { sv.setPointerCapture(e.pointerId); if (d.hue == null) d.hue = hexToHsv(draftColours(d)[d.sel])[0]; fromSV(e.clientX, e.clientY); });
+  sv.addEventListener("pointermove", (e) => { if (sv.hasPointerCapture(e.pointerId)) fromSV(e.clientX, e.clientY); });
+  sv.addEventListener("keydown", (e) => {
+    const step = { ArrowLeft: [-0.02, 0], ArrowRight: [0.02, 0], ArrowUp: [0, 0.02], ArrowDown: [0, -0.02] }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const [hh, ss, vv] = hexToHsv(draftColours(d)[d.sel]);
+    if (d.hue == null) d.hue = hh;
+    const ns = Math.min(1, Math.max(0, ss + step[0])), nv = Math.min(1, Math.max(0, vv + step[1]));
+    setDraftColour(hsvToHex(d.hue, ns, nv), { s: ns, v: nv });
+  });
+  hue.addEventListener("input", () => { d.hue = Number(hue.value); const [, ss, vv] = hexToHsv(draftColours(d)[d.sel]); box.querySelector(".tpick").style.setProperty("--hue", String(d.hue)); setDraftColour(hsvToHex(d.hue, ss, vv), { s: ss, v: vv }); });
+  hexIn.addEventListener("input", () => { const h2 = normHex(hexIn.value); if (h2) { d.hue = null; setDraftColour(h2, null, true); } });
+}
+function drawThemeRatio() {
+  const d = state.themeDraft, el = $("#tpRatio");
+  if (!d || !el) return;
+  const c = draftColours(d), other = THEME_AGAINST[d.sel] || "panel";
+  el.textContent = __(CONTRAST_L[other], { ratio: contrastRatio(c[d.sel], c[other]).toFixed(1) });
+}
+// one main colour changed: every derived colour of that mode follows; the swatch, picker marks,
+// preview and JSON update in place (the picker keeps its pointer and focus)
+function setDraftColour(hex, sv, fromHex) {
+  const d = state.themeDraft, mode = draftMode(d), cur = d[mode];
+  const main = {};
+  for (const k of THEME_MAIN) main[k] = cur[k];
+  main[d.sel] = hex;
+  d[mode] = deriveTheme(main, cur);
+  d.touched = true;
+  const sw = $(`[data-swatch="${d.sel}"]`);
+  if (sw) { sw.querySelector("i").style.background = hex; sw.querySelector("small").textContent = hex; }
+  const dot = $("#tpDot"), chip = $("#tpChip"), hexIn = $("#tpHex"), svEl = $("#tpSV");
+  if (dot && sv) { dot.style.left = sv.s * 100 + "%"; dot.style.top = (1 - sv.v) * 100 + "%"; }
+  if (dot && !sv) { const [hh, ss, vv] = hexToHsv(hex); dot.style.left = ss * 100 + "%"; dot.style.top = (1 - vv) * 100 + "%"; $("#tpHue").value = String(Math.round(hh)); $(".tpick").style.setProperty("--hue", String(Math.round(hh))); }
+  if (chip) chip.style.background = hex;
+  if (hexIn && !fromHex) hexIn.value = hex;
+  if (svEl) svEl.setAttribute("aria-valuetext", hex);
+  drawThemeRatio();
+  drawThemePreview();
+  drawThemeJSON();
+}
+function drawThemeJSON() { const d = state.themeDraft, t = $("#themeJSON"); if (d && t) t.value = themeToJSON(d); }
+// the live preview: a small app in the colours being edited (data-theme gives the few non-colour tokens)
+function drawThemePreview() {
+  const d = state.themeDraft, box = $("#themePreview");
+  if (!d || !box) return;
+  const c = draftColours(d), style = THEME_TOKENS.map((k) => `--${k}:${c[k]}`).join(";");
+  box.innerHTML = `<div class="themepv" data-theme="${d.basedOn}" data-mode="${draftMode(d)}" style="${style}">
+    <div class="pvside"><b>記數通</b><span>${esc(__("Dashboard"))}</span><span class="on">${esc(__("Transactions"))}</span><span>${esc(__("Accounts"))}</span></div>
+    <div class="pvmain">
+      <div class="pvcard"><div class="pvrow"><span class="ficon t-income">↙</span><span class="pvt">${esc(__("Salary"))}<small>Bank B</small></span><span class="famt in">+${esc(fmt(5200000, "TWD"))}</span></div>
+        <div class="pvrow"><span class="ficon t-expense">↗</span><span class="pvt">${esc(__("Lunch"))}<small>${esc(__("Food"))} · Bank B</small></span><span class="famt out">−${esc(fmt(18000, "TWD"))}</span></div>
+        <div class="pvrow pvhide"><span class="ficon t-transfer">⇄</span><span class="pvt">${esc(__("Transfer"))}<small>Savings A → Bank B</small></span><span class="famt move">${esc(fmt(500000, "TWD"))}</span></div></div>
+      <div class="pvcard pvhide"><div class="pvbudget"><span>${esc(__("Food"))}</span><b>${esc(fmt(980000, "TWD"))}</b></div><div class="bar"><i class="warn" style="width:82%"></i></div><small class="muted">${esc(__("{amount} left", { amount: fmt(220000, "TWD") }))}</small></div>
+      <div class="pvbtns"><button type="button" class="primarybtn" tabindex="-1">${esc(__("Save"))}</button><button type="button" class="smallbtn" tabindex="-1">${esc(__("Cancel"))}</button><span class="chip sched pvhide">${esc(__("Scheduled"))}</span></div>
+    </div></div>`;
+}
+function applyThemeJSON(d) {
+  const note = $("#themeJSONNote"), r = themeFromJSON($("#themeJSON").value, builtinTokens);
+  if (r.error) {
+    const errs = { json: __("That is not valid JSON."), format: __("That is not a theme: its format must be kisiauthong-theme."), version: __("Only theme JSON version 1 can be read."),
+      basedOn: __("basedOn must be default, contrast, warm or cool."), hex: __("{key} is not a hex colour like #1a2b3c.", { key: r.key }) };
+    note.textContent = errs[r.error];
+    note.className = "shint err";
+    return;
+  }
+  Object.assign(d, { basedOn: r.theme.basedOn, split: r.theme.split, light: r.theme.light, dark: r.theme.dark, editing: "light", hue: null, touched: true });
+  if (r.theme.name) d.name = r.theme.name;
+  render();
+  const n = $("#themeJSONNote");
+  n.textContent = r.ignored.length ? __("Applied. Ignored what a theme does not have: {keys}", { keys: r.ignored.join(", ") }) : __("Applied.");
+  n.className = "shint";
+}
+// keep the theme on this device; a new one becomes the selected theme. With custom themes synced (or
+// this one selected and the selected theme synced) it goes up as well.
+function saveThemeDraft(d) {
+  const name = String(d.name || "").trim().slice(0, 60);
+  if (!name) { msg(__("Give the theme a name."), "error"); $("#themeName").focus(); return; }
+  const t = normTheme({ id: d.id, name, basedOn: d.basedOn, split: d.split, light: d.light, dark: d.dark, updatedAt: new Date().toISOString() });
+  const list = readCustomThemes(), i = list.findIndex((x) => x.id === t.id);
+  if (i < 0 && list.length >= MAX_CUSTOM_THEMES) { msg(__("{n} custom themes is the most a device keeps.", { n: MAX_CUSTOM_THEMES }), "error"); return; }
+  if (i < 0) list.push(t); else list[i] = t;
+  const kept = writeCustomThemes(list);
+  const prefs = readThemePrefs(), wasNew = d.isNew;
+  if (wasNew) writeThemePrefs({ theme: t.id, mode: prefs.mode });
+  applyTheme();
+  Object.assign(d, { isNew: false, touched: false, name, saved: themeToJSON(t) });
+  msg(kept ? __("Theme saved.") : __("This browser keeps no settings, so the choice lasts until the page is closed."), kept ? "" : "error");
+  const sp = themeSyncPrefs();
+  if (sp.selected && (wasNew || readThemePrefs().theme === t.id)) { sp.pending = String(Date.now()); writeThemeSyncPrefs(sp); }
+  if (sp.custom || (sp.selected && readThemePrefs().theme === t.id)) syncThemes();
+  if (wasNew) { history.replaceState(null, "", "#theme?id=" + t.id); render(); }
+}
+async function deleteCustomTheme(d) {
+  if (!(await askConfirm(__("Delete the theme “{name}”?", { name: d.name }), __("Delete")))) return;
+  writeCustomThemes(readCustomThemes().filter((t) => t.id !== d.id));
+  const prefs = readThemePrefs(), sp = themeSyncPrefs();
+  let picked = false;
+  if (prefs.theme === d.id || !customTheme(prefs.theme)) { writeThemePrefs({ theme: d.basedOn, mode: prefs.mode }); picked = true; }
+  if (sp.custom) sp.deleted = [...new Set([...sp.deleted, d.id])];
+  if (sp.selected && picked) sp.pending = String(Date.now());
+  writeThemeSyncPrefs(sp);
+  applyTheme();
+  state.themeDraft = null;
+  location.hash = "#settings";
+  msg(__("Theme deleted."));
+  if (sp.custom || (sp.selected && picked)) syncThemes();
+}
 function screenSettings(v) {
   const src = state.about && state.about.sourceUrl;
   const pref = (state.general && state.general.language) || "";
@@ -1928,6 +2292,7 @@ function screenSettings(v) {
     ["appearance", __("Appearance"), [
       row(__("Theme"), `<div id="themePick"></div>`),
       row(__("Mode"), `<div id="modePick"></div>`),
+      row(__("Sync"), `<div id="themeSync"></div>`),
       row(__("Spending and income"), `<select id="setAmtStyle" aria-describedby="setAmtHint">${enumOptions(AMTSTYLE_L, Object.keys(AMTSTYLE_L), amountStyle())}</select>`
         + `<p class="shint" id="setAmtHint">${esc(__("With Color only, spending and income differ only by color and by the icon in front of each row."))}</p>`, "setAmtStyle"),
     ]],
@@ -3025,7 +3390,7 @@ async function drawServer() {
 /* ---------- routing ---------- */
 // leaveTo replaces a bad URL (an unknown id) instead of adding to history, so Back does not return to it
 function leaveTo(hash) { history.replaceState(null, "", hash); render(); }
-const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], tag: [N_("Category"), screenTag], reserves: [N_("Reserves"), screenReserves], reserve: [N_("Reserve"), screenReserve], acct: [N_("Account"), screenAcct], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
+const SCREENS = { dashboard: [N_("Dashboard"), screenDashboard], theme: [N_("Settings"), screenThemeEditor], transactions: [N_("Transactions"), screenTransactions], accounts: ["Accounts", screenAccounts], templates: [N_("Templates"), screenTemplates], tags: [N_("Tags"), screenTags], tag: [N_("Category"), screenTag], reserves: [N_("Reserves"), screenReserves], reserve: [N_("Reserve"), screenReserve], acct: [N_("Account"), screenAcct], settings: [N_("Settings"), screenSettings], account: [N_("My account"), screenAccount], admin: [N_("Server"), screenAdmin], "admin/users": [N_("Users"), screenAdminUsers] };
 // the hash is "#screen", optionally with a query ("#transactions?q=rent")
 function hashParts() {
   const h = location.hash.replace(/^#/, ""), i = h.indexOf("?");
@@ -3046,8 +3411,9 @@ function render(refresh) {
   const admin = isAdminScreen(key);
   if (!admin) state.lastBookScreen = key;
   if (key !== "tags") state.tagPick = null; // select mode (merging tags) ends when the page is left
+  if (key !== "theme") state.themeDraft = null; // an unsaved theme is dropped when its editor is left
   $("#nav").hidden = admin; $("#adminNav").hidden = !admin;
-  const navKey = { tag: "tags", reserve: "reserves", acct: "accounts" }[key] || key; // one category's, reserve's or account's page belongs to its list
+  const navKey = { tag: "tags", reserve: "reserves", acct: "accounts", theme: "settings" }[key] || key; // one category's, reserve's or account's page belongs to its list
   document.querySelectorAll("#nav a, #adminNav a").forEach((a) => a.classList.toggle("on", a.dataset.screen === navKey));
   document.querySelectorAll("#tabbar a, #moreSheet a").forEach((a) => a.classList.toggle("on", a.dataset.tab === navKey));
   $("#tabMore").classList.toggle("on", !["dashboard", "transactions", "accounts"].includes(navKey));
@@ -3065,6 +3431,8 @@ function render(refresh) {
   if (refresh === true && redraw && redraw.key === key && !state.scrollToExpected
     && a && a.closest && a.closest("#view") && a.matches("[data-live-keep]")) { redraw.fn(); return; }
   state.viewRedraw = null; // a screen with such fields sets it again
+  // the theme editor shows nothing from the books: a live refresh leaves it (and what is typed in it) alone
+  if (refresh === true && key === "theme" && $("#view .themeed")) return;
   SCREENS[key][1]($("#view"));
 }
 window.addEventListener("hashchange", render);
@@ -3085,6 +3453,7 @@ async function load() {
     state.general = s.general;
     state.about = s.about;
     state.dismissed = (s.notifications && s.notifications.dismissed) || [];
+    themeSyncOnLoad(s); // another device's synced themes (ADR 0027)
   } else if (!s) msg(__("Settings unavailable, using defaults: {message}", { message: sErr ? sErr.message : "—" }), "error");
   setLang(pickLang(state.general && state.general.language));
   applyPageWidth();

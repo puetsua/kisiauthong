@@ -117,6 +117,119 @@ type GeneralSettings struct {
 	// AmountStyle is how the transaction list marks spending and income: "both" (+ / − and a
 	// color), "sign" (+ / − only) or "color" (a color only). Issue #66.
 	AmountStyle string `json:"amountStyle"`
+	// Theme is the selected theme, present only when a device has turned on syncing the selected
+	// theme (ADR 0027): a built-in name or the id of a theme in Settings.Themes. Each device keeps
+	// its own light/dark mode, which is never synced.
+	Theme *ThemeChoice `json:"theme,omitempty"`
+}
+
+// ThemeChoice is the synced selected theme (ADR 0027).
+type ThemeChoice struct {
+	Selected string `json:"selected"`
+}
+
+// CustomTheme is a user's own theme, uploaded when a device syncs its custom themes or selects
+// it with selected-theme sync on (ADR 0027). Light holds the theme's colours (token name without
+// the leading "--" → #rrggbb); Dark only when Split is on. Unknown token names are kept, so an
+// older server stores what a newer client sends; the client ignores names it does not know.
+type CustomTheme struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	BasedOn   string            `json:"basedOn"`
+	Split     bool              `json:"split"`
+	Light     map[string]string `json:"light"`
+	Dark      map[string]string `json:"dark,omitempty"`
+	UpdatedAt string            `json:"updatedAt"`
+}
+
+// builtinThemes are the themes web/style.css ships (ADR 0027).
+var builtinThemes = map[string]bool{"default": true, "contrast": true, "warm": true, "cool": true}
+
+const (
+	maxCustomThemes = 20
+	maxThemeName    = 60
+	maxThemeTokens  = 100
+)
+
+var (
+	themeIDRe    = regexp.MustCompile(`^thm-[a-z0-9]{6,32}$`)
+	themeTokenRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+	themeHexRe   = regexp.MustCompile(`^#(?:[0-9a-f]{3}|[0-9a-f]{6})$`)
+)
+
+func (c *ThemeChoice) validate() error {
+	if !builtinThemes[c.Selected] && !themeIDRe.MatchString(c.Selected) {
+		return fmt.Errorf("theme.selected must be default, contrast, warm, cool or a custom theme id")
+	}
+	return nil
+}
+
+// normThemeColours checks one mode's colours: known-looking names, hex only (#rgb becomes #rrggbb, lower case).
+func normThemeColours(id string, m map[string]string) (map[string]string, error) {
+	if len(m) == 0 {
+		return nil, fmt.Errorf("theme %s: no colours", id)
+	}
+	if len(m) > maxThemeTokens {
+		return nil, fmt.Errorf("theme %s: at most %d colours", id, maxThemeTokens)
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		if !themeTokenRe.MatchString(k) {
+			return nil, fmt.Errorf("theme %s: invalid colour name %q", id, k)
+		}
+		v = strings.ToLower(strings.TrimSpace(v))
+		if !themeHexRe.MatchString(v) {
+			return nil, fmt.Errorf("theme %s: %s must be a hex colour like #1a2b3c", id, k)
+		}
+		if len(v) == 4 {
+			v = "#" + string([]byte{v[1], v[1], v[2], v[2], v[3], v[3]})
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// validateThemes checks and normalises a whole uploaded list. It replaces the stored list;
+// devices merge by id before uploading (newer updatedAt wins), so a theme deleted on a
+// device that syncs its custom themes is deleted here too.
+func validateThemes(list []CustomTheme) ([]CustomTheme, error) {
+	if len(list) > maxCustomThemes {
+		return nil, fmt.Errorf("at most %d custom themes", maxCustomThemes)
+	}
+	seen := map[string]bool{}
+	out := make([]CustomTheme, 0, len(list))
+	for _, t := range list {
+		if !themeIDRe.MatchString(t.ID) {
+			return nil, fmt.Errorf("theme id must be thm- and 6-32 lower-case letters or digits")
+		}
+		if seen[t.ID] {
+			return nil, fmt.Errorf("duplicate theme id: %s", t.ID)
+		}
+		seen[t.ID] = true
+		t.Name = strings.TrimSpace(t.Name)
+		if t.Name == "" || utf8.RuneCountInString(t.Name) > maxThemeName {
+			return nil, fmt.Errorf("theme %s: name must be 1-%d characters", t.ID, maxThemeName)
+		}
+		if !builtinThemes[t.BasedOn] {
+			return nil, fmt.Errorf("theme %s: basedOn must be default, contrast, warm or cool", t.ID)
+		}
+		if _, err := time.Parse(time.RFC3339, t.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("theme %s: updatedAt must be an RFC 3339 time", t.ID)
+		}
+		var err error
+		if t.Light, err = normThemeColours(t.ID, t.Light); err != nil {
+			return nil, err
+		}
+		if t.Split {
+			if t.Dark, err = normThemeColours(t.ID, t.Dark); err != nil {
+				return nil, fmt.Errorf("%v (dark, needed when split is on)", err)
+			}
+		} else {
+			t.Dark = nil // light only: the light colours serve both modes
+		}
+		out = append(out, t)
+	}
+	return out, nil
 }
 
 const (
@@ -182,7 +295,9 @@ type Settings struct {
 	Dashboard     DashboardSettings    `json:"dashboard"`
 	General       GeneralSettings      `json:"general"`
 	Notifications NotificationSettings `json:"notifications"`
-	About         AboutInfo            `json:"about"`
+	// Themes is the user's custom themes uploaded by their devices (ADR 0027); empty until one syncs.
+	Themes []CustomTheme `json:"themes"`
+	About  AboutInfo     `json:"about"`
 }
 
 var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
@@ -315,6 +430,11 @@ func (g *GeneralSettings) validate() error {
 	if !pageWidths[g.PageWidth] {
 		return fmt.Errorf("pageWidth must be default, wide or full")
 	}
+	if g.Theme != nil {
+		if err := g.Theme.validate(); err != nil {
+			return err
+		}
+	}
 	if g.Language != "" && !uiLanguages[g.Language] {
 		return fmt.Errorf("language must be empty (browser default), en or zh-TW")
 	}
@@ -373,6 +493,20 @@ func (s *Book) loadSettings() (Settings, error) {
 	if out.Notifications.Dismissed == nil {
 		out.Notifications.Dismissed = []string{}
 	}
+	out.Themes = []CustomTheme{}
+	if v, ok, err := s.getSetting("themes"); err != nil {
+		return out, err
+	} else if ok {
+		var list []CustomTheme
+		if err := json.Unmarshal([]byte(v), &list); err != nil {
+			return out, fmt.Errorf("stored themes setting is invalid JSON")
+		}
+		if list, err := validateThemes(list); err != nil {
+			log.Printf("stored themes setting ignored: %v", err) // a broken list must not take the rest down
+		} else {
+			out.Themes = list
+		}
+	}
 	out.About.SourceURL = os.Getenv("KISIAUTHONG_SOURCE_URL") // a modified version links its own source (AGPL §13)
 	if out.About.SourceURL == "" {
 		out.About.SourceURL = defaultSourceURL
@@ -390,8 +524,8 @@ func (s *Book) saveJSONSetting(key string, v interface{}) error {
 }
 
 // handleSettings serves GET/PUT /api/settings. PUT accepts any subset of
-// {dashboard, general}; omitted sections are left unchanged, and fields
-// omitted inside general keep their stored value.
+// {dashboard, general, notifications, themes}; omitted sections are left unchanged, fields
+// omitted inside general keep their stored value, and themes replaces the whole list.
 func handleSettings(w http.ResponseWriter, r *http.Request, b *Book) {
 	switch r.Method {
 	case http.MethodGet:
@@ -400,6 +534,7 @@ func handleSettings(w http.ResponseWriter, r *http.Request, b *Book) {
 			Dashboard     *DashboardSettings    `json:"dashboard"`
 			General       json.RawMessage       `json:"general"`
 			Notifications *NotificationSettings `json:"notifications"`
+			Themes        *[]CustomTheme        `json:"themes"`
 		}
 		if !decode(w, r, &body) {
 			return
@@ -417,9 +552,17 @@ func handleSettings(w http.ResponseWriter, r *http.Request, b *Book) {
 				return
 			}
 		}
-		if body.Dashboard == nil && general == nil && body.Notifications == nil {
-			writeErr(w, 400, "nothing to update: send dashboard, general and/or notifications")
+		if body.Dashboard == nil && general == nil && body.Notifications == nil && body.Themes == nil {
+			writeErr(w, 400, "nothing to update: send dashboard, general, notifications and/or themes")
 			return
+		}
+		var themes []CustomTheme
+		if body.Themes != nil {
+			var err error
+			if themes, err = validateThemes(*body.Themes); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
 		}
 		if body.Notifications != nil {
 			if err := body.Notifications.validate(); err != nil {
@@ -453,6 +596,12 @@ func handleSettings(w http.ResponseWriter, r *http.Request, b *Book) {
 		}
 		if body.Notifications != nil {
 			if err := b.saveJSONSetting("notifications", body.Notifications); err != nil {
+				writeErr(w, 500, err.Error())
+				return
+			}
+		}
+		if body.Themes != nil {
+			if err := b.saveJSONSetting("themes", themes); err != nil {
 				writeErr(w, 500, err.Error())
 				return
 			}

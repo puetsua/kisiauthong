@@ -46,7 +46,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, themeSyncPlan, themeSyncPrefs, screenThemeEditor };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -511,7 +511,12 @@ test("Settings → Appearance (#85): after Display, theme cards each drawn in th
   for (const [k, name] of [["default", "Default"], ["contrast", "High contrast"], ["warm", "Warm"], ["cool", "Cool"]]) {
     assert.match(cards, new RegExp(`<button type="button" class="themecard" data-theme-pick="${k}" aria-pressed="${k === "warm"}"><span class="themeprev" data-theme="${k}" data-mode="dark" aria-hidden="true">.*?<b>${name}</b></button>`));
   }
-  assert.match(cards, /Theme and mode are kept on this device\./);
+  assert.match(cards, /id="themeDup">Duplicate as a custom theme</);
+  assert.doesNotMatch(cards, /My themes|themeEdit/, "no custom themes yet");
+  // sync is off until asked for, and says where the themes are
+  const sync = $el("#themeSync").innerHTML;
+  assert.match(sync, /<input type="checkbox" id="syncCustom" > Sync my custom themes with my account<\/label><label class="checkrow"><input type="checkbox" id="syncSelected" > Sync the selected theme with my account/);
+  assert.match(sync, /Themes are kept on this device only\./);
   assert.doesNotMatch(cards, /more contrast/, "no note while the system asks for nothing");
   assert.match(modes, /<button type="button" data-mode-pick="system" class="" aria-pressed="false">Follow system<\/button><button type="button" data-mode-pick="light" class="" aria-pressed="false">Light<\/button><button type="button" data-mode-pick="dark" class="on" aria-pressed="true">Dark<\/button>/);
   // a system asking for more contrast gets High contrast; the chosen card stays chosen and a note says why
@@ -549,6 +554,119 @@ test("Settings → Appearance (#85): a card or mode button keeps the choice and 
   sandbox.localStorage = { getItem: () => null, setItem: () => {} };
   sandbox.writeThemePrefs({ theme: "default", mode: "system" });
   delete docProps.documentElement;
+});
+
+// a complete custom theme as the device and the server keep it (made-up colours)
+const THEME_TOKENS = JSON.parse(vm.runInContext("JSON.stringify(THEME_TOKENS)", sandbox)), THEME_MAIN = JSON.parse(vm.runInContext("JSON.stringify(THEME_MAIN)", sandbox));
+const fakeTheme = (id, name, updatedAt) => {
+  const colours = {};
+  for (const k of THEME_TOKENS) colours[k] = "#334455";
+  return { id, name, basedOn: "cool", split: false, light: colours, dark: null, updatedAt };
+};
+test("theme sync (#85): what a sync does, per ADR 0027", () => {
+  const A1 = fakeTheme("thm-aaaaaa", "Teal", "2026-11-24T01:00:00.000Z"), A2 = fakeTheme("thm-aaaaaa", "Teal 2", "2026-11-24T02:00:00.000Z");
+  const B = fakeTheme("thm-bbbbbb", "Dusk", "2026-11-24T01:00:00.000Z"), C = fakeTheme("thm-cccccc", "Sand", "2026-11-24T01:00:00.000Z");
+  const sp = (o) => Object.assign({ custom: false, selected: false, pending: "", deleted: [], at: "" }, o);
+  const plan = (server, o, local, prefs) => JSON.parse(JSON.stringify(t.themeSyncPlan(server, sp(o), local, prefs || { theme: "default", mode: "system" })));
+  const ids = (l) => l.map((x) => x.id + "@" + x.name);
+  // custom themes on, first time: both sides merged by id, the newer copy wins, and the result goes up
+  let p = plan({ themes: [A1, B], general: {} }, { custom: true }, [A2, C]);
+  assert.deepStrictEqual(ids(p.local), ["thm-aaaaaa@Teal 2", "thm-cccccc@Sand", "thm-bbbbbb@Dusk"]);
+  assert.deepStrictEqual(ids(p.upload.themes), ids(p.local));
+  assert.ok(!p.upload.general, "the selected theme is not touched");
+  // already the same on both sides: nothing to send
+  assert.strictEqual(plan({ themes: [A2, B], general: {} }, { custom: true }, [A2, B]).upload, null);
+  // deleted here: it leaves the server
+  p = plan({ themes: [A2, B], general: {} }, { custom: true, deleted: ["thm-bbbbbb"] }, [A2]);
+  assert.deepStrictEqual(ids(p.upload.themes), ["thm-aaaaaa@Teal 2"]);
+  // selected theme on, custom off: a custom choice made here goes up with its theme, and the notice names it
+  p = plan({ themes: [B], general: {} }, { selected: true, pending: "1" }, [C], { theme: "thm-cccccc", mode: "dark" });
+  assert.deepStrictEqual(ids(p.upload.themes), ["thm-bbbbbb@Dusk", "thm-cccccc@Sand"], "the server's others stay");
+  assert.deepStrictEqual(p.upload.general, { theme: { selected: "thm-cccccc" } });
+  assert.strictEqual(p.notice, "Sand");
+  // a built-in choice made here: only the choice goes up
+  p = plan({ themes: [B], general: { theme: { selected: "warm" } } }, { selected: true, pending: "1" }, [], { theme: "cool", mode: "light" });
+  assert.deepStrictEqual(p.upload, { themes: JSON.parse(JSON.stringify([B])), general: { theme: { selected: "cool" } } });
+  assert.strictEqual(p.notice, "");
+  // nothing chosen here since: another device's choice is taken, with its theme even when custom themes are not synced
+  p = plan({ themes: [B], general: { theme: { selected: "thm-bbbbbb" } } }, { selected: true }, [], { theme: "default", mode: "dark" });
+  assert.deepStrictEqual(p.prefs, { theme: "thm-bbbbbb", mode: "dark" }, "the mode stays this device's");
+  assert.deepStrictEqual(ids(p.local), ["thm-bbbbbb@Dusk"]);
+  assert.strictEqual(p.upload, null);
+  p = plan({ themes: [], general: { theme: { selected: "warm" } } }, { selected: true }, [], { theme: "default", mode: "system" });
+  assert.deepStrictEqual(p.prefs, { theme: "warm", mode: "system" });
+  // the server names a theme it does not have: this device's choice goes up instead
+  p = plan({ themes: [], general: { theme: { selected: "thm-zzzzzz" } } }, { selected: true }, [], { theme: "cool", mode: "system" });
+  assert.strictEqual(p.prefs, null);
+  assert.deepStrictEqual(p.upload.general, { theme: { selected: "cool" } });
+  // both off: the server is not asked for anything (the caller does not sync), and a plan sends nothing
+  assert.strictEqual(plan({ themes: [B], general: { theme: { selected: "warm" } } }, {}, [C]).upload, null);
+});
+
+test("theme sync (#85): Settings shows the custom themes, the sync choices and each sync state", () => {
+  const store = { "kisiauthong.themes": JSON.stringify([fakeTheme("thm-cccccc", "Sand", "2026-11-24T01:00:00.000Z")]), "kisiauthong.theme": JSON.stringify({ theme: "thm-cccccc", mode: "system" }),
+    "kisiauthong.themeSync": JSON.stringify({ custom: true, selected: false, at: "2026-11-24T03:42:00.000Z" }) };
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, val) => { store[k] = String(val); }, removeItem: (k) => { delete store[k]; } };
+  t.state.themeSync = {};
+  t.drawAppearance();
+  const cards = $el("#themePick").innerHTML, sync = $el("#themeSync").innerHTML;
+  assert.match(cards, /<p class="setlabel">My themes<\/p><div class="themecards"><button type="button" class="themecard" data-theme-pick="thm-cccccc" aria-pressed="true"><span class="themeprev" data-theme="cool" data-mode="light" style="--bg:#334455;/);
+  assert.match(cards, /id="themeEdit">Edit Sand</);
+  assert.match(sync, /id="syncCustom" checked>.*id="syncSelected" >/s);
+  assert.match(sync, /class="syncstate ok" role="status"><span class="dot"><\/span><span>Synced at /);
+  assert.match(sync, /The light or dark mode is not synced: each device keeps its own\./);
+  t.state.themeSync = { status: "syncing" };
+  t.drawAppearance();
+  assert.match($el("#themeSync").innerHTML, /class="syncstate busy" role="status"><span class="dot"><\/span><span>Syncing…/);
+  t.state.themeSync = { status: "error", at: "2026-11-24T03:40:00.000Z", error: "Failed to fetch" };
+  t.drawAppearance();
+  assert.match($el("#themeSync").innerHTML, /class="syncstate err" role="alert">.*Sync failed at .*: Failed to fetch\. The themes are still on this device\.<\/span> <button type="button" class="smallbtn" id="syncRetry">Retry<\/button>/s);
+  t.state.themeSync = { status: "ok", notice: "Sand" };
+  t.drawAppearance();
+  assert.match($el("#themeSync").innerHTML, /“Sand” was not on the server yet, so it was uploaded for your other devices\./);
+  t.setLang("zh-TW");
+  t.drawAppearance();
+  assert.match($el("#themeSync").innerHTML, /將我的自訂主題同步到帳號.*將目前選擇的主題同步到帳號.*伺服器上還沒有「Sand」/s);
+  t.setLang("en");
+  t.state.themeSync = {};
+  sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+});
+
+test("theme editor (#85): a Settings sub-page with the name, the split, grouped main colours, a picker, the JSON and a preview", () => {
+  const store = { "kisiauthong.themes": JSON.stringify([fakeTheme("thm-cccccc", "Sand", "2026-11-24T01:00:00.000Z")]) };
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, val) => { store[k] = String(val); }, removeItem: (k) => { delete store[k]; } };
+  location.hash = "#theme?id=thm-cccccc";
+  assert.strictEqual(t.currentScreen(), "theme");
+  t.state.themeDraft = null;
+  const v = view();
+  t.screenThemeEditor(v);
+  const html = v.innerHTML;
+  assert.match(html, /<a class="smallbtn" href="#settings" id="themeBack">‹ Settings<\/a>/);
+  assert.match(html, /<input id="themeName" maxlength="60" value="Sand">/);
+  assert.match(html, /<p class="shint">Based on Cool<\/p>/);
+  assert.match(html, /<input type="checkbox" id="themeSplit" > Separate colours for light and dark/, "light only by default");
+  assert.doesNotMatch(html, /data-editing=/, "no light/dark tabs while the split is off");
+  assert.match(html, /<textarea id="themeJSON"/);
+  assert.match(html, /id="themeCopy">Copy JSON<.*id="themePaste">Apply pasted JSON</s);
+  assert.match(html, /id="themeDel">Delete theme<.*id="themeCancel">Cancel<.*id="themeSave">Save theme</s);
+  const colours = $el("#themeColours").innerHTML;
+  assert.deepStrictEqual([...colours.matchAll(/data-swatch="([a-z0-9-]+)"/g)].map((m) => m[1]), THEME_MAIN, "only the main colours, in groups");
+  assert.match(colours, /<h3>Amounts<\/h3><div class="tswatches"><button type="button" class="tswatch" data-swatch="amt-in" aria-pressed="false">.*data-swatch="amt-out" aria-pressed="true">/s);
+  assert.match(colours, /<div id="themePicker"><\/div><\/div><div class="tgroup"><h3>Page/, "the picker opens under the chosen colour's group");
+  assert.match($el("#themePicker").innerHTML, /role="slider" tabindex="0" aria-label="Saturation and brightness".*id="tpHue".*id="tpHex" value="#334455"/s);
+  assert.match($el("#tpRatio").textContent, /^Contrast with cards: 1\.0:1$/, "a plain figure, no verdict");
+  assert.match($el("#themePreview").innerHTML, /<div class="themepv" data-theme="cool" data-mode="light" style="--bg:#334455;/);
+  // with the split on there are tabs for the two modes
+  t.state.themeDraft.split = true; t.state.themeDraft.dark = Object.assign({}, t.state.themeDraft.light); t.state.themeDraft.editing = "dark";
+  t.screenThemeEditor(v);
+  assert.match(v.innerHTML, /id="themeSplit" checked>.*data-editing="light" class="" aria-pressed="false">Edit light<.*data-editing="dark" class="on" aria-pressed="true">Edit dark</s);
+  // a theme that is gone sends the editor back to Settings
+  location.hash = "#theme?id=thm-gone00";
+  t.state.themeDraft = null;
+  t.screenThemeEditor(view());
+  assert.strictEqual(location.hash, "#settings");
+  t.state.themeDraft = null;
+  sandbox.localStorage = { getItem: () => null, setItem: () => {} };
 });
 
 test("theme (#85): the sign-in screen is Default whatever this device chose; signing in brings the choice back", () => {

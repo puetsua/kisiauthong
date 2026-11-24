@@ -179,6 +179,15 @@ func TestUsersSeeOnlyTheirOwnBooks(t *testing.T) {
 	if aset.General.DefaultCurrency != "TWD" {
 		t.Fatalf("bob's settings leaked to alice: %q", aset.General.DefaultCurrency)
 	}
+	// and so are synced themes (ADR 0027)
+	theme := map[string]interface{}{"id": "thm-bob001", "name": "Bob's", "basedOn": "warm", "light": map[string]string{"bg": "#ffffff"}, "updatedAt": "2026-11-24T03:00:00Z"}
+	if code := b.do("PUT", "/api/settings", map[string]interface{}{"themes": []interface{}{theme}, "general": map[string]interface{}{"theme": map[string]string{"selected": "thm-bob001"}}}, nil); code != 200 {
+		t.Fatalf("bob syncs a theme: %d", code)
+	}
+	a.do("GET", "/api/settings", nil, &aset)
+	if len(aset.Themes) != 0 || aset.General.Theme != nil {
+		t.Fatalf("bob's themes leaked to alice: %+v %+v", aset.Themes, aset.General.Theme)
+	}
 }
 
 func TestCrossSiteWritesAreRefused(t *testing.T) {
