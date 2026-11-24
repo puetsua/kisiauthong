@@ -128,7 +128,8 @@ anything.
 
 ## Build
 
-Requirements: Node.js (for the Tauri CLI), Rust (`rustup`), and per platform
+Requirements: Node.js (for the Tauri CLI), Rust 1.90 or newer (`rustup`; the
+`rust-version` in `src-tauri/Cargo.toml`), and per platform
 the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```sh
