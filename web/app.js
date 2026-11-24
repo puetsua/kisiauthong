@@ -1590,7 +1590,8 @@ const resName = (id) => (resById(id) || {}).name || "—";
 const reserveURL = (id, mode, at) => `#reserve?${new URLSearchParams({ id, range: mode, ...(at ? { at } : {}) })}`;
 // what a reserve still needs to reach its target
 const toGo = (r) => (r.targetMinor > r.savedMinor ? __("{amount} to go", { amount: fmt(r.targetMinor - r.savedMinor, r.currency) }) : __("Target reached"));
-const BOX_COLORS = ["#5b2a86", "#8a5cb8", "#b79ad6", "#c9a86a", "#7d6f99"];
+// the reserve split bar's segment colours: theme tokens --series-1 … --series-5 (issue #85)
+const BOX_COLORS = [1, 2, 3, 4, 5].map((n) => `var(--series-${n})`);
 // what each account holds; in another currency an allocation is only shown, not added (ADR 0011)
 const heldIn = (r, accId) => ((r.split || []).find((s) => s.accountId === accId) || {}).amountMinor || 0;
 // One reserve: saved (of its target, if it has one), with the bar split by the accounts holding the money.
@@ -1797,6 +1798,7 @@ const SET_ICON = {
   region: ACCOUNT_ICONS.globe[1],
   money: ACCOUNT_ICONS.coins[1],
   display: "M3 4h18v16H3zM3 9h18M9 9v11",
+  appearance: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 3v18M12 8l5.5-3.5M12 13l8.5-4.5M12 18l6.5-3",
   dashboard: "M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z",
   data: "M12 3v12M7 10l5 5 5-5M4 19h16",
   servers: "M4 5h16v6H4zM4 13h16v6H4zM8 8h.01M8 16h.01",
@@ -1865,6 +1867,42 @@ async function drawAppAbout() {
   if ($("#appUpdates")) $("#appUpdates").addEventListener("click", () => shell.updates(LANG).catch((e) => msg(String((e && e.message) || e), "error")));
 }
 const setIcon = (k) => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="${SET_ICON[k]}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+// Settings → Appearance (issue #85, ADR 0027): theme cards, each drawn in its own theme, and the light/dark
+// mode. Both are kept on this device (theme.js); a change applies at once, no reload.
+const THEME_L = { default: N_("Default"), contrast: N_("High contrast"), warm: N_("Warm"), cool: N_("Cool") };
+const MODE_L = { system: N_("Follow system"), light: N_("Light"), dark: N_("Dark") };
+function themeCardHTML(t, prefs, mode) {
+  const on = prefs.theme === t;
+  return `<button type="button" class="themecard" data-theme-pick="${t}" aria-pressed="${on}">`
+    + `<span class="themeprev" data-theme="${t}" data-mode="${mode}" aria-hidden="true"><i class="tps"></i><span class="tpm"><span class="tpp"><i class="tpl"></i><span class="tpa"><i class="tpin"></i><i class="tpout"></i></span></span><i class="tpacc"></i></span></span>`
+    + `<b>${esc(__(THEME_L[t]))}</b></button>`;
+}
+// focus: the [data-theme-pick] or [data-mode-pick] button to give the keyboard back after the redraw;
+// by default the one that had it (a system or other-tab change redraws under the user's hands)
+function drawAppearance(focus) {
+  const tp = $("#themePick"), mp = $("#modePick");
+  if (!tp || !mp) return;
+  const had = document.activeElement && document.activeElement.dataset;
+  focus = focus || (had && had.themePick ? `[data-theme-pick="${had.themePick}"]` : had && had.modePick ? `[data-mode-pick="${had.modePick}"]` : "");
+  const prefs = readThemePrefs(), shown = resolveTheme(prefs, systemAppearance());
+  tp.innerHTML = `<div class="themecards">${THEMES.map((t) => themeCardHTML(t, prefs, shown.mode)).join("")}</div>`
+    + (shown.theme !== prefs.theme ? `<p class="shint">${esc(__("Your system asks for more contrast, so High contrast is in use."))}</p>` : "")
+    + `<p class="shint">${esc(__("Theme and mode are kept on this device."))}</p>`;
+  mp.innerHTML = `<div class="seg modeseg">${THEME_MODES.map((m) => `<button type="button" data-mode-pick="${m}" class="${prefs.mode === m ? "on" : ""}" aria-pressed="${prefs.mode === m}">${esc(__(MODE_L[m]))}</button>`).join("")}</div>`;
+  tp.querySelectorAll("[data-theme-pick]").forEach((b) => b.addEventListener("click", () => pickTheme({ theme: b.dataset.themePick })));
+  mp.querySelectorAll("[data-mode-pick]").forEach((b) => b.addEventListener("click", () => pickTheme({ mode: b.dataset.modePick })));
+  const back = focus && $(focus);
+  if (back && typeof back.focus === "function") back.focus(); // the redrawn button keeps the keyboard focus
+}
+// a theme card or mode button: keep the choice on this device, show it at once
+function pickTheme(patch) {
+  const kept = writeThemePrefs(Object.assign(readThemePrefs(), patch));
+  applyTheme();
+  drawAppearance(patch.theme ? `[data-theme-pick="${patch.theme}"]` : `[data-mode-pick="${patch.mode}"]`);
+  msg(kept ? (patch.theme ? __("Theme saved.") : __("Mode saved.")) : __("This browser keeps no settings, so the choice lasts until the page is closed."), kept ? "" : "error");
+}
+// theme.js calls this when the system's light/dark or contrast changes, or another tab picks a theme
+function onThemeChange() { drawAppearance(); }
 function screenSettings(v) {
   const src = state.about && state.about.sourceUrl;
   const pref = (state.general && state.general.language) || "";
@@ -1885,6 +1923,11 @@ function screenSettings(v) {
     ["display", __("Display"), [
       row(__("Page width"), select("setWidth", enumOptions(WIDTH_L, Object.keys(WIDTH_L), pageWidth())), "setWidth"),
       row(__("Days open by default"), select("setOpenDays", [...new Set([...OPEN_DAY_CHOICES, openDays()])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === openDays() ? "selected" : ""}>${n}</option>`).join("")), "setOpenDays"),
+    ]],
+    // Appearance (issue #85): theme and mode are this device's (theme.js), the amount style is the account's
+    ["appearance", __("Appearance"), [
+      row(__("Theme"), `<div id="themePick"></div>`),
+      row(__("Mode"), `<div id="modePick"></div>`),
       row(__("Spending and income"), `<select id="setAmtStyle" aria-describedby="setAmtHint">${enumOptions(AMTSTYLE_L, Object.keys(AMTSTYLE_L), amountStyle())}</select>`
         + `<p class="shint" id="setAmtHint">${esc(__("With Color only, spending and income differ only by color and by the icon in front of each row."))}</p>`, "setAmtStyle"),
     ]],
@@ -1923,6 +1966,7 @@ function screenSettings(v) {
   $("#setNumFmt").addEventListener("change", (e) => saveGeneral({ numberFormat: e.target.value }, () => __("Number format saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
   $("#setAmtStyle").addEventListener("change", (e) => saveGeneral({ amountStyle: e.target.value }, () => __("Spending and income display saved.")));
+  drawAppearance();
   $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
   if ($("#copyCommit")) $("#copyCommit").addEventListener("click", async () => { try { await navigator.clipboard.writeText(verAbout().commit); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } });
   if (state.goAbout) { state.goAbout = false; $("#set-about").scrollIntoView({ block: "start" }); }
@@ -2478,6 +2522,7 @@ async function boot() {
     const st = await api("/api/auth/status");
     if (!st.user) { showAuth(st.needsSetup ? "setup" : "login"); return; }
     state.me = st.user;
+    setThemeSignedOut(false);
     $("#authScreen").hidden = true; $(".shell").hidden = false;
     renderUserBtn();
     await load();
@@ -2505,6 +2550,7 @@ function showAuth(mode) {
   loads.applied = ++loads.seq; // a fetch still under way is not drawn over the sign-in screen
   msg("");
   $(".shell").hidden = true; $("#addBtn").hidden = true; showMore(false); $("#notifPanel").hidden = true; $("#userMenu").hidden = true;
+  setThemeSignedOut(true); // the sign-in screen belongs to no one yet: Default, in the system's light or dark
   const box = $("#authScreen");
   box.hidden = false;
   const setup = mode === "setup";

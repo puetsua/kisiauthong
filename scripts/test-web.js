@@ -45,7 +45,8 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle };", sandbox, { filename: "app.js" });
+vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -464,11 +465,13 @@ test("spending and income display (#66): unknown or missing setting reads as bot
   t.state.general = { ...t.state.general, amountStyle: "both" };
 });
 
-test("spending and income display (#66): Settings → Display has the select, en and zh-TW", () => {
+test("spending and income display (#66): Settings → Appearance has the select, en and zh-TW", () => {
   const v = view();
   t.state.general = { ...t.state.general, amountStyle: "sign" };
   t.screenSettings(v);
-  const display = v.innerHTML.slice(v.innerHTML.indexOf('id="set-display"'), v.innerHTML.indexOf('id="set-data"'));
+  // moved from Display to Appearance (issue #85)
+  assert.doesNotMatch(v.innerHTML.slice(v.innerHTML.indexOf('id="set-display"'), v.innerHTML.indexOf('id="set-appearance"')), /setAmtStyle/);
+  const display = v.innerHTML.slice(v.innerHTML.indexOf('id="set-appearance"'), v.innerHTML.indexOf('id="set-data"'));
   assert.match(display, /<label for="setAmtStyle" class="sl">Spending and income<\/label>/);
   assert.match(display, /<option value="both" >Signs and color<\/option><option value="sign" selected>Signs only \(\+ \/ −\)<\/option><option value="color" >Color only<\/option>/);
   assert.match(display, /<select id="setAmtStyle" aria-describedby="setAmtHint">/);
@@ -482,15 +485,87 @@ test("spending and income display (#66): Settings → Display has the select, en
 
 test("spending and income display (#66): the stylesheet colors only the list, and spending has its own red", () => {
   const css = read("style.css");
+  // each theme's spending colour is its own token (--amt-out), never the over-budget --red (scripts/test-themes.js checks every theme)
   const tok = (k) => (css.match(new RegExp("--" + k + ":(#[0-9a-f]{3,6})")) || [])[1];
-  assert.ok(tok("neg") && tok("red") && tok("neg") !== tok("red"), "--neg is not the over-budget --red");
-  assert.match(css, /\.amtstyle \.famt\.out,\.amtstyle \.fnet \.out\{color:var\(--neg\)\}/);
-  assert.match(css, /\.amtstyle \.fnet \.in\{color:var\(--pos\)\}/);
+  assert.ok(tok("amt-out") && tok("red") && tok("amt-out") !== tok("red"), "--amt-out is not the over-budget --red");
+  assert.match(css, /\.amtstyle \.famt\.out,\.amtstyle \.fnet \.out\{color:var\(--amt-out\)\}/);
+  assert.match(css, /\.amtstyle \.fnet \.in\{color:var\(--amt-in\)\}/);
   assert.match(css, /\[data-amounts=sign\] \.amtstyle \.famt\.in,\[data-amounts=sign\] \.amtstyle \.famt\.out\{color:var\(--ink\)\}/);
   // hidden from sight but still inline text (not display:none or out of flow), so a copied row keeps "−TWD 120" on one line
   assert.match(css, /\[data-amounts=color\] \.amtstyle \.asign\{font-size:0\}/);
   assert.doesNotMatch(css, /asign\{[^}]*display:none/);
   assert.doesNotMatch(css, /^\.famt\.out\{/m, "outside the list spending stays ink");
+});
+
+test("Settings → Appearance (#85): after Display, theme cards each drawn in their theme, the mode, kept on the device", () => {
+  const v = view();
+  t.screenSettings(v);
+  const html = v.innerHTML;
+  assert.ok(html.indexOf('id="set-display"') < html.indexOf('id="set-appearance"') && html.indexOf('id="set-appearance"') < html.indexOf('id="set-data"'), "after Display");
+  assert.match(html, /data-goto="display">.*Display<\/button><button type="button" data-goto="appearance">.*Appearance<\/button>/s);
+  const store = {};
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, val) => { store[k] = String(val); } };
+  store["kisiauthong.theme"] = JSON.stringify({ theme: "warm", mode: "dark" });
+  t.drawAppearance();
+  const cards = $el("#themePick").innerHTML, modes = $el("#modePick").innerHTML;
+  for (const [k, name] of [["default", "Default"], ["contrast", "High contrast"], ["warm", "Warm"], ["cool", "Cool"]]) {
+    assert.match(cards, new RegExp(`<button type="button" class="themecard" data-theme-pick="${k}" aria-pressed="${k === "warm"}"><span class="themeprev" data-theme="${k}" data-mode="dark" aria-hidden="true">.*?<b>${name}</b></button>`));
+  }
+  assert.match(cards, /Theme and mode are kept on this device\./);
+  assert.doesNotMatch(cards, /more contrast/, "no note while the system asks for nothing");
+  assert.match(modes, /<button type="button" data-mode-pick="system" class="" aria-pressed="false">Follow system<\/button><button type="button" data-mode-pick="light" class="" aria-pressed="false">Light<\/button><button type="button" data-mode-pick="dark" class="on" aria-pressed="true">Dark<\/button>/);
+  // a system asking for more contrast gets High contrast; the chosen card stays chosen and a note says why
+  sandbox.matchMedia = (q) => ({ matches: q === "(prefers-contrast: more)", addEventListener: () => {} });
+  t.drawAppearance();
+  assert.match($el("#themePick").innerHTML, /data-theme-pick="warm" aria-pressed="true">.*Your system asks for more contrast, so High contrast is in use\./s);
+  t.setLang("zh-TW");
+  t.drawAppearance();
+  assert.match($el("#themePick").innerHTML, />預設<.*>高對比<.*>暖色系<.*>冷色系<.*系統要求較高的對比/s);
+  assert.match($el("#modePick").innerHTML, />跟隨系統<.*>淺色<.*>深色</s);
+  t.setLang("en");
+  sandbox.matchMedia = () => ({ matches: false, addEventListener: () => {} });
+  sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+});
+
+test("Settings → Appearance (#85): a card or mode button keeps the choice and applies it; storage that refuses still applies it", () => {
+  const store = {};
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, val) => { store[k] = String(val); } };
+  docProps.documentElement = { dataset: {} };
+  t.pickTheme({ theme: "cool" });
+  assert.deepStrictEqual(JSON.parse(store["kisiauthong.theme"]), { theme: "cool", mode: "system" });
+  assert.strictEqual(docProps.documentElement.dataset.theme, "cool");
+  assert.strictEqual($el("#toast").textContent, "Theme saved.");
+  assert.match($el("#themePick").innerHTML, /data-theme-pick="cool" aria-pressed="true"/, "the cards are redrawn");
+  t.pickTheme({ mode: "dark" });
+  assert.deepStrictEqual(JSON.parse(store["kisiauthong.theme"]), { theme: "cool", mode: "dark" }, "a mode keeps the theme");
+  assert.strictEqual(docProps.documentElement.dataset.mode, "dark");
+  assert.strictEqual($el("#toast").textContent, "Mode saved.");
+  // readable but not writable (full or blocked): the pick still shows, and the toast says it will not last
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: () => { throw new Error("full"); } };
+  t.pickTheme({ theme: "warm" });
+  assert.strictEqual(docProps.documentElement.dataset.theme, "warm", "the refused choice wins over the stored one");
+  assert.match($el("#toast").textContent, /keeps no settings/);
+  assert.match($el("#toast").className, /error/);
+  sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+  sandbox.writeThemePrefs({ theme: "default", mode: "system" });
+  delete docProps.documentElement;
+});
+
+test("theme (#85): the sign-in screen is Default whatever this device chose; signing in brings the choice back", () => {
+  const store = { "kisiauthong.theme": JSON.stringify({ theme: "warm", mode: "light" }) };
+  sandbox.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, val) => { store[k] = String(val); } };
+  docProps.documentElement = { dataset: {} };
+  const keep = { data: t.state.data, me: t.state.me }; // showAuth signs out: put the made-up books back afterwards
+  t.showAuth("login");
+  assert.deepStrictEqual({ ...docProps.documentElement.dataset }, { theme: "default", mode: "light" });
+  // boot() clears the override once a user is signed in, before anything of theirs is drawn
+  const boot = read("app.js").match(/async function boot\(\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(boot.indexOf("setThemeSignedOut(false)") > boot.indexOf("state.me = st.user") && boot.indexOf("setThemeSignedOut(false)") < boot.indexOf("await load()"));
+  sandbox.setThemeSignedOut(false);
+  assert.deepStrictEqual({ ...docProps.documentElement.dataset }, { theme: "warm", mode: "light" });
+  Object.assign(t.state, keep);
+  sandbox.localStorage = { getItem: () => null, setItem: () => {} };
+  delete docProps.documentElement;
 });
 
 test("zh-TW: the summary line and the card read as designed", () => {

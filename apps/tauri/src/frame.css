@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
-:root{--bar:#2a1740;--ink:#e6dcf2;--muted:#b9a6d1;--hover:rgba(255,255,255,.1);--down:rgba(255,255,255,.18)}
+/* the Default theme's sidebar colours (web/style.css --side, --sidetext, --sidemuted), light and dark (issue #85) */
+:root{--bar:#2a1740;--ink:#e6dcf2;--muted:#b9a6d1;--hover:rgba(255,255,255,.1);--down:rgba(255,255,255,.18);--closebg:#c42b1c;--closeink:#fff}
+@media (prefers-color-scheme:dark){:root{--bar:#110a19;--ink:#e6dcf2;--muted:#a995c4}}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bar);color:var(--ink);font:12px/1 "Segoe UI",system-ui,"Microsoft JhengHei","PingFang TC",sans-serif;user-select:none;-webkit-user-select:none;cursor:default}
 .bar{display:flex;align-items:center;height:100%;padding-left:10px;gap:8px}
@@ -12,7 +14,7 @@ body.blur .name,body.blur .ico{opacity:.55}
 .ctl button{width:46px;height:100%;border:0;margin:0;padding:0;background:none;color:inherit;display:grid;place-items:center}
 .ctl button:hover{background:var(--hover)}
 .ctl button:active{background:var(--down)}
-.ctl button.close:hover{background:#c42b1c;color:#fff}
+.ctl button.close:hover{background:var(--closebg);color:var(--closeink)} /* the Windows close-button red, not a theme colour */
 .ctl button:focus-visible{outline:2px solid var(--ink);outline-offset:-3px}
 .maxed .up,body:not(.maxed) .down{display:none}
 .ctl svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1}

@@ -57,6 +57,8 @@ jobs:
         run: node scripts/check-i18n.js
       - name: Rendering smoke tests
         run: node scripts/test-web.js
+      - name: Themes (tokens, WCAG contrast, theme.js)
+        run: node scripts/test-themes.js
       - name: Number formats
         run: node scripts/check-numfmt.js
       - name: App server screen (apps/tauri)

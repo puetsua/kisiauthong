@@ -125,9 +125,15 @@ test("strings: both languages have the same keys and {url} placeholders, and eve
   }
 });
 
-test("the screen's colour tokens match web/style.css", () => {
-  const rootLine = (f) => fs.readFileSync(f, "utf8").split("\n").find((l) => l.startsWith(":root{--page-max"));
-  assert.strictEqual(rootLine(path.join(app, "style.css")), rootLine(path.join(root, "web", "style.css")));
+test("the screen's colour tokens are web/style.css's Default theme, light and dark", () => {
+  // the server screen belongs to no account: Default, in the system's light or dark (issue #85)
+  const css = (f) => fs.readFileSync(f, "utf8");
+  const web = css(path.join(root, "web", "style.css")), scr = css(path.join(app, "style.css"));
+  const block = (src, re) => { const m = src.match(re); assert.ok(m, String(re)); return m[1]; };
+  assert.strictEqual(block(scr, /^:root\{(color-scheme:light;[^}]*)\}$/m), block(web, /^\[data-theme=default\],:root\{([^}]*)\}$/m), "light");
+  assert.strictEqual(block(scr, /^@media \(prefers-color-scheme:dark\)\{:root\{([^}]*)\}\}$/m), block(web, /^\[data-theme=default\]\[data-mode=dark\]\{([^}]*)\}$/m), "dark");
+  for (const m of scr.replace(/^(:root|@media)[^\n]*$/gm, "").matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\(\d/g)) assert.fail(`a colour outside the tokens: ${m[0]}`);
+  assert.ok(css(path.join(app, "index.html")).includes('<meta name="color-scheme" content="light dark">'), "the screen follows the system's light or dark");
   assert.ok(fs.readFileSync(path.join(app, "icon-512.png")).equals(fs.readFileSync(path.join(root, "web", "icon-512.png"))), "icon-512.png is web/icon-512.png");
 });
 

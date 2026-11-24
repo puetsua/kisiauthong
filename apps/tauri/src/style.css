@@ -1,27 +1,30 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
-/* The app's server screen (ADR 0019). The :root tokens are copied from web/style.css
-   and scripts/test-app.js checks they still match; the rest follows the web UI's rules. */
-:root{--page-max:1120px;--ink:#221d2b;--muted:#6b6578;--bg:#f6f4f9;--panel:#fff;--line:#e1dceb;--hover:#f4f1f8;--hover2:#ece7f3;--rule:#ece8f2;--track:#e8e3ef;--soft:#faf8fc;--side:#2a1740;--side2:#45286a;--sidehover:#36204f;--sidetext:#e6dcf2;--sidemuted:#b9a6d1;--accent:#5b2a86;--accent2:#6d3aa0;--accentsoft:#f0e9f8;--pos:#1b6b3c;--posbg:#e3f1e7;--neg:#c62828;--amber:#b45309;--amberbg:#fdf3e3;--red:#b3261e;--redbg:#fdecea;--sched:#2b6cb0;--schedbg:#e8f1fb;--schedink:#1a4a7f;--schedline:#b9d3ee}
+/* The app's server screen (ADR 0019). It belongs to no account, so it is the Default theme in
+   the system's light or dark (issue #85): the two :root token lines are web/style.css's Default
+   light and dark blocks, and scripts/test-app.js checks they still match; the rest follows the web UI's rules. */
+:root{--page-max:1120px}
+:root{color-scheme:light;--bg:#f6f4f9;--panel:#fff;--surface:#fff;--field:#fff;--soft:#faf8fc;--hover:#f4f1f8;--hover2:#ece7f3;--line:#e1dceb;--rule:#ece8f2;--fieldline:#8c839c;--track:#e8e3ef;--ink:#221d2b;--muted:#6b6578;--on-accent:#fff;--on-status:#fff;--side:#2a1740;--side2:#45286a;--sidehover:#36204f;--sidetext:#e6dcf2;--sidemuted:#b9a6d1;--sidestrong:#fff;--sideline:rgba(255,255,255,.14);--accent:#5b2a86;--accent2:#6d3aa0;--accentsoft:#f0e9f8;--focus:#b45309;--amt-in:#1b6b3c;--amt-out:#c62828;--pos:#1b6b3c;--posbg:#e3f1e7;--amber:#b45309;--amberbg:#fdf3e3;--amberline:#ecd9b0;--amberink:#7a4a00;--plannedbg:#fdf0cd;--peekbg:#fdeaa7;--red:#b3261e;--redbg:#fdecea;--sched:#2b6cb0;--schedbg:#e8f1fb;--schedink:#1a4a7f;--schedline:#b9d3ee;--nightlybg:#ccfbf1;--nightlyline:#5eead4;--nightlyink:#0b4f49;--nightlysideink:#06302c;--ico-out:#8a4b14;--ico-out-bg:#f6ece2;--ico-move:#2f5878;--ico-move-bg:#e7eef5;--ico-rsv:#9b3b66;--ico-rsv-bg:#fbeef3;--scrim:rgba(30,20,40,.45);--shadow-rgb:40,20,60;--toast-bg:#2a1740;--toast-ink:#fff;--toast-line:rgba(255,255,255,.7);--toast-hover:rgba(255,255,255,.12);--cropbg:#1c1424;--series-1:#5b2a86;--series-2:#8a5cb8;--series-3:#b79ad6;--series-4:#c9a86a;--series-5:#7d6f99}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#15111b;--panel:#1e1926;--surface:#241e2e;--field:#1a1622;--soft:#1a1621;--hover:#2a2335;--hover2:#342b41;--line:#3b3349;--rule:#2e2739;--fieldline:#776b8a;--track:#3a3147;--ink:#ece6f4;--muted:#a9a0ba;--on-accent:#1a0f26;--on-status:#1b1010;--side:#110a19;--side2:#3b2459;--sidehover:#22162f;--sidetext:#e6dcf2;--sidemuted:#a995c4;--sidestrong:#fff;--sideline:rgba(255,255,255,.12);--accent:#c39ef0;--accent2:#d3b8f5;--accentsoft:#30244a;--focus:#f2b766;--amt-in:#6fd49a;--amt-out:#ff8f86;--pos:#6fd49a;--posbg:#16301f;--amber:#f2b766;--amberbg:#33260f;--amberline:#5e4820;--amberink:#f5d39b;--plannedbg:#3a2e12;--peekbg:#5a4a12;--red:#ff8a80;--redbg:#3d1b1d;--sched:#7cb4ee;--schedbg:#15263a;--schedink:#b3d4f6;--schedline:#2e4d70;--nightlybg:#0f3b37;--nightlyline:#2dd4bf;--nightlyink:#99f6e4;--nightlysideink:#06302c;--ico-out:#e9b07e;--ico-out-bg:#3a2a1c;--ico-move:#9cc1e3;--ico-move-bg:#1c2b3b;--ico-rsv:#eba1c4;--ico-rsv-bg:#3a1f2d;--scrim:rgba(0,0,0,.6);--shadow-rgb:0,0,0;--toast-bg:#3b2459;--toast-ink:#fff;--toast-line:rgba(255,255,255,.7);--toast-hover:rgba(255,255,255,.12);--cropbg:#0c0810;--series-1:#c39ef0;--series-2:#9a72c9;--series-3:#7d58a8;--series-4:#d9b97a;--series-5:#a99bc4}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0;height:100%}
-body{font-family:"Segoe UI",system-ui,"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;color:var(--ink);background:#fff;line-height:1.5;-webkit-text-size-adjust:100%}
+body{font-family:"Segoe UI",system-ui,"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;color:var(--ink);background:var(--surface);line-height:1.5;-webkit-text-size-adjust:100%}
 .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 .fr{display:flex;min-height:100%}
 .brandpane{width:46%;flex:none;background:linear-gradient(160deg,var(--side) 0%,var(--side2) 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:24px}
-.appicon{width:150px;height:150px;border-radius:34px;box-shadow:0 18px 44px rgba(0,0,0,.4)}
+.appicon{width:150px;height:150px;border-radius:34px;box-shadow:0 18px 44px rgba(var(--shadow-rgb),.4)}
 .bname{text-align:center}
-.bname .zh{font-family:Georgia,"Noto Serif TC",serif;font-size:2.6rem;color:#fff;line-height:1.1}
+.bname .zh{font-family:Georgia,"Noto Serif TC",serif;font-size:2.6rem;color:var(--sidestrong);line-height:1.1}
 .bname .en{color:var(--sidemuted);margin-top:6px}
-.formpane{flex:1;min-width:0;background:#fff;display:grid;place-items:center;padding:24px}
+.formpane{flex:1;min-width:0;background:var(--surface);display:grid;place-items:center;padding:24px}
 .sheet{width:min(400px,100%)}
 h1{font-family:Georgia,"Noto Serif TC",serif;font-size:1.6rem;margin:0}
 .lead{color:var(--muted);font-size:.9rem;margin:6px 0 18px}
 .flabel{display:flex;flex-direction:column;gap:5px;font-size:.86rem;color:var(--muted)}
 .flabel+.flabel{margin-top:14px}
-.field{padding:11px;border:1px solid var(--line);border-radius:8px;font-size:1rem;color:var(--ink);background:#fff;width:100%;font-family:inherit;margin:0}
+.field{padding:11px;border:1px solid var(--fieldline);border-radius:8px;font-size:1rem;color:var(--ink);background:var(--field);width:100%;font-family:inherit;margin:0}
 .field.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-.field::placeholder{color:#9a93a8}
+.field::placeholder{color:var(--muted);opacity:1}
 .field:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accentsoft)}
 .field.err,.field.err:focus{border-color:var(--red);box-shadow:0 0 0 3px var(--redbg)}
 .hint{font-size:.84rem;color:var(--muted);margin:6px 0 0}
@@ -33,19 +36,19 @@ h1{font-family:Georgia,"Noto Serif TC",serif;font-size:1.6rem;margin:0}
 .errbox{margin:12px 0 0;padding:10px 12px;border-radius:8px;background:var(--redbg);color:var(--red);font-size:.9rem;line-height:1.5}
 .errbox b{display:block;margin-bottom:2px}
 .errbox code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.84rem;overflow-wrap:anywhere}
-.primarybtn{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:10px 18px;font-weight:600;cursor:pointer}
+.primarybtn{background:var(--accent);color:var(--on-accent);border:0;border-radius:7px;padding:10px 18px;font-weight:600;cursor:pointer}
 .primarybtn:hover{background:var(--accent2)}
 .primarybtn.big{width:100%;margin-top:20px;padding:12px}
 .primarybtn:disabled{opacity:.75;cursor:progress}
-.ghostbtn{background:#fff;color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:9px 14px;font-weight:600;cursor:pointer}
+.ghostbtn{background:var(--surface);color:var(--accent);border:1px solid var(--accent);border-radius:7px;padding:9px 14px;font-weight:600;cursor:pointer}
 .ghostbtn.big{width:100%;margin-top:10px;padding:11px}
-.primarybtn:focus-visible,.ghostbtn:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
-/* phones: the icon and name are a purple header above a white sheet holding the form */
+.primarybtn:focus-visible,.ghostbtn:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+/* phones: the icon and name are a header in the sidebar colour above a sheet holding the form */
 @media (max-width:800px){
   body{background:var(--side)}
   .fr{flex-direction:column}
   .brandpane{width:auto;gap:14px;padding:calc(env(safe-area-inset-top) + 40px) 16px 52px}
-  .appicon{width:72px;height:72px;border-radius:22px;box-shadow:0 12px 30px rgba(0,0,0,.35)}
+  .appicon{width:72px;height:72px;border-radius:22px;box-shadow:0 12px 30px rgba(var(--shadow-rgb),.35)}
   .bname .zh{font-size:1.9rem}
   .bname .en{font-size:.85rem;margin-top:3px}
   .formpane{display:block;flex:1;margin-top:-30px;border-radius:22px 22px 0 0;padding:26px 22px calc(26px + env(safe-area-inset-bottom))}
