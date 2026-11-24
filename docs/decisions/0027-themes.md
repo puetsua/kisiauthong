@@ -59,10 +59,16 @@ two colours.
 - **Theme JSON** holds the full token set with `format` and `version`; a pasted
   theme fills missing keys from its `basedOn` theme, ignores unknown keys with a
   notice, and accepts hex colours only.
-- **Sync is opt-in.** Turned on, the selected theme and the custom themes are
-  stored in the settings object (`general.theme {selected}` and `themes[]`, with
-  validation limits) and merged by id, the newer `updatedAt` winning; the mode
-  stays per device; turning sync off keeps the copies on the server.
+- **Sync is opt-in, with two separate choices.** Both are stored in the
+  settings object (`general.theme {selected}` and `themes[]`, with validation
+  limits); the mode stays per device either way.
+  - *Sync custom themes*: the custom themes go to the server and are merged by
+    id, the newer `updatedAt` winning. Turning it off keeps the copies already
+    on the server.
+  - *Sync the selected theme*: its own toggle, chosen independently. When it is
+    on, the selected theme is stored as `general.theme.selected`, and a custom
+    theme that is selected is uploaded to `themes[]` as well, even while custom
+    themes are not synced, so every other device can resolve it.
 
 ## Consequences
 
