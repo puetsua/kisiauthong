@@ -1,25 +1,664 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 kisiauthong contributors
 #
-# The HTTP API contract (AGENTS.md §2, §5). It starts with the settings
-# endpoint, which carries the synced themes (ADR 0027); the other endpoints
-# are still described in README.md and the server code, and move here as they
-# change.
+# The HTTP API contract (AGENTS.md §2, §5): every route server/main.go
+# registers (newMux), with the methods its handlers answer. TestOpenAPICoversRoutes
+# (server/openapi_test.go) checks this file against the real route table, and CI
+# lints it with Spectral (.spectral.yaml). Change it together with the handler.
 openapi: 3.1.0
 info:
   title: kisiauthong API
   version: "1"
+  description: >-
+    The REST/JSON API of a kisiauthong server. A browser signs in and holds
+    the kst_session cookie; scripts send an API key as a Bearer token (ADR
+    0008), limited to the scopes it was given (each operation's
+    x-api-key-scope). Account management (sign-in methods, API keys,
+    users) takes the session only, never a key. With the session cookie, a
+    POST, PUT or DELETE whose Origin header names another host is refused
+    with 403. Every error is JSON {"error": "…"} in English. A method a path
+    does not serve answers 405, or 404 {"error": "not found"} on paths with
+    an id. Amounts are integer minor units of their currency, dates the
+    user's local YYYY-MM-DD.
+  contact:
+    name: kisiauthong
+    url: https://github.com/puetsua/kisiauthong
   license:
     name: AGPL-3.0-or-later
     identifier: AGPL-3.0-or-later
 servers:
   - url: /
+    description: The server itself (under its base path when KISIAUTHONG_BASE_PATH is set).
+tags:
+  - { name: health, description: For Docker and orchestrators. }
+  - { name: auth, description: "Signing in and out (ADR 0007)." }
+  - { name: me, description: "The signed-in user's own account: profile, password, two-step verification, passkeys, photo and API keys." }
+  - { name: admin, description: Administrators manage users and see the server. }
+  - { name: settings, description: The signed-in user's settings. }
+  - { name: books, description: "The whole book: state, export and live change events." }
+  - { name: accounts, description: "Own and external accounts (ADR 0002, 0005)." }
+  - { name: tags, description: "Categories and budgets (ADR 0004), and merging them (ADR 0017)." }
+  - { name: reserves, description: "Reserves and their allocations (ADR 0013)." }
+  - { name: transactions, description: "Money movements (ADR 0013, 0014)." }
+  - { name: templates, description: Transaction templates and generating what is due. }
+  - { name: mcp, description: "The Model Context Protocol endpoint for AI agents (ADR 0008)." }
 paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: Health check
+      description: Always at the root, also under a base path. It answers any method the same way.
+      security: []
+      responses:
+        "200":
+          description: The server is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties: { status: { type: string, const: ok } }
+
+  /api/auth/status:
+    get:
+      tags: [auth]
+      operationId: getAuthStatus
+      summary: Whether setup is needed, and who is signed in
+      description: Public. It answers any method the same way.
+      security: []
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [needsSetup, user]
+                properties:
+                  needsSetup: { type: boolean, description: "True until the first user exists." }
+                  user:
+                    description: The user of the session cookie, null when nobody is signed in.
+                    oneOf: [{ $ref: "#/components/schemas/User" }, { type: "null" }]
+        "500": { $ref: "#/components/responses/Error" }
+  /api/auth/setup:
+    post:
+      tags: [auth]
+      operationId: setUp
+      summary: Create the first user
+      description: >-
+        Only while no user can sign in. Creates the first user, an
+        administrator (on a database from before users existed it claims the
+        owner and their books), and signs them in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewCredentials" }
+      responses:
+        "201":
+          description: The new user, signed in.
+          headers: { Set-Cookie: { $ref: "#/components/headers/SessionCookie" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: logIn
+      summary: Sign in with a username and password
+      description: >-
+        When the user has two-step verification on, the answer is a ticket
+        for POST /api/auth/totp instead of a session. Ten failures from one
+        address within 15 minutes answer 429.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Signed in (the user), or the password passed and a code is needed.
+          headers: { Set-Cookie: { $ref: "#/components/headers/SessionCookie" } }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/User" }
+                  - { $ref: "#/components/schemas/TOTPRequired" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/auth/totp:
+    post:
+      tags: [auth]
+      operationId: logInWithCode
+      summary: Finish signing in with a two-step code or a recovery code
+      description: "The second step after POST /api/auth/login answered totpRequired. A wrong code or an expired ticket answers 401; a used recovery code is gone."
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket, code]
+              properties:
+                ticket: { type: string, description: "From POST /api/auth/login; valid 5 minutes and 5 tries." }
+                code: { type: string, description: "A 6-digit code, or an unused recovery code." }
+      responses:
+        "200":
+          description: Signed in.
+          headers: { Set-Cookie: { $ref: "#/components/headers/SessionCookie" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/auth/passkey:
+    post:
+      tags: [auth]
+      operationId: logInWithPasskey
+      summary: Sign in with a passkey
+      description: >-
+        Without token: begins, answering the WebAuthn request options and a
+        token. With token: finishes, with the browser's assertion
+        (PublicKeyCredential JSON) as the body. Passkeys need a host name,
+        not an IP address.
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: false
+          description: The token the begin step gave.
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebAuthnCredential" }
+      responses:
+        "200":
+          description: Begun (token and options) or signed in (the user).
+          headers: { Set-Cookie: { $ref: "#/components/headers/SessionCookie" } }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/WebAuthnCeremony" }
+                  - { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logOut
+      summary: Sign out this session
+      description: Ends the session of the cookie, if any, and clears the cookie.
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/me:
+    get:
+      tags: [me]
+      operationId: getMe
+      summary: The signed-in user
+      description: "The profile of the session's user. Session only."
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [me]
+      operationId: updateMe
+      summary: Change the display name
+      description: 'Only displayName can change here; "" shows the username.'
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string, maxLength: 60, description: '"" shows the username.' }
+      responses:
+        "200":
+          description: The user after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/password:
+    post:
+      tags: [me]
+      operationId: changePassword
+      summary: Change the password
+      description: The user's other sessions are signed out. A wrong current password answers 403.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current, new]
+              properties:
+                current: { type: string, format: password }
+                new: { type: string, format: password, minLength: 8, maxLength: 200 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/totp/setup:
+    post:
+      tags: [me]
+      operationId: setUpTOTP
+      summary: Start turning on two-step verification
+      description: Makes a new secret; POST /api/me/totp/enable with a code from it turns it on.
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The secret, as text, as an otpauth URI and as a QR code.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secret, uri, qr]
+                properties:
+                  secret: { type: string, description: Base32. }
+                  uri: { type: string, description: "otpauth://totp/…" }
+                  qr: { type: string, description: "A data:image/png;base64 URL." }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/totp/enable:
+    post:
+      tags: [me]
+      operationId: enableTOTP
+      summary: Turn on two-step verification
+      description: "With a current code from the secret POST /api/me/totp/setup made. 409 when setup was not started."
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeBody" }
+      responses:
+        "200":
+          description: On; the recovery codes are shown this once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recoveryCodes]
+                properties:
+                  recoveryCodes: { type: array, items: { type: string }, minItems: 10, maxItems: 10 }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/totp/disable:
+    post:
+      tags: [me]
+      operationId: disableTOTP
+      summary: Turn off two-step verification
+      description: Needs a current code or a recovery code; a wrong one answers 403.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CodeBody" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/passkeys:
+    get:
+      tags: [me]
+      operationId: listPasskeys
+      summary: The user's passkeys
+      description: "Names and dates only; credentials never leave the server."
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: Oldest first.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Passkey" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [me]
+      operationId: beginPasskey
+      summary: Begin adding a passkey
+      description: Answers WebAuthn creation options; POST /api/me/passkeys/finish completes it.
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The token and the options for navigator.credentials.create.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebAuthnCeremony" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/passkeys/finish:
+    post:
+      tags: [me]
+      operationId: finishPasskey
+      summary: Finish adding a passkey
+      description: "With the browser's new credential as the body; the token must come from this user's begin step."
+      security: [{ session: [] }]
+      parameters:
+        - { name: token, in: query, required: true, description: From POST /api/me/passkeys., schema: { type: string } }
+        - name: name
+          in: query
+          required: false
+          description: 'Up to 60 characters; "Passkey" when empty or longer.'
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebAuthnCredential" }
+      responses:
+        "201":
+          description: The passkey.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Passkey" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/passkeys/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    delete:
+      tags: [me]
+      operationId: deletePasskey
+      summary: Remove a passkey
+      description: "404 when the user has no such passkey."
+      security: [{ session: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/avatar:
+    put:
+      tags: [me]
+      operationId: updateAvatar
+      summary: Set the photo and / or the colour
+      description: "image replaces the photo, color the colour shown without one; either may be left out."
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                image: { type: string, description: "A data: URL of a PNG or JPEG, 16 to 512 pixels a side, at most 512 KB." }
+                color: { type: string, pattern: "^(#[0-9a-fA-F]{6})?$", description: '"" for the default colour.' }
+      responses:
+        "200":
+          description: The user after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [me]
+      operationId: deleteAvatar
+      summary: Remove the photo
+      description: "The colour stays."
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The user after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/keys:
+    get:
+      tags: [me]
+      operationId: listAPIKeys
+      summary: The user's API keys
+      description: "Names, hints, scopes and dates; never the secrets."
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: Newest first. The secrets are never shown again.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/APIKey" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [me]
+      operationId: createAPIKey
+      summary: Create an API key
+      description: At most 50 keys per user (409). expiresOn wins over expiresInDays.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scopes]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 60 }
+                scopes: { type: array, minItems: 1, items: { $ref: "#/components/schemas/Scope" } }
+                expiresInDays: { type: integer, minimum: 0, maximum: 3650, description: 0 never expires. }
+                expiresOn: { type: string, format: date, description: "The last day it works, within 10 years." }
+                tz: { type: string, description: "The IANA zone of expiresOn; UTC when empty." }
+      responses:
+        "201":
+          description: The key; its secret is shown this once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, apiKey]
+                properties:
+                  key: { type: string, description: "The secret, kst_…" }
+                  apiKey: { $ref: "#/components/schemas/APIKey" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/me/keys/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    delete:
+      tags: [me]
+      operationId: deleteAPIKey
+      summary: Revoke an API key
+      description: "Requests with it are refused from then on, open event streams included."
+      security: [{ session: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/admin/server:
+    get:
+      tags: [admin]
+      operationId: getServerInfo
+      summary: The server and its database
+      description: Administrators only.
+      security: [{ session: [] }]
+      x-admin-only: true
+      responses:
+        "200":
+          description: The server.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerInfo" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/users:
+    get:
+      tags: [admin]
+      operationId: listUsers
+      summary: Every user
+      description: Administrators only.
+      security: [{ session: [] }]
+      x-admin-only: true
+      responses:
+        "200":
+          description: Oldest first.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/User" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      operationId: createUser
+      summary: Add a user with empty books
+      description: Administrators only. 409 when the username is taken.
+      security: [{ session: [] }]
+      x-admin-only: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/NewCredentials" }
+                - type: object
+                  properties:
+                    isAdmin: { type: boolean, default: false }
+      responses:
+        "201":
+          description: The new user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/users/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      tags: [admin]
+      operationId: updateUser
+      summary: Change a user
+      description: >-
+        Administrators only. A new password signs the user out everywhere
+        (unless it is the administrator's own). The last administrator cannot
+        lose the role (409).
+      security: [{ session: [] }]
+      x-admin-only: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isAdmin: { type: boolean }
+                password: { type: string, format: password, minLength: 8, maxLength: 200 }
+                displayName: { type: string, maxLength: 60 }
+      responses:
+        "200":
+          description: The user after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      operationId: deleteUser
+      summary: Delete a user and all their books
+      description: Administrators only; not themselves (409).
+      security: [{ session: [] }]
+      x-admin-only: true
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/users/{id}/avatar:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [me]
+      operationId: getAvatar
+      summary: A user's photo
+      description: >-
+        Any signed-in user, or any API key. Cached privately for a day; the
+        URL a client builds carries User.avatarVersion.
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: The photo.
+          content:
+            image/png: { schema: { type: string, contentEncoding: binary } }
+            image/jpeg: { schema: { type: string, contentEncoding: binary } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/settings:
     get:
+      tags: [settings]
+      operationId: getSettings
       summary: The signed-in user's settings
       description: Every user has their own; a user never sees another's.
       security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: read
       responses:
         "200":
           description: The settings, with defaults for anything never saved.
@@ -27,7 +666,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Settings" }
         "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
     put:
+      tags: [settings]
+      operationId: updateSettings
       summary: Change some settings
       description: >-
         Send any of dashboard, general, notifications and themes. Sections left
@@ -35,6 +678,7 @@ paths:
         value; themes replaces the whole list (devices merge by id first, the
         newer updatedAt winning, ADR 0027). Answers with all the settings.
       security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "settings:write"
       requestBody:
         required: true
         content:
@@ -58,10 +702,638 @@ paths:
               schema: { $ref: "#/components/schemas/Settings" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/state:
+    get:
+      tags: [books]
+      operationId: getState
+      summary: Everything the web client shows, as of today
+      description: >-
+        Balances, budgets and reserves derived as of the user's today (ADR
+        0014). The handler answers any method the same way (issue #105).
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: read
+      responses:
+        "200":
+          description: The state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/State" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/export:
+    get:
+      tags: [books]
+      operationId: exportBooks
+      summary: The whole book as a JSON file
+      description: The plain JSON seed/import/export format, offered as a download.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: read
+      responses:
+        "200":
+          description: The book.
+          headers:
+            Content-Disposition:
+              description: 'attachment; filename="kisiauthong-export-YYYY-MM-DD.json"'
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookData" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/events:
+    get:
+      tags: [books]
+      operationId: streamEvents
+      summary: Live change events (Server-Sent Events)
+      description: >-
+        A stream for the signed-in user (ADR 0023): first "ready" with the
+        current revision, then "change" after any write to the books, and a
+        comment line every 25 seconds, when the sign-in is checked again.
+        Events carry only {"rev": "…"}, never book data. At most 16 open
+        streams per user (429).
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: read
+      responses:
+        "200":
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+              example: "retry: 3000\nevent: ready\ndata: {\"rev\":\"m1x2y3-0\"}\n\n"
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/accounts:
+    post:
+      tags: [accounts]
+      operationId: createAccount
+      summary: Add an account
+      description: "An own account needs a currency; an external one has none (ADR 0002)."
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "accounts:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Account" }
+      responses:
+        "201":
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/accounts/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      tags: [accounts]
+      operationId: updateAccount
+      summary: Replace an account
+      description: >-
+        acc-external stays external. An account with transactions or
+        allocations cannot switch between own and external (400).
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "accounts:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Account" }
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/tags:
+    post:
+      tags: [tags]
+      operationId: createTag
+      summary: Add a category or budget
+      description: "A limit with a currency makes it a budget (ADR 0004)."
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "tags:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Tag" }
+      responses:
+        "201":
+          description: The tag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tag" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/tags/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      tags: [tags]
+      operationId: updateTag
+      summary: Replace a tag
+      description: "Send the whole tag; a tag without limitMinor has no budget."
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "tags:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Tag" }
+      responses:
+        "200":
+          description: The tag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tag" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/tags/{id}/merge:
+    parameters: [{ name: id, in: path, required: true, description: The tag kept., schema: { type: string } }]
+    post:
+      tags: [tags]
+      operationId: mergeTags
+      summary: Merge tags into this one
+      description: >-
+        Their transactions, templates and dashboard widgets move to the tag
+        kept and they are deleted (ADR 0017). dryRun only previews. 409 when
+        budgetFrom has to pick a budget.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "tags:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MergeRequest" }
+      responses:
+        "200":
+          description: What the merge does (dryRun) or did.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MergePreview" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/tag-merges/{id}/undo:
+    parameters: [{ name: id, in: path, required: true, description: "A merge's mergeId.", schema: { type: string } }]
+    post:
+      tags: [tags]
+      operationId: undoTagMerge
+      summary: Undo a tag merge
+      description: 409 when it was undone already or what it changed has changed since.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "tags:write"
+      responses:
+        "200":
+          description: Undone.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [undone, tagIds]
+                properties:
+                  undone: { type: string, description: The merge id. }
+                  tagIds: { type: array, items: { type: string }, description: "The kept tag, then the restored ones." }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/reserves:
+    post:
+      tags: [reserves]
+      operationId: createReserve
+      summary: Add a reserve
+      description: "It holds nothing until allocations put money in (ADR 0013)."
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "reserves:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reserve" }
+      responses:
+        "201":
+          description: The reserve.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reserve" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/reserves/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      tags: [reserves]
+      operationId: updateReserve
+      summary: Replace a reserve
+      description: "Send the whole reserve; allocations stay."
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "reserves:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reserve" }
+      responses:
+        "200":
+          description: The reserve.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reserve" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [reserves]
+      operationId: deleteReserve
+      summary: Delete a reserve with its allocations and allocation templates
+      description: "Its allocations and allocation templates are deleted with it."
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "reserves:write"
+      responses:
+        "200": { $ref: "#/components/responses/Deleted" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/reserves/{id}/allocations:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [reserves]
+      operationId: addAllocation
+      summary: Put money in or take it out
+      description: >-
+        reserveId comes from the path. date defaults to today. A take-out
+        cannot leave the (reserve, account) pair below zero (400).
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "reserves:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Allocation" }
+      responses:
+        "201":
+          description: The allocation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Allocation" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/reserves/{id}/complete:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [reserves]
+      operationId: completeReserve
+      summary: Take out everything the reserve holds
+      description: One take-out per account, all or nothing; 400 when it holds nothing.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "reserves:write"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date: { type: string, format: date, description: Today when left out. }
+                note: { type: string }
+      responses:
+        "201":
+          description: The take-outs.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Allocation" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/allocations/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      tags: [reserves]
+      operationId: updateAllocation
+      summary: Fix an allocation
+      description: "reserveId defaults to the allocation's own; the generator identity is kept."
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "reserves:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Allocation" }
+      responses:
+        "200":
+          description: The allocation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Allocation" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [reserves]
+      operationId: deleteAllocation
+      summary: Delete an allocation
+      description: 400 when a later take-out depends on it.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "reserves:write"
+      responses:
+        "200": { $ref: "#/components/responses/Deleted" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/transactions:
+    post:
+      tags: [transactions]
+      operationId: createTransaction
+      summary: Record a transaction
+      description: >-
+        Stored as a transfer; expense and income are shorthands with
+        accountId (ADR 0002, 0013). date defaults to today; a posted
+        transaction dated after today is served as scheduled (ADR 0014).
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "transactions:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Transaction" }
+      responses:
+        "201":
+          description: The transaction as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/transactions/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      tags: [transactions]
+      operationId: updateTransaction
+      summary: Replace a transaction
+      description: type and date are required. The template identity is kept unless sent.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "transactions:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Transaction" }
+      responses:
+        "200":
+          description: The transaction as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [transactions]
+      operationId: deleteTransaction
+      summary: Delete a transaction
+      description: "404 when there is no such transaction."
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "transactions:write"
+      responses:
+        "200": { $ref: "#/components/responses/Deleted" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/transactions/{id}/post:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [transactions]
+      operationId: postTransaction
+      summary: Confirm a planned or scheduled transaction
+      description: Optionally with the actual amount; a scheduled one is dated today.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "transactions:write"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amountMinor: { type: integer, format: int64, description: Used when more than zero. }
+      responses:
+        "200":
+          description: The posted transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/templates:
+    post:
+      tags: [templates]
+      operationId: createTemplate
+      summary: Add a transaction template
+      description: It starts enabled. name and a positive template amount are required.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "templates:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionTemplate" }
+      responses:
+        "201":
+          description: The template.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionTemplate" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/templates/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      tags: [templates]
+      operationId: updateTemplate
+      summary: Replace a template
+      description: Changes future occurrences only.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "templates:write"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionTemplate" }
+      responses:
+        "200":
+          description: The template.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionTemplate" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/templates/{id}/toggle:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [templates]
+      operationId: toggleTemplate
+      summary: Pause or resume a template
+      description: "A paused template generates nothing."
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "templates:write"
+      responses:
+        "200":
+          description: The template with enabled flipped.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionTemplate" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/generate:
+    post:
+      tags: [templates]
+      operationId: generateDue
+      summary: Generate what templates have due
+      description: >-
+        Up to date (today when left out): planned transactions and
+        allocations, each occurrence at most once.
+      security: [{ session: [] }, { apiKey: [] }]
+      x-api-key-scope: "templates:write"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date: { type: string, format: date }
+      responses:
+        "200":
+          description: How many records were made.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created]
+                properties: { created: { type: integer } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /mcp:
+    post:
+      tags: [mcp]
+      operationId: mcp
+      summary: Model Context Protocol (Streamable HTTP)
+      description: >-
+        One JSON-RPC 2.0 message per POST, answered with one JSON response;
+        no event stream is opened. API keys only, never the session cookie.
+        The tools (tools/list) depend on the key's scopes. Protocol errors
+        are JSON-RPC errors with status 200. A notification (no id) answers
+        202 with no body.
+      security: [{ apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jsonrpc, method]
+              properties:
+                jsonrpc: { type: string, const: "2.0" }
+                id: { type: [string, integer, "null"] }
+                method: { type: string, examples: [initialize, tools/list, tools/call, ping] }
+                params: { type: object }
+      responses:
+        "200":
+          description: The JSON-RPC response.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jsonrpc, id]
+                properties:
+                  jsonrpc: { type: string, const: "2.0" }
+                  id: { type: [string, integer, "null"] }
+                  result: { type: object }
+                  error:
+                    type: object
+                    required: [code, message]
+                    properties: { code: { type: integer }, message: { type: string } }
+        "202": { description: A notification was received. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     session: { type: apiKey, in: cookie, name: kst_session }
-    apiKey: { type: http, scheme: bearer }
+    apiKey:
+      type: http
+      scheme: bearer
+      description: >-
+        An API key, "Authorization: Bearer kst_…". x-api-key-scope on an
+        operation names the scope the key needs; without it any key will do.
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      description: "The record's id."
+      schema: { type: string }
+  headers:
+    SessionCookie:
+      description: "kst_session, HttpOnly, SameSite=Lax, 30 days; Secure over HTTPS."
+      schema: { type: string }
   responses:
     Error:
       description: What went wrong, in English.
@@ -71,7 +1343,366 @@ components:
             type: object
             required: [error]
             properties: { error: { type: string } }
+    Ok:
+      description: Done.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok]
+            properties: { ok: { type: boolean, const: true } }
+    Deleted:
+      description: Deleted.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deleted]
+            properties: { deleted: { type: string, description: The id. } }
   schemas:
+    Scope:
+      type: string
+      enum: [read, "transactions:write", "accounts:write", "tags:write", "reserves:write", "templates:write", "settings:write"]
+    NewCredentials:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{2,31}$" }
+        password: { type: string, format: password, minLength: 8, maxLength: 200 }
+        displayName: { type: string, maxLength: 60 }
+    CodeBody:
+      type: object
+      required: [code]
+      properties: { code: { type: string } }
+    TOTPRequired:
+      type: object
+      required: [totpRequired, ticket]
+      properties:
+        totpRequired: { type: boolean, const: true }
+        ticket: { type: string, description: For POST /api/auth/totp. }
+    WebAuthnCeremony:
+      type: object
+      required: [token, options]
+      properties:
+        token: { type: string, description: Pass back on the finish step; valid for a few minutes. }
+        options: { type: object, description: "The WebAuthn options ({publicKey: …})." }
+    WebAuthnCredential:
+      type: object
+      description: The browser's PublicKeyCredential as JSON.
+    User:
+      type: object
+      required: [id, username, displayName, isAdmin, totpEnabled, hasAvatar, avatarVersion, avatarColor, createdAt]
+      properties:
+        id: { type: string }
+        username: { type: string }
+        displayName: { type: string, description: The username when none is set. }
+        isAdmin: { type: boolean }
+        totpEnabled: { type: boolean }
+        recoveryCodesLeft: { type: integer, description: Only while two-step verification is on and codes are left. }
+        hasAvatar: { type: boolean }
+        avatarVersion: { type: integer }
+        avatarColor: { type: string }
+        createdAt: { type: string, format: date-time }
+    Passkey:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+    APIKey:
+      type: object
+      required: [id, name, hint, scopes, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        hint: { type: string, description: "The first and last characters, kst_AbC…xyz." }
+        scopes: { type: array, items: { $ref: "#/components/schemas/Scope" } }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    ServerInfo:
+      type: object
+      required: [version, startedAt, runtime, database, users, admins, twoStepUsers, passkeys, activeSessions, apiKeys]
+      properties:
+        version: { type: string }
+        startedAt: { type: string, format: date-time }
+        runtime: { type: string, description: "The Go version and platform." }
+        database:
+          type: object
+          required: [path, sizeBytes, schemaVersion]
+          properties:
+            path: { type: string }
+            sizeBytes: { type: integer, format: int64 }
+            schemaVersion: { type: integer }
+        users: { type: integer }
+        admins: { type: integer }
+        twoStepUsers: { type: integer }
+        passkeys: { type: integer }
+        activeSessions: { type: integer }
+        apiKeys: { type: integer, description: Keys that have not expired. }
+    Account:
+      type: object
+      description: >-
+        An own account (with a currency) or an external one (ADR 0002, 0005).
+        An external account has no currency, opening balance or limit.
+      required: [name]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string, minLength: 1 }
+        kind:
+          type: string
+          enum: [own, external]
+          default: own
+          description: The account types from before ADR 0005 are still accepted and become own with that icon.
+        icon: { type: string, pattern: "^[a-z][a-z0-9_]{0,23}$" }
+        currency: { type: string, pattern: "^[A-Z]{3}$", description: Required for an own account. }
+        openingBalanceMinor: { type: integer, format: int64 }
+        limitMinor: { type: integer, format: int64, exclusiveMinimum: 0 }
+        statementCloseDay: { type: integer }
+        paymentDueDay: { type: integer }
+        memo: { type: string, maxLength: 4000 }
+    AccountView:
+      description: An account with what is derived from its transactions and allocations, as of today.
+      allOf:
+        - { $ref: "#/components/schemas/Account" }
+        - type: object
+          required: [id, kind, currency, openingBalanceMinor, balanceMinor, reservedMinor, freeMinor, heldMinor, incomingMinor]
+          properties:
+            balanceMinor: { type: integer, format: int64 }
+            reservedMinor: { type: integer, format: int64 }
+            freeMinor: { type: integer, format: int64, description: "balance − reserved − held." }
+            heldMinor: { type: integer, format: int64, description: Scheduled transactions leaving it. }
+            incomingMinor: { type: integer, format: int64, description: Scheduled transactions coming in. }
+            projectedMinor: { type: integer, format: int64, description: Own accounts only. }
+            nextHeldDate: { type: string, format: date }
+            nextIncomingDate: { type: string, format: date }
+            owedMinor: { type: integer, format: int64, description: "With a limit: max(0, −balance)." }
+            utilisation: { type: number, description: "owed ÷ limit, for display only." }
+    Transaction:
+      type: object
+      description: >-
+        A money movement, stored as a transfer (ADR 0013). type expense or
+        income with accountId is input only. A posted transaction dated after
+        today is served as scheduled (ADR 0014); sent back, scheduled means
+        posted.
+      required: [type]
+      properties:
+        id: { type: string, readOnly: true }
+        type: { type: string, enum: [transfer, expense, income], description: Always transfer once stored. }
+        accountId: { type: string, writeOnly: true, description: "The own account of an expense or income shorthand." }
+        fromAccountId: { type: string }
+        toAccountId: { type: string }
+        tagIds: { type: array, items: { type: string } }
+        state: { type: string, enum: [posted, planned, scheduled], default: posted }
+        amountMinor: { type: integer, format: int64, exclusiveMinimum: 0 }
+        currency: { type: string, readOnly: true, description: "From the user's own account." }
+        date: { type: string, format: date }
+        time: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        tz: { type: string, description: The IANA zone of time; required with time. }
+        at: { type: string, format: date-time, readOnly: true, description: "The UTC instant of date, time and tz." }
+        note: { type: string, maxLength: 200 }
+        memo: { type: string, maxLength: 4000 }
+        createdAt: { type: string, readOnly: true }
+        transactionTemplateId: { type: string }
+        occurrenceDate: { type: string, format: date }
+    TransactionTag:
+      type: object
+      required: [transactionId, tagId]
+      properties:
+        transactionId: { type: string }
+        tagId: { type: string }
+    Tag:
+      type: object
+      description: A category; a budget when it has limitMinor (ADR 0004).
+      required: [name]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string, minLength: 1 }
+        limitMinor: { type: integer, format: int64, exclusiveMinimum: 0 }
+        cycle: { type: string, enum: [daily, weekly, monthly, yearly, range], default: monthly }
+        cycleEvery: { type: integer, minimum: 0, maximum: 99, description: "Units per budget period; 0 means 1." }
+        cycleStart: { type: string, format: date }
+        cycleEnd: { type: string, format: date, description: Range budgets only. }
+        currency: { type: string, pattern: "^[A-Z]{3}$", description: "A budget's currency; required with limitMinor." }
+        memo: { type: string, maxLength: 4000 }
+    TagView:
+      type: object
+      required: [id, name, currency]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        currency: { type: string }
+        memo: { type: string }
+        limitMinor: { type: integer, format: int64 }
+        cycle: { type: string }
+        cycleEvery: { type: integer }
+        cycleStart: { type: string }
+        cycleEnd: { type: string }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        spentMinor: { type: integer, format: int64, description: "Net spending in the current period (ADR 0021)." }
+        remainingMinor: { type: integer, format: int64 }
+    Reserve:
+      type: object
+      required: [name, currency]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        currency: { type: string, pattern: "^[A-Z]{3}$" }
+        targetMinor: { type: integer, format: int64, exclusiveMinimum: 0 }
+        targetDate: { type: string, format: date }
+    ReserveView:
+      type: object
+      required: [id, name, currency, targetDate, savedMinor, split]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        currency: { type: string }
+        targetMinor: { type: integer, format: int64 }
+        targetDate: { type: string }
+        savedMinor: { type: integer, format: int64 }
+        split:
+          type: array
+          description: What it holds in each account (non-zero only).
+          items:
+            type: object
+            required: [accountId, amountMinor, currency]
+            properties:
+              accountId: { type: string }
+              amountMinor: { type: integer, format: int64 }
+              currency: { type: string }
+    Allocation:
+      type: object
+      description: "Money of an own account put into a reserve (+) or taken out (−); it moves no money."
+      required: [accountId, amountMinor]
+      properties:
+        id: { type: string, readOnly: true }
+        reserveId: { type: string }
+        accountId: { type: string }
+        amountMinor: { type: integer, format: int64, not: { const: 0 } }
+        currency: { type: string, readOnly: true, description: "The account's." }
+        date: { type: string, format: date }
+        time: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        tz: { type: string }
+        at: { type: string, format: date-time, readOnly: true }
+        note: { type: string, maxLength: 200 }
+        memo: { type: string, maxLength: 4000 }
+        createdAt: { type: string, readOnly: true }
+        transactionTemplateId: { type: string, readOnly: true }
+        occurrenceDate: { type: string, format: date, readOnly: true }
+    TemplateBody:
+      type: object
+      description: What a template generates; allocate makes allocations into reserveId from accountId.
+      required: [type, amountMinor]
+      properties:
+        type: { type: string, enum: [transfer, expense, income, allocate] }
+        accountId: { type: string }
+        fromAccountId: { type: string }
+        toAccountId: { type: string }
+        reserveId: { type: string }
+        tagIds: { type: array, items: { type: string } }
+        amountMinor: { type: integer, format: int64, exclusiveMinimum: 0 }
+        expectedRangeMinor:
+          type: object
+          required: [min, max]
+          properties:
+            min: { type: integer, format: int64 }
+            max: { type: integer, format: int64 }
+        currency: { type: string, readOnly: true }
+        note: { type: string }
+    Schedule:
+      type: object
+      required: [startDate]
+      properties:
+        frequency: { type: string, enum: [daily, weekly, monthly, quarterly, yearly, never], default: monthly }
+        interval: { type: integer, minimum: 1, default: 1 }
+        dayOfMonth: { type: integer }
+        weekday: { type: integer }
+        startDate: { type: string, format: date, description: Not needed for never. }
+        endDate: { type: string, format: date }
+    TransactionTemplate:
+      type: object
+      required: [name, template, schedule]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string, minLength: 1 }
+        enabled: { type: boolean, readOnly: true, description: "New templates start enabled; POST …/toggle flips it." }
+        template: { $ref: "#/components/schemas/TemplateBody" }
+        schedule: { $ref: "#/components/schemas/Schedule" }
+    TemplateView:
+      allOf:
+        - { $ref: "#/components/schemas/TransactionTemplate" }
+        - type: object
+          required: [id, enabled, nextDue]
+          properties:
+            nextDue: { type: string, description: 'The next occurrence from today, "" when none.' }
+    State:
+      type: object
+      required: [accounts, transactions, tags, reserves, allocations, transactionTags, transactionTemplates, today, spendingThisMonth, rev]
+      properties:
+        accounts: { type: array, items: { $ref: "#/components/schemas/AccountView" } }
+        transactions: { type: array, items: { $ref: "#/components/schemas/Transaction" } }
+        tags: { type: array, items: { $ref: "#/components/schemas/TagView" } }
+        reserves: { type: array, items: { $ref: "#/components/schemas/ReserveView" } }
+        allocations: { type: array, items: { $ref: "#/components/schemas/Allocation" } }
+        transactionTags: { type: array, items: { $ref: "#/components/schemas/TransactionTag" } }
+        transactionTemplates: { type: array, items: { $ref: "#/components/schemas/TemplateView" } }
+        today: { type: string, format: date, description: "The user's today." }
+        spendingThisMonth:
+          type: array
+          items:
+            type: object
+            required: [tagId, currency, amountMinor]
+            properties:
+              tagId: { type: string }
+              currency: { type: string }
+              amountMinor: { type: integer, format: int64 }
+        rev: { type: string, description: "The live revision; compare with /api/events for equality only." }
+    BookData:
+      type: object
+      description: The plain JSON seed/import/export format (examples/sample-data.json).
+      required: [version, accounts, transactions, tags, transactionTags, transactionTemplates, reserves, allocations]
+      properties:
+        version: { type: integer }
+        accounts: { type: array, items: { $ref: "#/components/schemas/Account" } }
+        transactions: { type: array, items: { $ref: "#/components/schemas/Transaction" } }
+        tags: { type: array, items: { $ref: "#/components/schemas/Tag" } }
+        transactionTags: { type: array, items: { $ref: "#/components/schemas/TransactionTag" } }
+        transactionTemplates: { type: array, items: { $ref: "#/components/schemas/TransactionTemplate" } }
+        reserves: { type: array, items: { $ref: "#/components/schemas/Reserve" } }
+        allocations: { type: array, items: { $ref: "#/components/schemas/Allocation" } }
+    MergeRequest:
+      type: object
+      additionalProperties: false
+      required: [sourceIds]
+      properties:
+        sourceIds: { type: array, minItems: 1, items: { type: string }, description: The tags merged away. }
+        name: { type: string, description: Renames the tag kept; left out keeps its name. }
+        budgetFrom: { type: string, description: 'A source id or "none"; needed when two or more sources have budgets and the kept tag has none.' }
+        dryRun: { type: boolean, default: false }
+    MergePreview:
+      type: object
+      required: [tag, sourceIds, transactions, affectedTransactions, duplicateLinks, templates, widgets, droppedNotificationKeys, budget, conflicts]
+      properties:
+        mergeId: { type: string, description: "For POST /api/tag-merges/{id}/undo; absent on a dry run." }
+        tag: { $ref: "#/components/schemas/Tag" }
+        sourceIds: { type: array, items: { type: string } }
+        transactions: { type: integer }
+        affectedTransactions: { type: integer }
+        duplicateLinks: { type: integer }
+        templates: { type: array, items: { type: string } }
+        widgets: { type: array, items: { type: string } }
+        droppedNotificationKeys: { type: integer }
+        budget:
+          type: object
+          required: [outcome]
+          properties:
+            outcome: { type: string, enum: [target, source, none, choose] }
+            from: { type: string }
+            candidates: { type: array, items: { type: string } }
+        conflicts: { type: array, items: { type: string } }
     Settings:
       type: object
       required: [dashboard, general, notifications, themes, about]

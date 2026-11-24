@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Tests on every push and pull request: Go server, web UI checks, and the
-# Docker image actually starting and answering.
+# Tests on every push and pull request: Go server, web UI checks, the OpenAPI
+# spec, and the Docker image actually starting and answering.
 name: CI
 
 on:
@@ -63,6 +63,19 @@ jobs:
         run: node scripts/check-numfmt.js
       - name: App server screen (apps/tauri)
         run: node scripts/test-app.js
+
+  openapi:
+    name: OpenAPI lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+      # Spectral's recommended OpenAPI rules (.spectral.yaml), warnings fail too.
+      # The Go job's TestOpenAPICoversRoutes checks the spec against the routes.
+      - name: Spectral
+        run: npx --yes @stoplight/spectral-cli@6.17.0 lint api/openapi.yaml --fail-severity=warn
 
   release-build:
     name: Release builds compile

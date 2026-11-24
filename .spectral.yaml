@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 kisiauthong contributors
+#
+# Spectral rules for api/openapi.yaml (CI: the "OpenAPI lint" step). The
+# recommended OpenAPI rules, every warning treated as a failure.
+extends: ["spectral:oas"]
