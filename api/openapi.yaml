@@ -4,7 +4,8 @@
 # The HTTP API contract (AGENTS.md §2, §5): every route server/main.go
 # registers (newMux), with the methods its handlers answer. TestOpenAPICoversRoutes
 # (server/openapi_test.go) checks this file against the real route table, and CI
-# lints it with Spectral (.spectral.yaml). Change it together with the handler.
+# lints it with Spectral (in api/: npm ci && npm run lint). Change it together
+# with the handler.
 openapi: 3.1.0
 info:
   title: kisiauthong API
@@ -14,11 +15,11 @@ info:
     the kst_session cookie; scripts send an API key as a Bearer token (ADR
     0008), limited to the scopes it was given (each operation's
     x-api-key-scope). Account management (sign-in methods, API keys,
-    users) takes the session only, never a key. With the session cookie, a
-    POST, PUT or DELETE whose Origin header names another host is refused
-    with 403. Every error is JSON {"error": "…"} in English. A method a path
-    does not serve answers 405, or 404 {"error": "not found"} on paths with
-    an id. Amounts are integer minor units of their currency, dates the
+    users) takes the session only, never a key. With the session cookie, any
+    method but GET whose Origin header names another host is refused with
+    403. Every error is JSON {"error": "…"} in English. A method a path does
+    not serve answers 405 or 404 {"error": "not found"}; on some paths with
+    an id, an unknown id answers its own 404 first. Amounts are integer minor units of their currency, dates the
     user's local YYYY-MM-DD.
   contact:
     name: kisiauthong
@@ -1405,11 +1406,11 @@ components:
         createdAt: { type: string, format: date-time }
     Passkey:
       type: object
-      required: [id, name]
+      required: [id, name, createdAt]
       properties:
         id: { type: string }
         name: { type: string }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: string, description: 'RFC 3339; "" in the answer of POST /api/me/passkeys/finish.' }
         lastUsedAt: { type: string, format: date-time }
     APIKey:
       type: object
@@ -1453,11 +1454,13 @@ components:
         name: { type: string, minLength: 1 }
         kind:
           type: string
-          enum: [own, external]
           default: own
-          description: The account types from before ADR 0005 are still accepted and become own with that icon.
-        icon: { type: string, pattern: "^[a-z][a-z0-9_]{0,23}$" }
-        currency: { type: string, pattern: "^[A-Z]{3}$", description: Required for an own account. }
+          description: >-
+            own or external; always one of them in answers. The account types
+            from before ADR 0005 (bank, savings, cash, credit_card, ewallet,
+            investment, loan) are still accepted and become own with that icon.
+        icon: { type: string, pattern: "^([a-z][a-z0-9_]{0,23})?$" }
+        currency: { type: string, pattern: "^([A-Z]{3})?$", description: 'Required for an own account; "" on an external one.' }
         openingBalanceMinor: { type: integer, format: int64 }
         limitMinor: { type: integer, format: int64, exclusiveMinimum: 0 }
         statementCloseDay: { type: integer }
@@ -1614,13 +1617,13 @@ components:
         note: { type: string }
     Schedule:
       type: object
-      required: [startDate]
+      description: startDate is required unless frequency is never.
       properties:
         frequency: { type: string, enum: [daily, weekly, monthly, quarterly, yearly, never], default: monthly }
         interval: { type: integer, minimum: 1, default: 1 }
         dayOfMonth: { type: integer }
         weekday: { type: integer }
-        startDate: { type: string, format: date, description: Not needed for never. }
+        startDate: { type: string, format: date }
         endDate: { type: string, format: date }
     TransactionTemplate:
       type: object

@@ -67,15 +67,22 @@ jobs:
   openapi:
     name: OpenAPI lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
-      # Spectral's recommended OpenAPI rules (.spectral.yaml), warnings fail too.
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - name: Spectral (locked in api/package-lock.json)
+        run: npm ci --ignore-scripts
+      # Spectral's recommended OpenAPI rules (api/.spectral.yaml), warnings fail too.
       # The Go job's TestOpenAPICoversRoutes checks the spec against the routes.
-      - name: Spectral
-        run: npx --yes @stoplight/spectral-cli@6.17.0 lint api/openapi.yaml --fail-severity=warn
+      - name: Lint api/openapi.yaml
+        run: npm run lint
 
   release-build:
     name: Release builds compile

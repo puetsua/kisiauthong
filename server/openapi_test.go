@@ -26,6 +26,11 @@ import (
 // from newMux in main.go, read with go/parser, and every spec path is routed
 // through the real mux; methods, auth and status codes are checked by sending
 // requests to it, since the handlers pick methods and sub-paths themselves.
+//
+// Limits: a status code is checked only when a probe (empty body, each kind of
+// credentials, ids that exist) gets it, and a new action under a subtree pattern
+// (say /api/templates/{id}/duplicate) is not found unless the spec lists it;
+// such actions belong in the spec in the same change as the handler.
 
 // anyMethod lists the paths whose handlers answer every method alike; the spec
 // documents GET for them (it says so in their descriptions). /api/state is a
@@ -162,6 +167,7 @@ func registeredPatterns(t *testing.T) []string {
 type probeEnv struct {
 	mux      *http.ServeMux
 	alice    *Book
+	bob      string            // bob's user id
 	ids      map[string]string // path prefix before {id} → an id that exists
 	admin    string            // session tokens
 	nonAdmin string
@@ -179,7 +185,7 @@ func newProbeEnv(t *testing.T) *probeEnv {
 	if _, err := s.db.Exec(`UPDATE users SET is_admin=1 WHERE id=?`, alice.uid); err != nil {
 		t.Fatal(err)
 	}
-	e := &probeEnv{mux: newMux(""), alice: alice}
+	e := &probeEnv{mux: newMux(""), alice: alice, bob: bob.uid}
 	e.admin, e.nonAdmin = e.session(t, alice.uid), e.session(t, bob.uid)
 	victim := "key-victim"
 	e.insertKey(t, victim, alice.uid, []string{ScopeRead})
@@ -363,13 +369,18 @@ func TestOpenAPICoversRoutes(t *testing.T) {
 				if o.scope != "" {
 					check("key without "+o.scope, send("", e.key(t, others(o.scope)...)), 403)
 					notAuthErr("key with "+o.scope, send("", e.key(t, o.scope)))
-				} else {
-					notAuthErr("key", send("", e.key(t, ScopeTransactions)))
+				} else { // any key will do: each scope alone
+					for _, sc := range allScopes {
+						notAuthErr("key with only "+sc, send("", e.key(t, sc)))
+					}
 				}
 			} else {
 				check("key", send("", e.key(t, allScopes...)), 401)
 			}
 			if o.session {
+				if !o.adminOnly { // not an administrator's: bob may use it too (alice's ids are not found for him)
+					notAuthErr("session, not an administrator", send(e.session(t, e.bob), ""))
+				}
 				notAuthErr("session", send(e.session(t, e.alice.uid), ""))
 			}
 		}

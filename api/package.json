@@ -1,0 +1,12 @@
+{
+  "name": "kisiauthong-api-lint",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "description": "Lints openapi.yaml with Spectral (.spectral.yaml); the lockfile pins the linter's dependencies",
+  "scripts": {
+    "lint": "spectral lint openapi.yaml --fail-severity=warn"
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "6.17.0"
+  }
+}
