@@ -165,7 +165,8 @@ cd server; go run ./cmd/server        # reads env, see .env.example
 npm install                            # from repo root (workspaces)
 npm run dev --workspace=web
 # desktop and mobile apps (Tauri 2, ADR 0019)
-cd apps/tauri; npm ci; npx tauri dev   # requires Rust; iOS/Android: see apps/tauri/README.md
+cd apps/tauri; npm ci                  # requires Rust; iOS/Android: see apps/tauri/README.md
+npx tauri build --debug --no-bundle --config src-tauri/tauri.dev.conf.json   # the dev build, not `npx tauri dev` (#115)
 node scripts/test-app.js               # the app's server screen rules
 # everything via Docker (server + web + Postgres)
 docker compose -f deploy/docker-compose.yml up --build
@@ -179,7 +180,7 @@ docker compose -f deploy/docker-compose.yml up --build
 - **Testing** (tests ship with the change, in the same commit):
   - `packages/core`: unit tests for money math, budget progress, recurring-date generation — boundary cases (month-end, leap year, zero/negative) required.
   - Server: handler tests incl. auth-scoping (user A cannot read user B's data), migration-up test, sync idempotency test.
-  - Clients: at least a smoke test that the app renders and can create a transaction offline; sync tests against a local server where the platform allows. The online-only Tauri apps (ADR 0019): `node scripts/test-app.js`, `cargo test` in `apps/tauri/src-tauri`, and a build of each platform you touched.
+  - Clients: at least a smoke test that the app renders and can create a transaction offline; sync tests against a local server where the platform allows. The online-only Tauri apps (ADR 0019): `node scripts/test-app.js`, `cargo test` in `apps/tauri/src-tauri`, and a build of each platform you touched. Run and install test builds on a developer's machine only as the **dev build** (`--config src-tauri/tauri.dev.conf.json`, its own identity and app data); a release-identity installer replaces the developer's installed app (#114).
   - Run the tests for every package you touched before declaring done; if a configured gate (lint/typecheck) exists, run that exact gate.
 - **API changes**: edit `api/openapi.yaml`, regenerate clients, update server handler + clients + tests together. A breaking API change needs a new version path or an ADR.
 - **Docs**: user-visible behaviour changes update `README.md`; architectural changes add an ADR in `docs/decisions/`.

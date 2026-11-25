@@ -17,6 +17,8 @@
   const S = window.KstStrings[window.KstConnect.pickLang(navigator.languages || [navigator.language])];
   document.documentElement.lang = S === window.KstStrings["zh-TW"] ? "zh-Hant-TW" : "en";
   if (/Mac/.test(navigator.platform)) document.documentElement.classList.add("mac");
+  // the dev build (issue #114): the shell sets this flag before the page loads
+  if (window.kstDevBuild === true) document.querySelector(".name").append(" Dev");
 
   const max = document.getElementById("max");
   const named = (el, text) => { el.setAttribute("aria-label", text); el.title = text; };
