@@ -117,6 +117,26 @@ fn is_local(url: &Url) -> bool {
     return url.scheme() == "tauri" && url.host_str() == Some("localhost") && url.port().is_none();
 }
 
+/// Which app this is: the identifier (the dev build's comes from
+/// tauri.dev.conf.json, issue #114). On Android, the package Android installed,
+/// which the app data folder is named after: a debug build is the dev build,
+/// `<identifier>.dev` (build.gradle.kts), while its config keeps the release
+/// identifier, which names its Kotlin and JNI classes.
+#[cfg_attr(target_os = "ios", allow(dead_code))]
+fn identity(app: &AppHandle) -> String {
+    #[cfg(target_os = "android")]
+    if let Some(p) = app.path().app_data_dir().ok().as_deref().and_then(package_of) {
+        return p;
+    }
+    app.config().identifier.clone()
+}
+
+/// The package an Android app data folder belongs to: /data/user/0/<package>.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn package_of(dir: &std::path::Path) -> Option<String> {
+    dir.file_name()?.to_str().filter(|n| n.contains('.')).map(String::from)
+}
+
 fn screen_url(params: &[(&str, &str)]) -> Url {
     #[cfg(any(windows, target_os = "android"))]
     const BASE: &str = "http://tauri.localhost/index.html";
@@ -361,7 +381,7 @@ fn update_settings(webview: Webview, shell: State<'_, Shell>, check_at_launch: b
 /// Settings → About and the App updates screen; a failure is forgotten.
 fn check_at_launch(app: &AppHandle) {
     let shell = app.state::<Shell>();
-    if !updates::SUPPORTED || !shell.settings.lock().unwrap().check_updates_at_launch {
+    if !updates::available(app) || !shell.settings.lock().unwrap().check_updates_at_launch {
         return;
     }
     let app = app.clone();
@@ -544,7 +564,7 @@ fn app_info(app: AppHandle, webview: Webview, shell: State<'_, Shell>) -> Result
     Ok(AppInfo {
         version: app.package_info().version.to_string(),
         platform: std::env::consts::OS,
-        updates: updates::SUPPORTED,
+        updates: updates::available(&app),
         available: shell.update.lock().unwrap().as_ref().map(|p| updates::found(p).version),
     })
 }
@@ -740,19 +760,26 @@ mod android {
 
     /// The release list and where downloads must come from. A debug build may
     /// read both from update-source.txt in the app data folder (two lines), to
-    /// test against a local server; release builds always use GitHub.
-    fn source(app: &AppHandle) -> (String, String) {
+    /// test against a local server; release builds always use GitHub. None for
+    /// a build that is not the release app (update::source).
+    fn source(app: &AppHandle) -> Option<(String, String)> {
+        #[allow(unused_mut)]
+        let mut test = None;
         #[cfg(debug_assertions)]
         if let Ok(dir) = app.path().app_data_dir() {
             if let Ok(s) = std::fs::read_to_string(dir.join("update-source.txt")) {
                 let mut l = s.lines().map(str::trim).filter(|l| !l.is_empty());
                 if let (Some(api), Some(dl)) = (l.next(), l.next()) {
-                    return (api.into(), dl.into());
+                    test = Some((api.into(), dl.into()));
                 }
             }
         }
-        let _ = app;
-        (update::RELEASES_API.into(), update::DOWNLOADS.into())
+        update::source(&super::identity(app), test, (update::RELEASES_API.into(), update::DOWNLOADS.into()))
+    }
+
+    /// Whether this build may look for updates at all (see source).
+    pub fn available(app: &AppHandle) -> bool {
+        SUPPORTED && source(app).is_some()
     }
 
     fn call<T: serde::de::DeserializeOwned + Send + 'static>(
@@ -775,7 +802,7 @@ mod android {
             status: u16,
             body: String,
         }
-        let (api, downloads) = source(app);
+        let (api, downloads) = source(app).ok_or("unsupported")?;
         let f: Fetched = call(&app.state::<UpdateHandle>().0, "fetch", serde_json::json!({ "url": api }))
             .await
             .map_err(|e| if e.starts_with("badAnswer: ") { e } else { format!("unreachable: {e}") })?;
@@ -856,21 +883,26 @@ mod desktop {
 
     /// The release's update manifest. A debug build may read another one from
     /// update-source.txt in the app data folder (first line), to test against a
-    /// local server; release builds always use GitHub.
-    fn endpoint(app: &AppHandle) -> String {
+    /// local server; release builds always use GitHub. None for a build that
+    /// is not the release app (update::source), such as the dev build.
+    fn endpoint(app: &AppHandle) -> Option<String> {
+        #[allow(unused_mut)]
+        let mut test = None;
         #[cfg(debug_assertions)]
         {
             use tauri::Manager;
             if let Ok(dir) = app.path().app_data_dir() {
                 if let Ok(s) = std::fs::read_to_string(dir.join("update-source.txt")) {
-                    if let Some(l) = s.lines().map(str::trim).find(|l| !l.is_empty()) {
-                        return l.into();
-                    }
+                    test = s.lines().map(str::trim).find(|l| !l.is_empty()).map(String::from);
                 }
             }
         }
-        let _ = app;
-        update::DESKTOP_MANIFEST.into()
+        update::source(&super::identity(app), test, update::DESKTOP_MANIFEST.into())
+    }
+
+    /// Whether this build may look for updates at all (see endpoint).
+    pub fn available(app: &AppHandle) -> bool {
+        SUPPORTED && endpoint(app).is_some()
     }
 
     /// The updater's errors as the codes the App updates screen puts into words.
@@ -892,7 +924,7 @@ mod desktop {
     }
 
     pub async fn check(app: &AppHandle, _current: &str) -> Result<Option<Update>, String> {
-        let url = Url::parse(&endpoint(app)).map_err(|e| format!("other: {e}"))?;
+        let url = Url::parse(&endpoint(app).ok_or("unsupported")?).map_err(|e| format!("other: {e}"))?;
         app.updater_builder()
             .endpoints(vec![url])
             .map_err(code)?
@@ -934,6 +966,10 @@ mod updates {
 
     pub fn found(_: &()) -> Found {
         unreachable!("iOS never finds an update")
+    }
+
+    pub fn available(_app: &AppHandle) -> bool {
+        SUPPORTED
     }
 
     pub async fn check(_app: &AppHandle, _current: &str) -> Result<Option<()>, String> {
@@ -1028,7 +1064,8 @@ fn open_window(app: &AppHandle) -> tauri::Result<()> {
 fn open_window(app: &AppHandle) -> tauri::Result<()> {
     use tauri::{LogicalPosition, LogicalSize, WindowEvent};
     let builder = tauri::window::WindowBuilder::new(app, WINDOW)
-        .title("記數通 KiSiauThong")
+        // "記數通 KiSiauThong", or "記數通 KiSiauThong Dev" (productName)
+        .title(format!("記數通 {}", app.package_info().name))
         .inner_size(1180.0, 800.0)
         .min_inner_size(360.0, 520.0);
     #[cfg(target_os = "macos")]
@@ -1036,7 +1073,10 @@ fn open_window(app: &AppHandle) -> tauri::Result<()> {
     let window = builder.build()?;
     let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
     let frame_nav = app.clone();
-    let frame = tauri::webview::WebviewBuilder::new(FRAME, WebviewUrl::App("frame.html".into()))
+    let frame = tauri::webview::WebviewBuilder::new(FRAME, WebviewUrl::App("frame.html".into()));
+    // the dev build says so in the bar (issue #114); frame.js reads it
+    let frame = if update::is_release(&identity(app)) { frame } else { frame.initialization_script("window.kstDevBuild = true;") };
+    let frame = frame
         .on_navigation(move |url| {
             let ok = is_local(url);
             if !ok {
@@ -1144,6 +1184,15 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_android_package_is_the_data_folders_name() {
+        let p = |d: &str| package_of(std::path::Path::new(d));
+        assert_eq!(p("/data/user/0/io.github.puetsua.kisiauthong.dev").as_deref(), Some("io.github.puetsua.kisiauthong.dev"));
+        assert_eq!(p("/data/user/10/io.github.puetsua.kisiauthong/").as_deref(), Some("io.github.puetsua.kisiauthong"));
+        assert_eq!(p("/data/user/0"), None);
+        assert_eq!(p("/"), None);
+    }
 
     #[test]
     fn local_and_known_pages() {

@@ -52,7 +52,13 @@ android {
         }
     }
     buildTypes {
+        // the dev build (issue #114): the Tauri CLI writes applicationIdSuffix
+        // from bundle.android.debugApplicationIdSuffix (tauri.conf.json), so a
+        // debug build installs beside the release app with its own data; named
+        // "KiSiauThong Dev" by src/debug/res. The shell sees the package in its
+        // data folder and asks for no release updates (lib.rs identity).
         getByName("debug") {
+            applicationIdSuffix = ".dev"
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false

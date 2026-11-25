@@ -28,6 +28,24 @@ pub const DOWNLOADS: &str = "https://github.com/puetsua/kisiauthong/releases/dow
 #[cfg_attr(mobile, allow(dead_code))]
 pub const DESKTOP_MANIFEST: &str = "https://github.com/puetsua/kisiauthong/releases/latest/download/latest.json";
 
+/// The release app's identifier (tauri.conf.json). A build with another one,
+/// such as the dev build (tauri.dev.conf.json, issue #114), installs and keeps
+/// its data beside the release app.
+pub const RELEASE_ID: &str = "io.github.puetsua.kisiauthong";
+
+/// Whether a build is the release app (by its identifier), not the dev build.
+pub fn is_release(identifier: &str) -> bool {
+    identifier == RELEASE_ID
+}
+
+/// Where a build looks for updates: the test source a debug build read from
+/// update-source.txt, else the releases, but only for the release app. Any
+/// other identity gets none: a release update would install the release app,
+/// not update the dev build (issue #114).
+pub fn source<T>(identifier: &str, test: Option<T>, release: T) -> Option<T> {
+    test.or_else(|| is_release(identifier).then_some(release))
+}
+
 /// The Android app in a release: kisiauthong-app-<version>-android.apk.
 pub fn asset_name(version: &str) -> String {
     format!("kisiauthong-app-{version}-android.apk")
@@ -128,6 +146,28 @@ mod tests {
         format!(
             r#"{{"name":"kisiauthong-app-{tag}-android.apk","size":18000000,"browser_download_url":"{DOWNLOADS}{tag}/kisiauthong-app-{tag}-android.apk","digest":"{digest}"}}"#
         )
+    }
+
+    #[test]
+    fn only_the_release_identity_gets_release_updates() {
+        assert_eq!(source(RELEASE_ID, None, "release"), Some("release"));
+        assert_eq!(source(RELEASE_ID, Some("test"), "release"), Some("test"));
+        let dev = "io.github.puetsua.kisiauthong.dev";
+        assert_eq!(source(dev, None, "release"), None);
+        assert_eq!(source(dev, Some("test"), "release"), Some("test"));
+        assert_eq!(source("", None, "release"), None);
+    }
+
+    #[test]
+    fn the_configs_name_the_release_and_the_dev_identity() {
+        let id = |json: &str| serde_json::from_str::<serde_json::Value>(json).unwrap()["identifier"].as_str().unwrap().to_owned();
+        assert!(is_release(&id(include_str!("../tauri.conf.json"))));
+        let dev: serde_json::Value = serde_json::from_str(include_str!("../tauri.dev.conf.json")).unwrap();
+        assert!(!is_release(dev["identifier"].as_str().unwrap()));
+        // its own install folder, uninstall key and running-app check (installer.nsi)
+        assert_ne!(dev["productName"], "KiSiauThong");
+        assert_ne!(dev["mainBinaryName"], "kisiauthong-app");
+        assert!(dev.get("version").is_none(), "the dev build has the release's version");
     }
 
     #[test]

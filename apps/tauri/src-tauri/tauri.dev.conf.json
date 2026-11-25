@@ -1,0 +1,6 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "KiSiauThong Dev",
+  "mainBinaryName": "kisiauthong-app-dev",
+  "identifier": "io.github.puetsua.kisiauthong.dev"
+}

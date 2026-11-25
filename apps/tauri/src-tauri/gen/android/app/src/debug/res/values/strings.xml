@@ -1,0 +1,7 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 kisiauthong contributors -->
+<!-- The dev build (issue #114): every debug build, installed beside the release app. -->
+<resources>
+    <string name="app_name">"KiSiauThong Dev"</string>
+    <string name="main_activity_title">"KiSiauThong Dev"</string>
+</resources>
