@@ -139,7 +139,7 @@ npm ci                         # the Tauri CLI, pinned in package-lock.json
 npx tauri build --debug --no-bundle --config src-tauri/tauri.dev.conf.json
 src-tauri/target/debug/kisiauthong-app-dev   # run the dev build; connect to any server
 npx tauri build                # macOS: .app and .dmg in src-tauri/target/release/bundle/
-npx tauri build --debug --bundles app   # quicker local check
+npx tauri build --debug --bundles app --config src-tauri/tauri.dev.conf.json   # macOS: the dev build's .app
 cd src-tauri && cargo test     # Rust unit tests (profiles, origins, TLS errors)
 node ../../scripts/test-app.js # the screen's rules, strings and tokens
 ```
@@ -161,7 +161,7 @@ identity, so it installs, updates and uninstalls beside the release app:
 | `identifier` | `io.github.puetsua.kisiauthong` | `io.github.puetsua.kisiauthong.dev` |
 | `productName` (install folder, Start menu, uninstall key, window title) | `KiSiauThong` | `KiSiauThong Dev` |
 | `mainBinaryName` (the installer's running-app check) | `kisiauthong-app` | `kisiauthong-app-dev` |
-| App data (`servers.json`, sign-ins) | `%APPDATA%\io.github.puetsua.kisiauthong\` | `%APPDATA%\io.github.puetsua.kisiauthong.dev\` |
+| App data: `servers.json` (`%APPDATA%`), sign-ins (`%LOCALAPPDATA%`, WebView2) | `…\io.github.puetsua.kisiauthong\` | `…\io.github.puetsua.kisiauthong.dev\` |
 | Update check | the latest GitHub release | only `update-source.txt` (debug), else none |
 
 The window title and the frame read *KiSiauThong Dev*. A build whose

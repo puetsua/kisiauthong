@@ -122,6 +122,7 @@ fn is_local(url: &Url) -> bool {
 /// which the app data folder is named after: a debug build is the dev build,
 /// `<identifier>.dev` (build.gradle.kts), while its config keeps the release
 /// identifier, which names its Kotlin and JNI classes.
+#[cfg_attr(target_os = "ios", allow(dead_code))]
 fn identity(app: &AppHandle) -> String {
     #[cfg(target_os = "android")]
     if let Some(p) = app.path().app_data_dir().ok().as_deref().and_then(package_of) {
