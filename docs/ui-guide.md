@@ -507,6 +507,12 @@ Issue #127, ADR 0028. One control for choosing tags. A screen puts its
 - Labels sit above their field (`label > span + control`).
 - Disabled controls use `disabled` (shown at .35 opacity), not hiding, when
   the user should know the action exists.
+- A form that saves to the server is wired with `onSubmit(form, fn)`, never
+  its own `addEventListener("submit")` (issue #131): while the request is
+  under way its submit button is disabled and a second tap, Enter or
+  `requestSubmit()` does nothing, so one tap saves once; when the request
+  ends, saved or failed, the button is enabled again so a failed save can be
+  retried.
 - Hide with the `hidden` attribute; `[hidden]` is `display:none !important`.
 
 ## Formatting

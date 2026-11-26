@@ -203,6 +203,25 @@ async function api(path, opts) {
 }
 const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
 const put = (path, body) => api(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+// onSubmit(form, fn): a form that saves to the server sends one request at a time (issue #131). While
+// fn runs, a second tap on its submit button, Enter or requestSubmit() does nothing, and the submit
+// buttons are disabled; when fn ends, saved or not, they are enabled again so a failed save can be retried.
+function onSubmit(form, fn) {
+  let busy = false;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    busy = true;
+    const btns = [...form.querySelectorAll("button[type=submit]")].filter((b) => !b.disabled);
+    btns.forEach((b) => { b.disabled = true; });
+    form.setAttribute("aria-busy", "true");
+    try { await fn(e); } finally {
+      busy = false;
+      btns.forEach((b) => { b.disabled = false; });
+      form.removeAttribute("aria-busy");
+    }
+  });
+}
 // an amount for a form field: "1500" for TWD 1,500, "12.50" for USD
 const decimal = (minor, currency) => { const c = currency || defCur(); return ((minor || 0) / Math.pow(10, expOf(c))).toFixed(shownDigits(minor, c, false)); };
 // state.data.accounts holds the user's own accounts; externals (kind "external") are kept apart.
@@ -1565,8 +1584,7 @@ function openMergeDialog(ids) {
   el.name.addEventListener("input", () => { nameEdited = true; draw(); });
   draw();
   refresh();
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit(form, async (e) => {
     const removed = sources(), name = nameNow(), kept = target;
     try {
       const p = await post(`/api/tags/${encodeURIComponent(kept)}/merge`, body(false));
@@ -1679,8 +1697,7 @@ function openReserveDialog(editId) {
     r ? __("Save changes") : __("Add reserve"),
     r ? `<button type="button" class="smallbtn danger" id="dlgDelRes">${esc(__("Delete"))}</button>` : ""));
   onDlg("dlgDelRes", () => deleteReserve(r));
-  $("#dialogForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit($("#dialogForm"), async (e) => {
     const f = Object.fromEntries(new FormData(e.target).entries()), c = (f.currency || "").toUpperCase();
     const body = { name: f.name.trim(), currency: c, targetDate: f.targetDate || "" };
     if (f.target) body.targetMinor = toMinor(f.target, c);
@@ -1735,8 +1752,7 @@ function openAllocDialog(reserveId, dir, editId) {
     sel.addEventListener("change", label);
     btn.addEventListener("click", () => { $("#dialogForm [name=amount]").value = decimal(heldIn(r, sel.value), accCur(sel.value)); });
   }
-  $("#dialogForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit($("#dialogForm"), async (e) => {
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = accCur(f.accountId), minor = toMinor(f.amount, cur);
     const takeOut = a ? f.dir === "out" : d === "out";
     if (!a && takeOut && minor > heldIn(r, f.accountId)) { // the server refuses this too; say it with the amount first
@@ -2810,7 +2826,10 @@ function syncSchedNote() {
       : __("Until then it is not in the balance; the amount is held in {account} so it cannot be reserved or spent. Moving the date to today or earlier posts it.", { account: accName(body.fromAccountId) });
 }
 ["input", "change"].forEach((ev) => $("#txnForm").addEventListener(ev, syncSchedNote));
-$("#fPostNow").addEventListener("click", () => { $("#txnForm").elements.date.value = schedToday(); $("#txnForm").requestSubmit(); });
+$("#fPostNow").addEventListener("click", () => {
+  if ($("#txnForm").getAttribute("aria-busy")) return; // a save is under way (onSubmit); leave its date alone
+  $("#txnForm").elements.date.value = schedToday(); $("#txnForm").requestSubmit();
+});
 $("#fDelete").addEventListener("click", async () => { showActions(false); if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
 $("#drawerBackdrop").addEventListener("click", closeDrawer);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden && !$("#dialog").open) closeDrawer(); });
@@ -2846,8 +2865,7 @@ function formBody() {
   } else if (type === "transfer") { body.fromAccountId = f.accountId; body.toAccountId = f.toAccountId; body.accountId = ""; }
   return { f, cur, type, body };
 }
-$("#txnForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
+onSubmit($("#txnForm"), async (e) => {
   const { f, cur, type, body } = formBody();
   if (type === "transfer" && !f.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to."), "error"); return; }
   if (toMinor(f.amount, cur) === 0) { msg(__("Enter an amount other than zero."), "error"); return; }
@@ -2856,8 +2874,10 @@ $("#txnForm").addEventListener("submit", async (e) => {
     const done = body.date > schedToday() ? __("Scheduled for {date}.", { date: dayLabel(body.date) }) : was && isSched(was) ? __("Posted.") : "";
     if (state.editingTxn) { await put("/api/transactions/" + state.editingTxn, body); msg(done || __("Transaction updated.")); }
     else { await post("/api/transactions", body); msg(done || __("Saved.")); }
-    state.editingTxn = null; closeDrawer(); await load();
-  } catch (err) { errMsg(err); }
+    state.editingTxn = null; closeDrawer();
+  } catch (err) { errMsg(err); return; }
+  // the panel stays on the page: it is ready for the next transaction while the books reload
+  load().catch(errMsg);
 });
 
 function openDialog(title, html) {
@@ -2889,8 +2909,7 @@ function openAccountDialog(editId, presetKind) {
     iconPicker(iconName(a || { kind: ext ? "external" : "own" })) +
     noteField(a && a.memo, ext ? __("What it is, account details, reminders…") : __("Account digits, what it is for, reminders…")),
     a ? __("Save changes") : __("Add account")));
-  $("#dialogForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit($("#dialogForm"), async (e) => {
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = (f.currency || "").toUpperCase();
     const body = ext ? { name: f.name, kind: "external", icon: f.icon, memo: f.memo || "" }
       : { name: f.name, kind: "own", icon: f.icon, currency: cur, openingBalanceMinor: toMinor(f.opening, cur), memo: f.memo || "" };
@@ -2955,8 +2974,7 @@ function openTagDialog(kind, editId) {
   };
   ["role", "preset", "catId"].forEach((n) => el[n] && el[n].addEventListener("change", sync));
   sync();
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit(form, async (e) => {
     const f = Object.fromEntries(new FormData(e.target).entries());
     const into = newBudget && f.catId ? free.find((x) => x.id === f.catId) : null; // a budget on an existing category
     // a budget added to an existing category keeps that category's note and group (their fields are hidden then)
@@ -3023,8 +3041,7 @@ function openTemplateDialog(editId, draft) {
   form.elements.type.addEventListener("change", sync);
   form.elements.frequency.addEventListener("change", sync);
   sync();
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit(form, async (e) => {
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = accCur(f.accountId);
     const tpl = { accountId: f.accountId, type: f.type, amountMinor: toMinor(f.amount, cur), currency: cur, note: f.note || "" };
     if (f.type === "allocate") tpl.reserveId = f.reserveId;
@@ -3192,8 +3209,7 @@ function showAuth(mode) {
     try { await passkeySignIn(); await boot(); }
     catch (x) { if (x.name !== "NotAllowedError" && x.name !== "AbortError") { err.textContent = x.message; err.hidden = false; } }
   });
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit(form, async (e) => {
     const f = Object.fromEntries(new FormData(form).entries()), err = $("#authErr");
     err.hidden = true;
     try {
@@ -3220,8 +3236,7 @@ function showCodeStep(ticket) {
   form.elements.code.focus();
   bindAuthServer();
   $("#authBack").addEventListener("click", () => showAuth("login"));
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit(form, async (e) => {
     const err = $("#authErr");
     err.hidden = true;
     try { await post("/api/auth/totp", { ticket, code: form.elements.code.value }); await boot(); }
@@ -3301,13 +3316,11 @@ function screenAccount(v) {
   v.querySelectorAll("[data-color]").forEach((b) => b.addEventListener("click", async () => {
     try { state.me = await put("/api/me/avatar", { color: b.dataset.color }); renderUserBtn(); render(); } catch (err) { errMsg(err); }
   }));
-  $("#profileForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit($("#profileForm"), async (e) => {
     try { state.me = await put("/api/me", { displayName: e.target.elements.displayName.value }); renderUserBtn(); msg(__("Profile saved.")); render(); }
     catch (err) { errMsg(err); }
   });
-  $("#pwForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit($("#pwForm"), async (e) => {
     const f = Object.fromEntries(new FormData(e.target).entries());
     if (f.new !== f.confirm) { msg(__("The new passwords do not match."), "error"); return; }
     try { await post("/api/me/password", { current: f.current, new: f.new }); e.target.reset(); msg(__("Password changed. Other devices were signed out.")); }
@@ -3329,8 +3342,7 @@ function drawTotp(stage, data) {
         <form id="totpEnable" class="inline"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required placeholder="123456"><button class="primarybtn" type="submit">${esc(__("Verify"))}</button><button class="smallbtn" type="button" id="totpCancel">${esc(__("Cancel"))}</button></form></div></div>`;
     card.querySelector("[name=code]").focus();
     $("#totpCancel").addEventListener("click", () => drawTotp());
-    $("#totpEnable").addEventListener("submit", async (e) => {
-      e.preventDefault();
+    onSubmit($("#totpEnable"), async (e) => {
       try { const res = await post("/api/me/totp/enable", { code: e.target.elements.code.value }); await refreshMe(); drawTotp("codes", res.recoveryCodes); }
       catch (err) { errMsg(err); }
     });
@@ -3352,8 +3364,7 @@ function drawTotp(stage, data) {
   }
   card.innerHTML = row(__("Authenticator app"), `<div class="sbtns"><span class="pill on">${esc(__("On"))}</span><small class="muted">${esc(__("{n} recovery code(s) left", { n: u.recoveryCodesLeft || 0 }))}</small></div>`)
     + `<form id="totpOff">${row(__("Turn off"), `<div class="inline"><input name="code" autocomplete="one-time-code" maxlength="12" required placeholder="${esc(__("Current code"))}"><button class="smallbtn danger" type="submit">${esc(__("Turn off"))}</button></div>`)}</form>`;
-  $("#totpOff").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit($("#totpOff"), async (e) => {
     try { await post("/api/me/totp/disable", { code: e.target.elements.code.value }); await refreshMe(); msg(__("Two-step verification is off.")); drawTotp(); }
     catch (err) { errMsg(err); }
   });
@@ -3416,8 +3427,7 @@ async function drawPasskeys() {
     if (!(await askConfirm(__("Remove this passkey? You will no longer be able to sign in with it."), __("Remove")))) return;
     try { await api("/api/me/passkeys/" + encodeURIComponent(b.dataset.pkDel), { method: "DELETE" }); msg(__("Passkey removed.")); drawPasskeys(); } catch (e) { errMsg(e); }
   }));
-  $("#pkAdd").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit($("#pkAdd"), async (e) => {
     try { await addPasskey(e.target.elements.name.value.trim()); msg(__("Passkey added.")); drawPasskeys(); }
     catch (x) { if (x.name !== "NotAllowedError" && x.name !== "AbortError") errMsg(x); }
   });
@@ -3536,8 +3546,7 @@ async function drawUsers() {
     try { await put("/api/users/" + idOf(b), { isAdmin: b.dataset.uAdmin === "1" }); drawUsers(); if (idOf(b) === me.id) { await refreshMe(); render(); } } catch (e) { errMsg(e); }
   }));
   card.querySelectorAll("[data-u-reset]").forEach((b) => b.addEventListener("click", () => { const f = b.closest("li").querySelector(".ureset"); f.hidden = !f.hidden; if (!f.hidden) f.elements.password.focus(); }));
-  card.querySelectorAll(".ureset").forEach((f) => f.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  card.querySelectorAll(".ureset").forEach((f) => onSubmit(f, async (e) => {
     try { await put("/api/users/" + idOf(f), { password: f.elements.password.value }); msg(__("Password set. {name} was signed out everywhere.", { name: nameOf(idOf(f)) })); drawUsers(); } catch (err) { errMsg(err); }
   }));
   card.querySelectorAll("[data-u-del]").forEach((b) => b.addEventListener("click", async () => {
@@ -3545,8 +3554,7 @@ async function drawUsers() {
     if (!(await askConfirm(__("Delete {name} and all of their books? This cannot be undone.", { name: nameOf(id) }), __("Delete")))) return;
     try { await api("/api/users/" + encodeURIComponent(id), { method: "DELETE" }); msg(__("User deleted.")); drawUsers(); } catch (e) { errMsg(e); }
   }));
-  $("#userAdd").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit($("#userAdd"), async (e) => {
     const f = Object.fromEntries(new FormData(e.target).entries());
     try { await post("/api/users", { username: f.username.trim(), displayName: f.displayName, password: f.password, isAdmin: !!f.isAdmin }); msg(__("User added.")); drawUsers(); } catch (err) { errMsg(err); }
   });
@@ -3590,8 +3598,7 @@ async function drawKeys(created) {
   const kf = $("#keyAdd"), syncExp = () => { const on = kf.elements.expires.value === "date"; $("#keyDateWrap").hidden = !on; kf.elements.expiresOn.required = on; };
   kf.elements.expires.addEventListener("change", () => { syncExp(); if (!$("#keyDateWrap").hidden) kf.elements.expiresOn.focus(); });
   syncExp();
-  $("#keyAdd").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  onSubmit($("#keyAdd"), async (e) => {
     const f = e.target, scopes = [...f.querySelectorAll("[name=scope]:checked")].map((x) => x.value);
     if (!scopes.length) { msg(__("Choose at least one permission."), "error"); return; }
     const exp = f.elements.expires.value === "date" ? { expiresOn: f.elements.expiresOn.value, tz: displayTZ() } : { expiresInDays: parseInt(f.elements.expires.value, 10) };

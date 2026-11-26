@@ -28,7 +28,9 @@ const listStub = () => Object.assign([], { forEach: () => {} });
 // (innerHTML, hidden …) and answers anything else with a stub
 const elements = new Map();
 function element() {
-  const own = { querySelectorAll: listStub, querySelector: () => null };
+  // listeners: what app.js added, by event type, for a test to fire
+  const own = { querySelectorAll: listStub, querySelector: () => null, listeners: {} };
+  own.addEventListener = (type, fn) => { (own.listeners[type] = own.listeners[type] || []).push(fn); };
   return new Proxy(own, { get: (o, k) => (k in o ? o[k] : stub()), set: (o, k, v) => { o[k] = v; return true; } });
 }
 const $el = (sel) => { if (!elements.has(sel)) elements.set(sel, element()); return elements.get(sel); };
@@ -1908,5 +1910,56 @@ later.push(["save then Overview (#130): the fetch after a save brings it alone, 
     delete docProps.activeElement;
     t.setLang("en");
   }
+}]);
+// issue #131: a second tap on Save (or Enter) while the first save is under way sent a second
+// POST /api/transactions, and the books got the transaction twice
+later.push(["save guard (#131): two submits of the transaction form while the first is open send one request; a failed save can be retried", async () => {
+  const form = $el("#txnForm"), save = { disabled: false }, posts = [], held = [];
+  const realApi = sandbox.api, realLoad = sandbox.load, realQSA = form.querySelectorAll, was = { txnType: t.state.txnType, editingTxn: t.state.editingTxn };
+  let loads = 0;
+  const attrs = {};
+  form.setAttribute = (k, v) => { attrs[k] = v; };
+  form.getAttribute = (k) => attrs[k];
+  form.removeAttribute = (k) => { delete attrs[k]; };
+  sandbox.FormData = function (f) { return new Map(Object.entries(f.fields)); };
+  form.fields = { accountId: "a1", amount: "5", date: "2026-11-18", note: "[TEST] double", memo: "", time: "", tz: "" };
+  form.querySelectorAll = (sel) => (sel === "button[type=submit]" ? [save] : listStub());
+  sandbox.api = (path, opts) => { posts.push([opts && opts.method, path]); return new Promise((ok, no) => held.push({ ok, no })); };
+  let reload = null; // the books' reload after a save, held open
+  sandbox.load = () => { loads++; return new Promise((ok) => { reload = ok; }); };
+  t.state.txnType = "expense"; t.state.editingTxn = null;
+  const submit = () => form.listeners.submit.forEach((fn) => fn({ preventDefault: () => {}, target: form }));
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  try {
+    assert.strictEqual(form.listeners.submit.length, 1, "one submit handler on the form");
+    submit(); submit(); await tick();
+    submit(); await tick(); // Enter, or Post now's requestSubmit(), while it is still open
+    assert.deepStrictEqual(posts, [["POST", "/api/transactions"]], "one request while the first is under way");
+    assert.strictEqual(save.disabled, true, "Save is disabled while saving");
+    assert.strictEqual(attrs["aria-busy"], "true", "the form says it is busy");
+    // the request fails: Save is enabled again, and the next tap retries
+    held[0].no(new Error("Failed to fetch")); await tick();
+    assert.strictEqual(save.disabled, false, "enabled again after a failed save");
+    assert.strictEqual(attrs["aria-busy"], undefined, "no longer busy");
+    assert.strictEqual(loads, 0, "a failed save does not reload the books");
+    submit(); submit(); await tick();
+    assert.strictEqual(posts.length, 2, "the retry sends one more request, not two");
+    held[1].ok({ id: "t-new" }); await tick();
+    assert.strictEqual(loads, 1, "a saved transaction reloads the books once");
+    assert.strictEqual(save.disabled, false, "enabled again once saved, while the books still reload: ready for the next transaction");
+    submit(); await tick();
+    assert.strictEqual(posts.filter(([m]) => m === "POST").length, 3, "the next transaction saves during the reload");
+    held[2].ok({ id: "t-next" }); reload(); await tick();
+  } finally {
+    sandbox.api = realApi; sandbox.load = realLoad; form.querySelectorAll = realQSA;
+    delete sandbox.FormData; delete form.fields; delete form.setAttribute; delete form.getAttribute; delete form.removeAttribute;
+    Object.assign(t.state, was);
+  }
+}]);
+later.push(["save guard (#131): every form in the web UI submits through onSubmit", async () => {
+  const src = read("app.js");
+  // the one addEventListener("submit") is onSubmit's own; a form wired directly would have the gap again
+  assert.strictEqual((src.match(/addEventListener\(\s*["'`]submit["'`]|\.onsubmit\s*=/g) || []).length, 1, "only onSubmit listens for submit");
+  assert.ok((src.match(/onSubmit\(\S+, async \(e\) =>/g) || []).length >= 17, "the dialog, transaction, sign-in and Settings forms use onSubmit");
 }]);
 require("./run-tests.js")(later, n);
