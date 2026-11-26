@@ -3283,8 +3283,8 @@ function screenAccount(v) {
     <section class="ssec"><h3>${esc(__("Profile"))}</h3><div class="scard">
       <div class="sabout">${avatarHTML(u, 56)}<span><b>${esc(u.displayName || u.username)}</b><small class="muted">@${esc(u.username)}${u.isAdmin ? " · " + esc(__("Administrator")) : ""}</small></span></div>
       <form id="profileForm">${row(__("Display name"), `<div class="inline"><input name="displayName" maxlength="60" value="${esc(u.displayName || "")}"><button class="smallbtn" type="submit">${esc(__("Save"))}</button></div>`)}</form>
-      ${row(__("Photo"), `<div class="sbtns"><label class="smallbtn filebtn">${esc(u.hasAvatar ? __("Change photo") : __("Upload photo"))}<input type="file" id="avatarFile" accept="image/*" hidden></label>${u.hasAvatar ? `<button class="smallbtn danger" type="button" id="avatarRemove">${esc(__("Remove photo"))}</button>` : ""}</div>`)}
       ${u.hasAvatar ? "" : row(__("Colour"), `<div class="swatches">${AVATAR_COLORS.map((c) => `<button type="button" class="swatch${avatarColor(u) === c ? " on" : ""}" style="background:${c}" data-color="${c}" aria-label="${esc(c)}" aria-pressed="${avatarColor(u) === c}"></button>`).join("")}</div>`)}
+      ${row(__("Photo"), `<div class="sbtns"><label class="smallbtn filebtn">${esc(u.hasAvatar ? __("Change photo") : __("Upload photo"))}<input type="file" id="avatarFile" accept="image/*" hidden></label>${u.hasAvatar ? `<button class="smallbtn danger" type="button" id="avatarRemove">${esc(__("Remove photo"))}</button>` : ""}</div>`)}
     </div></section>
     <section class="ssec"><h3>${esc(__("Passkeys"))}</h3><div class="scard" id="passkeyCard"></div></section>
     <section class="ssec"><h3>${esc(__("Two-step verification"))}</h3><div class="scard" id="totpCard"></div></section>
