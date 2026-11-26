@@ -213,6 +213,36 @@ tr.unconfirmed td{background:var(--plannedbg)}
 .actmenu .danger{color:var(--red)}
 .tagpick button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:5px 12px;font-size:.9rem;cursor:pointer}
 .tagpick button[aria-pressed=true]{background:var(--accentsoft);border-color:var(--accent);color:var(--accent);font-weight:600}
+/* tag picker (issue #127): a search field holding the chosen tags as chips, the grouped list under it, Recently used */
+.tagpicker{position:relative;margin-top:4px;color:var(--ink);font-size:1rem}
+.drawerfield>label.tgplab{display:block;margin:0;font-size:inherit;color:inherit}
+.tgpbox{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:46px;padding:5px 8px;border:1px solid var(--fieldline);border-radius:6px;background:var(--field);cursor:text}
+.tgpbox:focus-within{outline:2px solid var(--accent);outline-offset:-1px}
+.tgpchips{display:contents}
+.chip.cur.tgpchip{background:var(--accentsoft);border-color:var(--accent);color:var(--accent);font-weight:600;overflow-wrap:anywhere}
+.chip.cur.tgpchip button{color:var(--accent);min-width:28px;min-height:28px}
+.tagpicker .tgpq{flex:1 1 5em;min-width:5em;width:auto;margin:0;padding:6px 2px;border:0;border-radius:0;background:none;outline:none;box-shadow:none;font:inherit;font-size:1rem;color:var(--ink)}
+.tgplist{margin-top:4px;max-height:min(300px,45dvh);overflow-y:auto;overscroll-behavior:contain;padding:0 4px 4px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:0 10px 26px rgba(var(--shadow-rgb),.14)}
+.tgpopt{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--ink);overflow-wrap:anywhere}
+.tgpopt:first-child{margin-top:4px}
+.tgpopt>span{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:0 6px}
+.tgpopt:hover,.tgpopt.active{background:var(--hover2)}
+.tgpopt .tgpcheck{flex:none;visibility:hidden;color:var(--accent)}
+.tgpopt[aria-selected=true]{font-weight:600}.tgpopt[aria-selected=true] .tgpcheck{visibility:visible}
+.tgpcreate{color:var(--accent);font-weight:600}
+.tgpnone{margin:0;padding:12px 10px 6px;color:var(--muted);font-size:.92rem}
+/* running budget tags: a gauge icon after the name on chips, pills and list rows; plain tags (and budgets whose date
+   range has ended) carry no mark. "budget" is also read out (.tgpsr), so the icon is never the only cue. */
+.tgpsr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.tgpicon{flex:none;margin-left:4px}
+.tgpopt .tgpicon{margin-left:0;align-self:center}
+.tgprecent .tagpick button.ty-budget{display:inline-flex;align-items:center}
+.tgprecent{display:flex;flex-direction:column;gap:2px;margin-top:10px}.tgprecent .tagpick{margin-top:4px}
+/* the Transactions filter: as tall as the dropdowns beside it, its list over the results */
+.filters .tagpicker{margin:0;flex:0 1 240px;min-width:180px}
+.filters .tgpbox{min-height:0;padding:2px 6px}
+.filters .tagpicker .tgpq{padding:5px 2px}
+.filters .tgplist{position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:5;min-width:240px;margin:0}
 .drawer textarea{width:100%;padding:10px;border:1px solid var(--fieldline);border-radius:6px;margin-top:4px;font:inherit;font-size:1rem;color:var(--ink);background:var(--field);resize:vertical;min-height:4.5em}
 .drawer input,.drawer select{width:100%;padding:10px;border:1px solid var(--fieldline);border-radius:6px;margin-top:4px;font-size:1rem;color:var(--ink);background:var(--field)}
 .seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}.seg button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;cursor:pointer}
@@ -462,6 +492,7 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
   .filters:not(.open) .fmore{display:none}
   .filters.open .fmore{display:flex;flex-wrap:wrap;gap:10px;width:100%}
   .fmore select{flex:1 1 40%;min-width:0}
+  .fmore .tagpicker{flex:1 1 100%;min-width:0}
 }
 
 /* tag dialog: amount with its currency; a checkbox line */

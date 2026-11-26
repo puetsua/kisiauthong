@@ -46,7 +46,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -1149,8 +1149,9 @@ test("live updates (#77): the cursor in the search box or a filter does not hold
     assert.strictEqual(t.liveBusy(), false, "nothing open, nothing focused");
     docProps.activeElement = field("fq", true);
     assert.strictEqual(t.liveBusy(), false, "the cursor in the search box does not hold a refresh back");
-    docProps.activeElement = field("ftag", true);
-    assert.strictEqual(t.liveBusy(), false, "nor does a filter dropdown that keeps focus after a choice");
+    assert.match($el("#view").innerHTML, /<input id="ftag-q" class="tgpq" type="text" role="combobox"[^>]* data-live-keep /, "the tag filter is the tag picker (issue #127)");
+    docProps.activeElement = field("ftag-q", true);
+    assert.strictEqual(t.liveBusy(), false, "nor does the tag filter's search field");
     docProps.activeElement = field("pStart", false);
     assert.strictEqual(t.liveBusy(), true, "any other focused field in the page still waits");
     docProps.activeElement = field("fq", true);
@@ -1168,13 +1169,13 @@ test("live updates (#77): the cursor in the search box or a filter does not hold
     t.state.data.transactions = [...was.txns, { id: "t9", fromAccountId: "a1", toAccountId: "acc-external", type: "transfer", amountMinor: 8900, currency: "TWD", date: "2026-11-18", state: "posted", note: "Saved elsewhere", tagIds: [] }];
     t.state.data.tags = [{ id: "g7", name: "Pets" }]; // a category added elsewhere
     t.state.filter.tag = ""; // load() cleared a filter on a category removed elsewhere
-    $el("#ftag").value = "g-gone";
+    $el("#ftag-chips").innerHTML = "the category removed elsewhere";
     $el("#view").innerHTML = "the filter bar on screen";
     t.render(true);
     assert.strictEqual($el("#view").innerHTML, "the filter bar on screen", "the focused field is left alone");
     assert.match($el("#txnResults").innerHTML, /Saved elsewhere/, "the new transaction is listed");
-    assert.match($el("#ftag").innerHTML, /<option value="g7" >Pets<\/option>/, "the dropdowns list what was added elsewhere");
-    assert.strictEqual($el("#ftag").value, "", "and show the filters in state");
+    assert.match($el("#ftag-list").innerHTML, /<div role="option" id="ftag-o1" data-tp-i="1" aria-selected="false" class="tgpopt"><span>Pets<\/span>/, "the tag filter lists what was added elsewhere");
+    assert.strictEqual($el("#ftag-chips").innerHTML, "", "and shows the filter in state (all categories)");
     // any other render (a hash change, Clear) draws the whole screen, also with the search box focused
     t.render({ type: "hashchange" });
     assert.match($el("#view").innerHTML, /id="fq"/);
@@ -1214,6 +1215,147 @@ test("the test runner (#91): a test that never settles fails the run and is name
   r = run(`["one", async () => {}], ["two", () => new Promise((ok) => setTimeout(ok, 5))]`);
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(r.stdout, /2 tests passed/);
+});
+
+test("tag picker (#127): groups in stroke order, Ungrouped last; names in stroke order", () => {
+  const was = t.state.data.tags;
+  t.state.data.tags = [{ id: "g1", name: "晚餐", group: "飲食" }, { id: "g2", name: "交通" }, { id: "g3", name: "早餐", group: "飲食" }, { id: "g4", name: "高鐵", group: "交通費" },
+    { id: "g5", name: "一般" }, { id: "g6", name: "午餐", group: "飲食" }, { id: "g7", name: "Rent", group: "Home" }];
+  try {
+    const order = t.tagGroups().map((g) => `${g.group || "-"}: ${g.tags.map((x) => x.name).join(" ")}`);
+    // stroke counts: 午 4, 早 6, 晚 11; 交 6 (交通費) before 飲 12 (飲食); Latin after Han; ungrouped last
+    assert.deepStrictEqual([...order], ["交通費: 高鐵", "飲食: 午餐 早餐 晚餐", "Home: Rent", "-: 一般 交通"]);
+  } finally { t.state.data.tags = was; }
+});
+
+test("tag picker (#127): Recently used is the tags of the latest entries, newest entered first", () => {
+  const was = { tags: t.state.data.tags, txns: t.state.data.transactions };
+  t.state.data.tags = ["g1", "g2", "g3", "g4"].map((id) => ({ id, name: "Tag " + id }));
+  const row = (id, createdAt, tagIds) => ({ id, fromAccountId: "a1", toAccountId: "acc-external", amountMinor: 100, currency: "TWD", date: createdAt.slice(0, 10), state: "posted", createdAt, tagIds });
+  t.state.data.transactions = [row("x1", "2026-11-10T09:00:00Z", ["g1"]), row("x2", "2026-11-12T09:00:00Z", ["g3", "g2"]), row("x3", "2026-11-11T09:00:00Z", ["g1", "g-gone"])];
+  try {
+    assert.deepStrictEqual([...t.recentTags()], ["g3", "g2", "g1"], "by entry time, each once, removed tags left out");
+  } finally { Object.assign(t.state.data, { tags: was.tags, transactions: was.txns }); }
+});
+
+test("tag picker (#127): chips in picked order, one flat list, search, Create tag, no pre-selection", () => {
+  const was = { tags: t.state.data.tags, txns: t.state.data.transactions };
+  t.state.data.tags = [{ id: "g1", name: "早餐", group: "飲食" }, { id: "g2", name: "晚餐", group: "飲食" }, { id: "g3", name: "代墊" }];
+  t.state.data.transactions = [];
+  try {
+    const tp = t.makeTagPicker("tpx", { ids: ["g2", "g1", "g-gone"], label: "Tags", create: true, recent: true });
+    const html = strip(tp.html());
+    assert.match(html, /<label class="tgplab" for="tpx-q">Tags<\/label>/);
+    assert.match(html, /<span class="chip cur tgpchip">晚餐<button type="button" data-tp-rm="g2" aria-label="Remove 晚餐">×<\/button><\/span><span class="chip cur tgpchip">早餐/, "chips in the order picked");
+    assert.doesNotMatch(html, /g-gone/, "a tag that no longer exists is dropped");
+    assert.deepStrictEqual([...tp.value()], ["g2", "g1"]);
+    assert.match(html, /<input id="tpx-q" class="tgpq" type="text" role="combobox" aria-expanded="false" aria-controls="tpx-lb"/);
+    assert.match(html, /<div role="listbox" id="tpx-lb" aria-multiselectable="true"/);
+    assert.match(html, /<div role="listbox" id="tpx-lb" aria-multiselectable="true" aria-label="Tags"><div role="option" id="tpx-o0" data-tp-i="0" aria-selected="true" class="tgpopt"><span>早餐<\/span>/,
+      "one flat list: the group's tags first, in stroke order");
+    assert.match(html, /<div role="option" id="tpx-o1" [^>]*><span>晚餐<\/span>.*<div role="option" id="tpx-o2" data-tp-i="2" aria-selected="false" class="tgpopt"><span>代墊<\/span>/, "then the ungrouped ones");
+    assert.doesNotMatch(html, /tgpghead|role="group" aria-labelledby="tpx-g|>飲食<|>Ungrouped</, "no group or type headings in the list");
+    assert.doesNotMatch(html, /class="tgpopt active"/, "nothing highlighted before the user moves");
+    assert.match(html, /class="tgprecent" id="tpx-recent" role="group" aria-labelledby="tpx-rl" hidden>/, "no Recently used row without history");
+    assert.doesNotMatch(html, /Create tag/, "nothing to create while nothing is typed");
+    // a search: matching names in their groups, then Create for a name no tag has
+    const list = $el("#tpx-list"), q = $el("#tpx-q");
+    let typed;
+    q.addEventListener = (ev, fn) => { if (ev === "input") typed = fn; };
+    tp.bind();
+    q.value = "餐"; typed({ isComposing: false });
+    assert.match(strip(list.innerHTML), /<span>早餐<\/span>.*<span>晚餐<\/span>/);
+    assert.doesNotMatch(list.innerHTML, /代墊/);
+    assert.match(list.innerHTML, /data-tp-create aria-selected="false" class="tgpopt tgpcreate"><span>Create tag “餐”<\/span>/, "a part of a name can still become its own tag");
+    q.value = "咖哩"; typed({ isComposing: false });
+    assert.match(list.innerHTML, /id="tpx-o0" data-tp-i="0" data-tp-create aria-selected="false" class="tgpopt tgpcreate active"><span>Create tag “咖哩”/, "no match: Create is the only option");
+    assert.match(list.innerHTML, /<p class="tgpnone">No tags match “咖哩”.<\/p>/);
+    q.value = "ㄎㄚ"; typed({ isComposing: true });
+    assert.match(list.innerHTML, /咖哩/, "an input method's unfinished word does not filter");
+    q.value = "早餐"; typed({ isComposing: false });
+    assert.doesNotMatch(list.innerHTML, /Create tag/, "a name that exists is chosen, not created again");
+    // the template dialog's picker has no Create when told so, and zh-TW strings
+    t.setLang("zh-TW");
+    const plain = strip(t.makeTagPicker("tpy", { ids: [], ariaLabel: "x" }).html());
+    assert.match(plain, /placeholder="搜尋或選擇標籤"/);
+    assert.doesNotMatch(plain, /未分組/, "Ungrouped is the tag form's word only, not a heading in the list");
+  } finally { t.setLang("en"); Object.assign(t.state.data, { tags: was.tags, transactions: was.txns }); }
+});
+
+test("tag picker (#127): the add form and the template dialog use it, with Recently used", () => {
+  const was = { tags: t.state.data.tags, txns: t.state.data.transactions };
+  t.state.data.tags = [{ id: "g1", name: "Food", group: "Daily" }, { id: "g2", name: "Rent" }];
+  t.state.data.transactions = [{ id: "x1", fromAccountId: "a1", toAccountId: "acc-external", amountMinor: 100, currency: "TWD", date: "2026-11-17", state: "posted", createdAt: "2026-11-17T01:00:00Z", tagIds: ["g2"] }];
+  try {
+    const html = read("index.html");
+    assert.match(html, /<div id="fCatsWrap" class="drawerfield"><\/div>/, "the drawer's field is drawn by the picker");
+    const body = () => strip($el("#dialogBody").innerHTML);
+    t.openTemplateDialog(null, { name: "Rent", template: { type: "transfer", fromAccountId: "a1", toAccountId: "acc-external", amountMinor: 1000, currency: "TWD", tagIds: ["g2"] }, schedule: { frequency: "monthly" } });
+    assert.match(body(), /<div class="drawerfield f-cats wide"><label class="tgplab" for="tplCats-q">Tags<\/label><div class="tagpicker" id="tplCats">/);
+    assert.match(body(), /<span class="chip cur tgpchip">Rent<button type="button" data-tp-rm="g2"/);
+    assert.match(body(), /<span class="qhead" id="tplCats-rl">Recently used<\/span><div class="tagpick"><button type="button" data-tp-t="g2" aria-pressed="true">Rent<\/button>/);
+    assert.deepStrictEqual([...t.pickedCats("tplCats")], ["g2"]);
+  } finally { Object.assign(t.state.data, { tags: was.tags, transactions: was.txns }); }
+});
+
+test("tag picker (#127): the Transactions tag filter picks one tag or Uncategorised, never creates", () => {
+  const was = { tags: t.state.data.tags, filter: t.state.filter };
+  t.state.data.tags = [{ id: "g1", name: "Food", group: "Daily" }];
+  try {
+    location.hash = "#transactions";
+    t.state.filter = { q: "", account: "", type: "", tag: "" };
+    t.render({ type: "hashchange" });
+    let html = strip($el("#view").innerHTML);
+    assert.match(html, /<div class="tagpicker single" id="ftag">/);
+    assert.match(html, /aria-label="Tags" data-live-keep placeholder="All categories"/, "nothing chosen reads All categories");
+    assert.match(html, /<div role="listbox" id="ftag-lb" aria-multiselectable="false" aria-label="Tags"><div role="option" id="ftag-o0" data-tp-i="0" aria-selected="false" class="tgpopt"><span>Uncategorised<\/span>/);
+    assert.match(html, /<div role="option" id="ftag-o1" data-tp-i="1" aria-selected="false" class="tgpopt"><span>Food<\/span>/, "then the tags, without headings");
+    assert.doesNotMatch(html, /tgprecent" id="ftag-recent" role="group" aria-labelledby="ftag-rl">/, "no Recently used row in the filter");
+    assert.doesNotMatch(html, /<select id="ftag"/);
+    t.state.filter = { q: "", account: "", type: "", tag: "none" };
+    t.render({ type: "hashchange" });
+    html = strip($el("#view").innerHTML);
+    assert.match(html, /<span class="chip cur tgpchip">Uncategorised<button type="button" data-tp-rm="none" aria-label="Remove Uncategorised">/);
+    assert.match(html, /placeholder=""/);
+  } finally { Object.assign(t.state, { filter: was.filter }); t.state.data.tags = was.tags; location.hash = ""; }
+});
+
+test("tag picker (#127): running budgets carry a gauge icon after the name; plain tags and ended budgets nothing", () => {
+  const was = { tags: t.state.data.tags, txns: t.state.data.transactions };
+  t.state.data.tags = [{ id: "g1", name: "Food", limitMinor: 300000, currency: "TWD", periodStart: "2026-11-01", periodEnd: "2026-11-30" },
+    { id: "g2", name: "Trip", limitMinor: 500000, currency: "TWD", cycle: "range", periodStart: "2026-10-01", periodEnd: "2026-10-10" }, { id: "g3", name: "Rent" }];
+  const row = (id, at, tagIds) => ({ id, fromAccountId: "a1", toAccountId: "acc-external", amountMinor: 100, currency: "TWD", date: at.slice(0, 10), state: "posted", createdAt: at, tagIds });
+  t.state.data.transactions = [row("x1", "2026-11-17T01:00:00Z", ["g1", "g2", "g3"])];
+  try {
+    const html = strip(t.makeTagPicker("tpt", { ids: ["g1", "g2", "g3"], label: "Tags", recent: true }).html());
+    assert.match(html, /<span class="chip cur tgpchip ty-budget">Food<svg class="tgpicon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">.*?<\/svg><span class="tgpsr">, budget<\/span><button/, "a running budget: the gauge after the name, and its type read out");
+    assert.match(html, /<span class="chip cur tgpchip">Trip<button/, "an ended budget looks like a plain tag");
+    assert.match(html, /<span class="chip cur tgpchip">Rent<button/, "a plain tag has no mark");
+    assert.match(html, /class="tgpopt ty-budget"><span>Food<svg class="tgpicon"[^>]*>.*?<\/svg><span class="tgpsr">, budget<\/span><\/span>/, "the list row too");
+    assert.match(html, /class="tgpopt"><span>Trip<\/span>/);
+    assert.match(html, /class="tgpopt"><span>Rent<\/span>/);
+    assert.match(html, /data-tp-t="g1" aria-pressed="true" class="ty-budget">Food<svg class="tgpicon"/, "Recently used marks budgets too");
+    assert.strictEqual((html.match(/tgpicon/g) || []).length, 3, "one icon each on the chip, the list row and the pill");
+    assert.match(html, /data-tp-t="g2" aria-pressed="true">Trip<\/button>/);
+    assert.doesNotMatch(html, /ty-ended|Ended|legend|remaining|%/i, "no ended mark, legend, amounts or bars");
+    t.setLang("zh-TW");
+    assert.match(strip(t.makeTagPicker("tpt", { ids: ["g1"], label: "x" }).html()), /Food<svg class="tgpicon"[^>]*>.*?<\/svg><span class="tgpsr">，預算<\/span>/);
+  } finally { t.setLang("en"); Object.assign(t.state.data, { tags: was.tags, transactions: was.txns }); }
+});
+
+test("tag groups (#127): the category form has a Group field with the groups in use, empty for Ungrouped", () => {
+  const was = t.state.data.tags;
+  t.state.data.tags = [{ id: "g1", name: "Lunch", group: "Food & drink" }, { id: "g2", name: "Taxi" }];
+  try {
+    const body = () => $el("#dialogBody").innerHTML;
+    t.openTagDialog(null, "g1");
+    assert.match(body(), /<label class="f-name"><span>Group<\/span><input name="group" maxlength="100" list="tagGroupList" autocomplete="off" placeholder="Ungrouped" value="Food &amp; drink"><datalist id="tagGroupList"><option value="Food &amp; drink"><\/option><\/datalist><\/label>/);
+    t.openTagDialog(null, "g2");
+    assert.match(body(), /placeholder="Ungrouped" value="">/, "an ungrouped tag: the field is empty");
+    t.setLang("zh-TW");
+    t.openTagDialog("category");
+    assert.match(body(), /<span>分組<\/span><input name="group" maxlength="100" list="tagGroupList" autocomplete="off" placeholder="未分組" value="">/);
+  } finally { t.setLang("en"); t.state.data.tags = was; }
 });
 
 // askConfirm is async; these run after the synchronous tests
@@ -1296,7 +1438,7 @@ later.push(["transactions (#79): a filter the dropdowns cannot show is dropped b
     t.state.data.tags = [{ id: "g7", name: "Pets" }];
     open("#transactions?tag=g8");
     assert.deepStrictEqual(timers.map((x) => x.ms), [400], "an unknown value asks for a refresh");
-    assert.match($el("#view").innerHTML, /<option value="g8" selected disabled>Checking…<\/option>/, "meanwhile the dropdown says so, and keeps it");
+    assert.match($el("#view").innerHTML, /<span class="chip cur tgpchip">Checking…<button type="button" data-tp-rm="g8"/, "meanwhile the tag filter says so, and keeps it");
     await refresh(tags);
     assert.strictEqual(t.state.filter.tag, "g8", "which knows the category");
     assert.strictEqual(location.hash, "#transactions?tag=g8");

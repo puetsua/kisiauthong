@@ -323,6 +323,7 @@ func init() {
 			"period":      enum("Budget period (monthly by default)", "daily", "weekly", "monthly", "yearly"),
 			"periodEvery": integer("Budget period length in periods, e.g. 2 with weekly for every two weeks"),
 			"note":        str("Optional free-text note for the user's own records, up to 4000 characters"),
+			"group":       str("Optional group that orders the category in the app's tag pickers, e.g. Food; empty for ungrouped"),
 		}, "name"), toolCreateTag},
 		{"merge_tags", "Merge categories the user chose into one: every transaction, template and dashboard widget with a merged category gets the kept one instead (once), and the merged ones are deleted. Only merge tags the user asked to merge; similar names may be kept apart on purpose. Use dryRun first to see what changes. The result has a mergeId that the web app can undo.", ScopeTags, obj(map[string]interface{}{
 			"targetId":   str("The category to keep"),
@@ -406,6 +407,9 @@ func toolListTags(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
 		m := map[string]interface{}{"id": t.ID, "name": t.Name}
 		if t.Memo != "" {
 			m["note"] = t.Memo // the user's own note (issue #42)
+		}
+		if t.Group != "" {
+			m["group"] = t.Group // ADR 0028
 		}
 		if t.LimitMinor != nil {
 			start, end := BudgetPeriod(t, today)
@@ -885,15 +889,15 @@ func toolCreateAccount(b *Book, raw json.RawMessage) (map[string]interface{}, er
 
 func toolCreateTag(b *Book, raw json.RawMessage) (map[string]interface{}, error) {
 	in, err := args[struct {
-		Name, Currency, Period, Note string
-		Budget                       json.Number
-		PeriodEvery                  int
+		Name, Currency, Period, Note, Group string
+		Budget                              json.Number
+		PeriodEvery                         int
 	}](raw)
 	if err != nil {
 		return nil, err
 	}
 	t := Tag{ID: newID("tag"), Name: strings.TrimSpace(in.Name), Currency: normCurrency(in.Currency),
-		Cycle: in.Period, CycleEvery: in.PeriodEvery, Memo: in.Note}
+		Cycle: in.Period, CycleEvery: in.PeriodEvery, Memo: in.Note, Group: in.Group}
 	if t.Name == "" {
 		return nil, fmt.Errorf("name required")
 	}

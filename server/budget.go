@@ -99,6 +99,9 @@ func normalizeTag(t *Tag) error {
 	if err := validMemo(&t.Memo); err != nil {
 		return err
 	}
+	if err := validTagGroup(&t.Group); err != nil {
+		return err
+	}
 	t.Currency = normCurrency(t.Currency)
 	{
 		if t.LimitMinor == nil {

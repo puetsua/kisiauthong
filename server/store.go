@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS tags%[1]s (
   user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, limit_minor INTEGER,
   cycle TEXT NOT NULL DEFAULT '', cycle_every INTEGER NOT NULL DEFAULT 0, cycle_start TEXT NOT NULL DEFAULT '',
   cycle_end TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '',
+  tag_group TEXT NOT NULL DEFAULT '',
   PRIMARY KEY(user_id, id));
 CREATE TABLE IF NOT EXISTS transaction_tags%[1]s (
   user_id TEXT NOT NULL, transaction_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY(user_id, transaction_id, tag_id));
@@ -178,6 +179,7 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateReserves,                  // 14
 	migrateTagMerges,                 // 15
 	migrateAccountTagMemo,            // 16
+	migrateTagGroup,                  // 17
 }
 
 func (s *Store) migrate() error {
@@ -473,6 +475,16 @@ func migrateAccountTagMemo(tx *sql.Tx) error {
 	return nil
 }
 
+// Migration 17 (issue #127, ADR 0028): a tag gets the group that orders it in tag pickers.
+func migrateTagGroup(tx *sql.Tx) error {
+	has, err := hasColumn(tx, "tags", "tag_group")
+	if err != nil || has {
+		return err
+	}
+	_, err = tx.Exec(`ALTER TABLE tags ADD COLUMN tag_group TEXT NOT NULL DEFAULT ''`)
+	return err
+}
+
 // Migration 3: transactions get a free-text memo beside the short title.
 func migrateAddTransactionMemo(tx *sql.Tx) error {
 	has, err := hasColumn(tx, "transactions", "memo")
@@ -614,7 +626,7 @@ func (b *Book) reload() error {
 		d.Transactions = append(d.Transactions, t)
 	}
 	tr.Close()
-	tg, err := db.Query(`SELECT id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo FROM tags WHERE user_id=? ORDER BY name`, uid)
+	tg, err := db.Query(`SELECT id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo,tag_group FROM tags WHERE user_id=? ORDER BY name`, uid)
 	if err != nil {
 		return err
 	}
@@ -622,7 +634,7 @@ func (b *Book) reload() error {
 	for tg.Next() {
 		var t Tag
 		var lm sql.NullInt64
-		if err := tg.Scan(&t.ID, &t.Name, &lm, &t.Cycle, &t.CycleEvery, &t.CycleStart, &t.CycleEnd, &t.Currency, &t.Memo); err != nil {
+		if err := tg.Scan(&t.ID, &t.Name, &lm, &t.Cycle, &t.CycleEvery, &t.CycleStart, &t.CycleEnd, &t.Currency, &t.Memo, &t.Group); err != nil {
 			return err
 		}
 		if lm.Valid {
@@ -808,8 +820,8 @@ func (b *Book) insertAccount(a Account) error {
 	return err
 }
 func (b *Book) insertTag(t Tag) error {
-	_, err := b.exec(`INSERT INTO tags(user_id,id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo)
+	_, err := b.exec(`INSERT INTO tags(user_id,id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo,tag_group) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo, t.Group)
 	return err
 }
 func (b *Book) insertReserve(r Reserve) error {
@@ -891,8 +903,8 @@ func (b *Book) updateAccount(a Account) error {
 	return b.reload()
 }
 func (b *Book) updateTag(t Tag) error {
-	if _, err := b.s.db.Exec(`UPDATE tags SET name=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,memo=? WHERE user_id=? AND id=?`,
-		t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo, b.uid, t.ID); err != nil {
+	if _, err := b.s.db.Exec(`UPDATE tags SET name=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,memo=?,tag_group=? WHERE user_id=? AND id=?`,
+		t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo, t.Group, b.uid, t.ID); err != nil {
 		return err
 	}
 	return b.reload()

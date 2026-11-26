@@ -80,6 +80,9 @@ func stateView(d *Data, today string, curOrder []string) map[string]interface{} 
 		if t.Memo != "" {
 			m["memo"] = t.Memo // the user's own note (issue #42)
 		}
+		if t.Group != "" {
+			m["group"] = t.Group // orders it in tag pickers (ADR 0028)
+		}
 		if t.LimitMinor != nil {
 			start, end := BudgetPeriod(t, today)
 			spent := d.BudgetSpent(t.ID, start, end, today)

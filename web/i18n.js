@@ -93,6 +93,10 @@ const I18N = {
     "Full width": "全寬", "Half width": "半寬",
     "{n} account(s)": "{n} 個帳戶",
     "No budgets yet.": "還沒有預算。",
+    // tag picker and tag groups (issue #127)
+    "Group": "分組", "Ungrouped": "未分組", "Recently used": "最近用過", "Search tags": "搜尋標籤", "Search or choose tags": "搜尋或選擇標籤",
+    ", budget": "，預算",
+    "Create tag “{name}”": "新增標籤「{name}」", "No tags match “{q}”.": "沒有符合「{q}」的標籤。", "Tag “{name}” added.": "已新增標籤「{name}」。",
     "Uncategorised": "未分類", "No posted expenses this month.": "本月還沒有已入帳的支出。",
     "Dashboard saved.": "總覽已儲存。",
     "{spent} of {limit}": "{spent}／{limit}", "by {date}": "{date} 前",

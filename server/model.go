@@ -87,6 +87,7 @@ type Tag struct {
 	CycleEnd   string `json:"cycleEnd,omitempty"`   // "range" budgets only
 	Currency   string `json:"currency,omitempty"`   // a budget's currency
 	Memo       string `json:"memo,omitempty"`       // the user's own free-text note (issue #42)
+	Group      string `json:"group,omitempty"`      // orders it in tag pickers; "" = ungrouped (ADR 0028)
 }
 
 // Reserve earmarks money in own accounts, optionally toward a target (ADR 0013).
