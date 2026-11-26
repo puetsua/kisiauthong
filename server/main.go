@@ -138,6 +138,7 @@ func stateView(d *Data, today string, curOrder []string) map[string]interface{} 
 		"reserves": reserves, "allocations": allocs,
 		"transactionTags": links, "transactionTemplates": templates, "today": today,
 		"spendingThisMonth": d.SpendingByCategory(today, today, curOrder),
+		"incomeThisMonth":   d.IncomeThisMonth(today, today, curOrder),
 	}
 }
 

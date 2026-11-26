@@ -290,6 +290,29 @@ func TestSettingsWidgetColumns(t *testing.T) {
 	}
 }
 
+// Income this month (issue #125) is not on the default dashboard; a user adds
+// it, with rows by category (default) or by source.
+func TestSettingsIncomeWidget(t *testing.T) {
+	withTestStore(t)
+	_, s := doSettings(t, http.MethodGet, "")
+	if strings.Contains(itemList(s.Dashboard), "income") {
+		t.Fatalf("income on the default dashboard: %s", itemList(s.Dashboard))
+	}
+	code, s := doSettings(t, http.MethodPut, `{"dashboard":{"items":[{"id":"in","type":"income"},{"id":"w-src","type":"income","by":"source","columns":["name","received"],"size":"half"}]}}`)
+	if code != 200 || itemList(s.Dashboard) != "in:income,w-src:income" || s.Dashboard.Items[0].By != "" || s.Dashboard.Items[1].By != "source" || strings.Join(s.Dashboard.Items[1].Columns, ",") != "name,received" {
+		t.Fatalf("income widgets: %d %+v", code, s.Dashboard.Items)
+	}
+	for _, body := range []string{
+		`{"dashboard":{"items":[{"id":"a","type":"income","by":"payee"}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"spending","by":"source"}]}}`,
+		`{"dashboard":{"items":[{"id":"a","type":"income","columns":["spent"]}]}}`,
+	} {
+		if code, _ := doSettings(t, http.MethodPut, body); code != 400 {
+			t.Errorf("%s: want 400, got %d", body, code)
+		}
+	}
+}
+
 func TestSettingsLegacyDashboardBecomesItems(t *testing.T) {
 	withTestStore(t)
 	// saved before widgets were reusable: one per type, hidden ones off the dashboard,

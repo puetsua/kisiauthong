@@ -17,6 +17,10 @@ import (
 // dashboardWidgets is the known widget types, in default order.
 var dashboardWidgets = []string{"balances", "budgets", "spending", "reserves", "accounts", "recent"}
 
+// extraWidgets are known widget types that are not on the default dashboard;
+// a user adds them in Customize. "income" is Income this month (issue #125).
+var extraWidgets = []string{"income"}
+
 // retiredWidgets were once valid; saved layouts that still name them are cleaned, not rejected.
 // "expected" left the dashboard when expected transactions moved to the notification bell.
 var retiredWidgets = map[string]bool{"expected": true}
@@ -28,12 +32,14 @@ type WidgetOptions struct {
 	Rows    int      `json:"rows,omitempty"`    // row limit for list widgets
 	Include []string `json:"include,omitempty"` // item ids / currency codes to show; empty = all
 	Columns []string `json:"columns,omitempty"` // shown columns in order (table widgets); empty = default
+	By      string   `json:"by,omitempty"`      // income: rows by "category" (default) or "source"
 }
 
 // widgetColumns is the column keys each table widget offers (web/app.js WIDGET_COLS).
 var widgetColumns = map[string][]string{
 	"budgets":  {"name", "spent", "progress", "used", "limit", "remaining", "period"},
 	"spending": {"name", "share", "pct", "spent"},
+	"income":   {"name", "share", "pct", "received"},
 	"accounts": {"name", "currency", "balance", "earmarked", "scheduled", "free", "limit", "owed"},
 }
 
@@ -320,7 +326,7 @@ func defaultSettings() Settings {
 
 func (d *DashboardSettings) validate() error {
 	known := map[string]bool{}
-	for _, t := range dashboardWidgets {
+	for _, t := range append(append([]string{}, dashboardWidgets...), extraWidgets...) {
 		known[t] = true
 	}
 	items := []WidgetItem{}
@@ -356,6 +362,9 @@ func (d *DashboardSettings) validate() error {
 			if x == "" || len(x) > 64 {
 				return fmt.Errorf("widget %s: invalid include entry", w.ID)
 			}
+		}
+		if w.By != "" && (w.Type != "income" || (w.By != "category" && w.By != "source")) {
+			return fmt.Errorf("widget %s: by must be category or source, on an income widget only", w.ID)
 		}
 		cols := w.Columns[:0:0]
 		for _, k := range w.Columns {

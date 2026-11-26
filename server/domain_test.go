@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -215,6 +216,68 @@ func TestSpendingByCategoryPerCurrencyAndMonth(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("row %d: got %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// Income this month (issue #125): per currency, never converted; a total per
+// currency that counts each income once, rows by category and by source.
+// Spending, transfers between own accounts, planned, scheduled (after today)
+// and other months' income do not count.
+func TestIncomeThisMonth(t *testing.T) {
+	in := func(id, from, to string, amt int64, cur, date, state string) Transaction {
+		return Transaction{ID: id, Type: "transfer", FromAccountID: from, ToAccountID: to, State: state, AmountMinor: amt, Currency: cur, Date: date}
+	}
+	employer := Account{ID: "employer", Name: "Employer", Kind: "external"}
+	d := Data{
+		Accounts: []Account{{ID: "twd", Currency: "TWD"}, {ID: "b", Currency: "TWD"}, {ID: "usd", Currency: "USD"}, ext, employer},
+		Tags:     []Tag{{ID: "salary"}, {ID: "refund"}, {ID: "food"}},
+		Transactions: []Transaction{
+			in("1", "employer", "twd", 50000, "TWD", "2026-11-05", "posted"),
+			in("2", ExternalAccountID, "twd", 399, "TWD", "2026-11-10", "posted"), // a refund with two categories
+			in("3", ExternalAccountID, "b", 1000, "TWD", "2026-11-12", "posted"),  // no category
+			in("4", "employer", "usd", 2500, "USD", "2026-11-03", "posted"),
+			in("5", "employer", "twd", 9000, "TWD", "2026-11-28", "posted"), // scheduled: after today
+			in("6", "employer", "twd", 7000, "TWD", "2026-11-14", "planned"),
+			in("7", "employer", "twd", 6000, "TWD", "2026-10-31", "posted"),       // last month
+			in("8", "twd", "b", 5555, "TWD", "2026-11-08", "posted"),              // between own accounts
+			in("9", "twd", ExternalAccountID, 120, "TWD", "2026-11-09", "posted"), // spending
+		},
+		TransactionTags: []TransactionTag{
+			{TransactionID: "1", TagID: "salary"}, {TransactionID: "2", TagID: "refund"}, {TransactionID: "2", TagID: "food"},
+			{TransactionID: "4", TagID: "salary"}, {TransactionID: "5", TagID: "salary"}, {TransactionID: "8", TagID: "salary"},
+			{TransactionID: "9", TagID: "salary"},
+		},
+	}
+	got := d.IncomeThisMonth("2026-11-26", "2026-11-26", []string{"USD"})
+	wantTot := []IncomeTotal{{Currency: "USD", AmountMinor: 2500, Count: 1}, {Currency: "TWD", AmountMinor: 51399, Count: 3}}
+	wantCat := []TagSpend{
+		{TagID: "salary", Currency: "USD", AmountMinor: 2500},
+		{TagID: "salary", Currency: "TWD", AmountMinor: 50000},
+		{TagID: "", Currency: "TWD", AmountMinor: 1000},
+		{TagID: "food", Currency: "TWD", AmountMinor: 399},
+		{TagID: "refund", Currency: "TWD", AmountMinor: 399},
+	}
+	wantSrc := []SourceIncome{
+		{AccountID: "employer", Currency: "USD", AmountMinor: 2500},
+		{AccountID: "employer", Currency: "TWD", AmountMinor: 50000},
+		{AccountID: ExternalAccountID, Currency: "TWD", AmountMinor: 1399},
+	}
+	if fmt.Sprint(got.Totals) != fmt.Sprint(wantTot) {
+		t.Errorf("totals = %+v, want %+v", got.Totals, wantTot)
+	}
+	if fmt.Sprint(got.ByCategory) != fmt.Sprint(wantCat) {
+		t.Errorf("by category = %+v, want %+v", got.ByCategory, wantCat)
+	}
+	if fmt.Sprint(got.BySource) != fmt.Sprint(wantSrc) {
+		t.Errorf("by source = %+v, want %+v", got.BySource, wantSrc)
+	}
+	// on the day the scheduled income is dated, it counts
+	if late := d.IncomeThisMonth("2026-11-28", "2026-11-28", nil); late.Totals[0].Currency != "TWD" || late.Totals[0].AmountMinor != 60399 || late.Totals[0].Count != 4 {
+		t.Errorf("on the 28th: %+v", late.Totals)
+	}
+	// a month without income: empty lists, not null
+	if none := d.IncomeThisMonth("2026-09-15", "2026-09-15", nil); none.Totals == nil || none.ByCategory == nil || none.BySource == nil || len(none.Totals) != 0 {
+		t.Errorf("empty month: %+v", none)
 	}
 }
 

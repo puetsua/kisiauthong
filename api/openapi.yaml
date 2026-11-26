@@ -1645,7 +1645,7 @@ components:
             nextDue: { type: string, description: 'The next occurrence from today, "" when none.' }
     State:
       type: object
-      required: [accounts, transactions, tags, reserves, allocations, transactionTags, transactionTemplates, today, spendingThisMonth, rev]
+      required: [accounts, transactions, tags, reserves, allocations, transactionTags, transactionTemplates, today, spendingThisMonth, incomeThisMonth, rev]
       properties:
         accounts: { type: array, items: { $ref: "#/components/schemas/AccountView" } }
         transactions: { type: array, items: { $ref: "#/components/schemas/Transaction" } }
@@ -1664,6 +1664,38 @@ components:
               tagId: { type: string }
               currency: { type: string }
               amountMinor: { type: integer, format: int64 }
+        incomeThisMonth:
+          type: object
+          description: "Posted income (external -> own account) dated this calendar month up to today, per currency and never converted. Transfers between own accounts are not income. An income with two categories shows on both category rows but counts once in totals."
+          required: [totals, byCategory, bySource]
+          properties:
+            totals:
+              type: array
+              items:
+                type: object
+                required: [currency, amountMinor, count]
+                properties:
+                  currency: { type: string }
+                  amountMinor: { type: integer, format: int64 }
+                  count: { type: integer, description: "Number of income transactions." }
+            byCategory:
+              type: array
+              items:
+                type: object
+                required: [tagId, currency, amountMinor]
+                properties:
+                  tagId: { type: string, description: "Empty for income without a category." }
+                  currency: { type: string }
+                  amountMinor: { type: integer, format: int64 }
+            bySource:
+              type: array
+              items:
+                type: object
+                required: [accountId, currency, amountMinor]
+                properties:
+                  accountId: { type: string, description: "The external account the money came from." }
+                  currency: { type: string }
+                  amountMinor: { type: integer, format: int64 }
         rev: { type: string, description: "The live revision; compare with /api/events for equality only." }
     BookData:
       type: object
@@ -1731,12 +1763,13 @@ components:
             required: [id, type]
             properties:
               id: { type: string, pattern: "^[A-Za-z0-9_-]{1,64}$" }
-              type: { type: string, enum: [balances, budgets, spending, reserves, accounts, recent] }
+              type: { type: string, enum: [balances, budgets, spending, income, reserves, accounts, recent], description: "income (Income this month) is not on the default dashboard." }
               size: { type: string, enum: [full, half] }
               title: { type: string }
               rows: { type: integer, minimum: 0 }
               include: { type: array, items: { type: string } }
               columns: { type: array, items: { type: string } }
+              by: { type: string, enum: [category, source], description: "income only: rows by category (default) or by source, the external account the money came from." }
     GeneralSettings:
       type: object
       properties:
