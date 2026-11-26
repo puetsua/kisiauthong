@@ -1039,7 +1039,7 @@ function writeTxnURL() {
   const h = "#transactions" + (qs.toString() ? "?" + qs : "");
   if (location.hash !== h) history.replaceState(null, "", h); // no hashchange, so no re-render
 }
-// the Transactions filter dropdowns' options, with the filters in state.filter selected
+// the Transactions filter dropdowns' options, with the filters in state.filter selected (the tag filter is a picker)
 function txnFilterOptions() {
   const f = state.filter;
   // a value the address named that this page does not know yet: shown as such until a fetch decides (issue #79)
@@ -1047,16 +1047,16 @@ function txnFilterOptions() {
   const accOpt = (a) => `<option value="${esc(a.id)}" ${f.account === a.id ? "selected" : ""}>${esc(accName(a.id))}</option>`;
   const account = `<option value="">${esc(__("All accounts"))}</option>` + checking("account") + state.data.accounts.map(accOpt).join("")
     + (state.data.externals.length ? `<optgroup label="${esc(__("External accounts"))}">${state.data.externals.map(accOpt).join("")}</optgroup>` : "");
-  const tagOpt = (t) => `<option value="${esc(t.id)}" ${f.tag === t.id ? "selected" : ""}>${esc(t.name)}</option>`;
-  const tagGroup = (label, tags) => (tags.length ? `<optgroup label="${esc(label)}">${tags.map(tagOpt).join("")}</optgroup>` : "");
-  const tag = `<option value="">${esc(__("All categories"))}</option>${checking("tag")}<option value="none" ${f.tag === "none" ? "selected" : ""}>${esc(__("Uncategorised"))}</option>`
-    + tagGroup(__("Categories"), state.data.tags);
   const type = `<option value="">${esc(__("All types"))}</option>${enumOptions(TYPE_L, Object.keys(TYPE_L), f.type)}`;
-  return { account, type, tag };
+  return { account, type };
 }
+// the Transactions tag filter: the tag picker choosing one tag, Uncategorised, or none (all categories).
+// A tag the address names that this page does not know yet shows as "Checking…" until a fetch decides (issue #79).
+const txnTagFilter = (onChange) => makeTagPicker("ftag", { ids: state.filter.tag ? [state.filter.tag] : [], multiple: false, ariaLabel: __("Tags"),
+  extra: [{ id: "none", name: __("Uncategorised") }], empty: __("All categories"), keep: true, onChange });
 function screenTransactions(v) {
   readTxnURL();
-  const f = state.filter, opts = txnFilterOptions();
+  const f = state.filter, opts = txnFilterOptions(), tagF = txnTagFilter(() => upd());
   // on phones the dropdowns fold away behind a Filters button that counts the ones in use
   v.innerHTML = `<div class="filters${state.filtersOpen ? " open" : ""}">
       <input id="fq" type="search" data-live-keep placeholder="${esc(__("Search note, tag, account…"))}" value="${esc(f.q)}">
@@ -1064,7 +1064,7 @@ function screenTransactions(v) {
       <div class="fmore" id="fMore">
       <select id="faccount" data-live-keep aria-label="${esc(__("Account"))}">${opts.account}</select>
       <select id="ftype" data-live-keep aria-label="${esc(__("Type"))}">${opts.type}</select>
-      <select id="ftag" data-live-keep aria-label="${esc(__("Tags"))}">${opts.tag}</select>
+      ${tagF.html()}
       <button class="smallbtn" id="clearF">${esc(__("Clear"))}</button></div></div>
     <div id="txnResults" class="amtstyle"></div>`;
   const countF = () => {
@@ -1166,8 +1166,9 @@ function screenTransactions(v) {
     writeTxnURL();
     bindDays(box);
   };
-  const upd = () => { state.searchPage = 0; state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, tag: $("#ftag").value }; countF(); drawResults(); };
-  ["faccount", "ftype", "ftag"].forEach((id) => $("#" + id).addEventListener("change", upd));
+  const upd = () => { state.searchPage = 0; state.filter = { q: $("#fq").value, account: $("#faccount").value, type: $("#ftype").value, tag: tagF.value()[0] || "" }; countF(); drawResults(); };
+  ["faccount", "ftype"].forEach((id) => $("#" + id).addEventListener("change", upd));
+  tagF.bind();
   $("#fq").addEventListener("input", upd);
   $("#clearF").addEventListener("click", () => { state.filter = { q: "", account: "", type: "", tag: "" }; history.replaceState(null, "", "#transactions"); render(); });
   countF();
@@ -1176,7 +1177,8 @@ function screenTransactions(v) {
   // their options and values follow the new data and state.filter (load() drops a value that is gone, issue #79)
   state.viewRedraw = { key: "transactions", fn: () => {
     const o = txnFilterOptions();
-    ["account", "type", "tag"].forEach((k) => { const sel = $("#f" + k); sel.innerHTML = o[k]; sel.value = state.filter[k]; });
+    ["account", "type"].forEach((k) => { const sel = $("#f" + k); sel.innerHTML = o[k]; sel.value = state.filter[k]; });
+    tagF.set(state.filter.tag ? [state.filter.tag] : []);
     if ($("#fq").value !== state.filter.q) $("#fq").value = state.filter.q;
     countF();
     drawResults();
@@ -2432,14 +2434,177 @@ function refreshToAccounts(sel) {
   $("#fToNone").hidden = !none;
   $("#fToNone").textContent = none ? __("No other {currency} account. To move money into another currency, record spending in one account and income in the other.", { currency: from.currency }) : "";
 }
-// Categories are toggles: a transaction can have several (ADR 0010).
-function drawCats(sel, box = $("#fCats")) {
-  const cats = state.data.tags;
-  box.innerHTML = cats.length ? cats.map((t) => `<button type="button" data-cat="${esc(t.id)}" aria-pressed="${sel.includes(t.id)}">${esc(t.name)}</button>`).join("")
-    : `<small class="muted">${esc(__("No categories yet."))}</small>`;
-  box.querySelectorAll("[data-cat]").forEach((b) => b.addEventListener("click", () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true")));
+/* ---------- tag picker (issue #127, ADR 0028) ----------
+   One control for choosing tags, used by the add/edit form, the template dialog and the Transactions filter:
+   a search field (an ARIA combobox) that holds the chosen tags as chips in the order they were picked, the
+   whole list under it in groups (a tag's group, then stroke order, Ungrouped last), and a "Recently used" row
+   of the last tags entered, newest first. Nothing is pre-selected or highlighted (ADR 0015). The markup is
+   a string (html()), so a screen can include it in its own innerHTML; bind() then wires it up by element id. */
+// tag names in stroke order (筆畫) for Chinese, the zh-Hant default; other scripts keep their usual order
+const TAG_ORDER = (() => { try { return new Intl.Collator("zh-Hant-TW", { numeric: true }); } catch (e) { return new Intl.Collator(undefined, { numeric: true }); } })();
+const tagKey = (s) => String(s || "").normalize("NFKC").toLowerCase();
+// the tags in picker order: [{ group, tags }], groups in stroke order, the ungrouped ("") last
+function tagGroups(tags = state.data.tags) {
+  const by = new Map();
+  tags.forEach((t) => { const g = t.group || ""; if (!by.has(g)) by.set(g, []); by.get(g).push(t); });
+  return [...by.keys()].sort((a, b) => (!a) - (!b) || TAG_ORDER.compare(a, b))
+    .map((group) => ({ group, tags: by.get(group).sort((a, b) => TAG_ORDER.compare(a.name, b.name) || a.id.localeCompare(b.id)) }));
 }
-const pickedCats = (box = $("#fCats")) => [...box.querySelectorAll("[data-cat][aria-pressed=true]")].map((b) => b.dataset.cat);
+// the groups in use, for the group field's suggestions
+const tagGroupNames = () => tagGroups().map((g) => g.group).filter(Boolean);
+// the tags of the latest entries, the most recently entered first (a plain order, nothing pre-selected)
+const RECENT_TAGS = 8;
+function recentTags() {
+  const out = [], known = new Set(state.data.tags.map((t) => t.id));
+  for (const t of [...state.data.transactions].sort((a, b) => enteredAt(b).localeCompare(enteredAt(a)))) {
+    for (const id of txnCats(t)) if (known.has(id) && !out.includes(id)) out.push(id);
+    if (out.length >= RECENT_TAGS) break;
+  }
+  return out.slice(0, RECENT_TAGS);
+}
+const pickers = {};
+const CHECK_SVG = '<svg class="tgpcheck" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+// id: the element id prefix; o: { ids: the chosen tag ids, label: a visible heading (else ariaLabel),
+// multiple (default true): several tags, or one that replaces the last; create: offer "Create tag" for a
+// name no tag has; recent: the Recently used row; extra: [{ id, name }] listed before the groups (single
+// only: Uncategorised); empty: the placeholder when nothing is chosen; onChange(ids); keep: data-live-keep }
+function makeTagPicker(id, o) {
+  const multiple = o.multiple !== false, known = (x) => state.data.tags.some((t) => t.id === x) || (o.extra || []).some((e) => e.id === x);
+  const p = { ids: multiple ? (o.ids || []).filter(known) : (o.ids || []).slice(0, 1), q: "", open: false, active: -1, busy: false };
+  const el = (part) => $(`#${id}-${part}`);
+  const nameOf = (x) => { const t = state.data.tags.find((y) => y.id === x) || (o.extra || []).find((e) => e.id === x); return t ? t.name : __("Checking…"); };
+  // the options as listed now: [{ id, name, group }] (group undefined for extra), plus the create row
+  const listed = () => {
+    const q = tagKey(p.q.trim()), hit = (n) => !q || tagKey(n).includes(q);
+    const extra = (o.extra || []).filter((e) => hit(e.name));
+    const groups = tagGroups().map((g) => ({ group: g.group, tags: g.tags.filter((t) => hit(t.name)) })).filter((g) => g.tags.length);
+    const flat = [...extra, ...groups.flatMap((g) => g.tags)];
+    const name = p.q.trim().replace(/\s+/g, " ");
+    const create = o.create && name && !state.data.tags.some((t) => tagKey(t.name) === tagKey(name)) ? name : "";
+    return { extra, groups, flat, create };
+  };
+  const placeholder = () => (p.ids.length ? (multiple ? __("Search tags") : "") : o.empty || __("Search or choose tags"));
+  const chipsHTML = () => p.ids.map((x) => `<span class="chip cur tgpchip">${esc(nameOf(x))}<button type="button" data-tp-rm="${esc(x)}" aria-label="${esc(__("Remove {name}", { name: nameOf(x) }))}">×</button></span>`).join("");
+  const listHTML = () => {
+    const { extra, groups, flat, create } = listed();
+    let n = 0;
+    const opt = (t) => { const i = n++; return `<div role="option" id="${id}-o${i}" data-tp-i="${i}" aria-selected="${p.ids.includes(t.id)}" class="tgpopt${i === p.active ? " active" : ""}"><span>${esc(t.name)}</span>${CHECK_SVG}</div>`; };
+    const body = extra.map(opt).join("") + groups.map((g, gi) => `<div role="group" aria-labelledby="${id}-g${gi}"><div class="tgpghead" id="${id}-g${gi}" role="presentation">${esc(g.group || __("Ungrouped"))}</div>${g.tags.map(opt).join("")}</div>`).join("")
+      + (create ? `<div role="option" id="${id}-o${n}" data-tp-i="${n}" data-tp-create aria-selected="false" class="tgpopt tgpcreate${n === p.active ? " active" : ""}"><span>${esc(__("Create tag “{name}”", { name: create }))}</span></div>` : "");
+    const none = p.q.trim() && !flat.length ? `<p class="tgpnone">${esc(__("No tags match “{q}”.", { q: p.q.trim() }))}</p>` : !state.data.tags.length && !extra.length && !create ? `<p class="tgpnone">${esc(__("No categories yet."))}</p>` : "";
+    return `${none}<div role="listbox" id="${id}-lb" aria-multiselectable="${multiple}" aria-label="${esc(o.label || o.ariaLabel || __("Tags"))}">${body}</div>`;
+  };
+  const recentHTML = () => {
+    const ids = o.recent ? recentTags() : [];
+    return ids.length ? `<span class="qhead" id="${id}-rl">${esc(__("Recently used"))}</span><div class="tagpick">${ids.map((x) => `<button type="button" data-tp-t="${esc(x)}" aria-pressed="${p.ids.includes(x)}">${esc(nameOf(x))}</button>`).join("")}</div>` : "";
+  };
+  const html = () => `${o.label ? `<label class="tgplab" for="${id}-q">${esc(o.label)}</label>` : ""}<div class="tagpicker${multiple ? "" : " single"}" id="${id}">
+    <div class="tgpbox"><span class="tgpchips" id="${id}-chips">${chipsHTML()}</span><input id="${id}-q" class="tgpq" type="text" role="combobox" aria-expanded="false" aria-controls="${id}-lb" aria-autocomplete="list" autocomplete="off" autocapitalize="off" spellcheck="false"${o.label ? "" : ` aria-label="${esc(o.ariaLabel || __("Tags"))}"`}${o.keep ? " data-live-keep" : ""} placeholder="${esc(placeholder())}"></div>
+    <div class="tgplist" id="${id}-list" hidden>${listHTML()}</div>
+    <div class="tgprecent" id="${id}-recent" role="group" aria-labelledby="${id}-rl"${o.recent && recentTags().length ? "" : " hidden"}>${recentHTML()}</div></div>`;
+  const drawList = () => {
+    const list = el("list"), q = el("q");
+    list.innerHTML = listHTML();
+    list.hidden = !p.open;
+    q.setAttribute("aria-expanded", p.open);
+    const act = p.active >= 0 && el("o" + p.active);
+    if (act) { q.setAttribute("aria-activedescendant", act.id); if (act.scrollIntoView) act.scrollIntoView({ block: "nearest" }); } else q.removeAttribute("aria-activedescendant");
+    const rec = el("recent");
+    rec.hidden = p.open || !(o.recent && recentTags().length);
+  };
+  const draw = () => {
+    el("chips").innerHTML = chipsHTML();
+    el("q").placeholder = placeholder();
+    el("recent").innerHTML = recentHTML();
+    drawList();
+  };
+  const changed = () => { draw(); if (o.onChange) o.onChange(p.ids.slice()); };
+  const pick = (x) => {
+    if (multiple) p.ids = p.ids.includes(x) ? p.ids.filter((y) => y !== x) : [...p.ids, x];
+    else { p.ids = [x]; p.open = false; }
+    p.q = ""; el("q").value = ""; p.active = -1;
+    changed();
+  };
+  async function create(name) {
+    if (p.busy) return;
+    p.busy = true;
+    try {
+      const t = await post("/api/tags", { name });
+      // the new tag is usable at once; the next load() brings the book's own copy
+      if (!state.data.tags.some((x) => x.id === t.id)) state.data.tags = [...state.data.tags, { id: t.id, name: t.name, currency: t.currency || "" }];
+      msg(__("Tag “{name}” added.", { name: t.name }));
+      pick(t.id);
+      el("q").focus();
+    } catch (err) { errMsg(err); } finally { p.busy = false; }
+  }
+  const choose = (i) => {
+    const { flat, create: name } = listed();
+    if (i < flat.length) pick(flat[i].id);
+    else if (name && i === flat.length) create(name);
+  };
+  const setOpen = (on) => {
+    if (p.open === on) return;
+    p.open = on;
+    if (!on) { p.active = -1; }
+    drawList();
+    // on a phone, bring the field to the top so the list has room above the keyboard
+    if (on && window.matchMedia && window.matchMedia("(max-width:800px)").matches && el("q").scrollIntoView) $(`#${id}`).scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  const filter = () => { p.q = el("q").value; p.open = true; p.active = p.q.trim() ? 0 : -1; drawList(); };
+  function bind() {
+    const box = $(`#${id}`), q = el("q");
+    q.addEventListener("focus", () => { if (p.quiet) p.quiet = false; else setOpen(true); });
+    q.addEventListener("click", () => setOpen(true));
+    // an input method (注音, 倉頡) types a word in steps: filter once it is written, not at every step
+    q.addEventListener("input", (e) => { if (!e.isComposing) filter(); });
+    q.addEventListener("compositionend", filter);
+    q.addEventListener("keydown", (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
+      const n = listed().flat.length + (listed().create ? 1 : 0);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!p.open) { setOpen(true); }
+        if (n) p.active = e.key === "ArrowDown" ? (p.active + 1) % n : (p.active <= 0 ? n - 1 : p.active - 1);
+        drawList();
+      } else if (e.key === "Enter" && p.open) {
+        e.preventDefault(); // never submits the form under it while the list is open
+        if (p.active >= 0) choose(p.active);
+      } else if (e.key === "Escape" && p.open) {
+        e.preventDefault(); e.stopPropagation(); // closes the list, not the panel or dialog around it
+        if (p.q) { p.q = ""; q.value = ""; }
+        setOpen(false);
+      } else if (e.key === "Backspace" && !q.value && p.ids.length && multiple) {
+        p.ids = p.ids.slice(0, -1);
+        changed();
+      } else if (e.key === "Tab") setOpen(false);
+    });
+    // a pointer press on the list keeps the cursor in the field
+    el("list").addEventListener("mousedown", (e) => e.preventDefault());
+    el("list").addEventListener("click", (e) => { const opt = e.target.closest("[data-tp-i]"); if (opt) choose(+opt.dataset.tpI); });
+    box.addEventListener("click", (e) => {
+      const rm = e.target.closest("[data-tp-rm]"), rec = e.target.closest("[data-tp-t]");
+      if (rm) { p.ids = p.ids.filter((x) => x !== rm.dataset.tpRm); changed(); if (document.activeElement !== q) { p.quiet = true; q.focus({ preventScroll: true }); setTimeout(() => { p.quiet = false; }); } }
+      else if (rec) { const x = rec.dataset.tpT; p.ids = p.ids.includes(x) ? p.ids.filter((y) => y !== x) : [...p.ids, x]; changed(); }
+      else if (e.target.closest(".tgpbox") && e.target !== q) q.focus();
+    });
+    box.addEventListener("focusout", (e) => { if (!box.contains(e.relatedTarget)) { setOpen(false); if (p.q) { p.q = ""; q.value = ""; drawList(); } } });
+  }
+  const api = {
+    html, bind,
+    value: () => p.ids.slice(),
+    set(ids) { p.ids = multiple ? ids.filter(known) : ids.slice(0, 1); draw(); },
+    refresh: draw, // the book changed: names, groups and options follow, the field itself stays
+  };
+  pickers[id] = api;
+  return api;
+}
+// the add/edit form's tags (expense and income): the picker with Recently used and Create
+function drawTxnTags(ids) {
+  const tp = makeTagPicker("fCats", { ids, label: __("Tags"), create: true, recent: true });
+  $("#fCatsWrap").innerHTML = tp.html();
+  tp.bind();
+}
+const pickedCats = (id = "fCats") => (pickers[id] ? pickers[id].value() : []);
 // what names an entry in quick picks: its title, else its tags, payee or accounts
 function pickLabel(t) {
   const k = flow(t), ext = namedExt(t);
@@ -2509,7 +2674,7 @@ function setTxnType(type, tags) {
   $("#fExtWrap").hidden = !flowMode || state.data.externals.length < 2;
   $("#fExtLab").textContent = type === "income" ? __("Received from") : __("Paid to");
   $("#fCatsWrap").hidden = !flowMode;
-  if (tags !== undefined || !$("#fCats").childElementCount) drawCats(tags || []);
+  if (tags !== undefined || !pickers.fCats) drawTxnTags(tags || []);
   refreshToAccounts($("#fToAccount").value);
   syncActions();
 }
@@ -2542,7 +2707,7 @@ function openDrawer(type, tag) {
   $("#fDelete").hidden = true;
   fillSelects();
   $("#txnForm").reset();
-  $("#fCats").innerHTML = "";
+  delete pickers.fCats; // the next setTxnType draws a fresh picker
   // now, as this device's clock shows it (not UTC: before 08:00 in Taipei that was still yesterday)
   const now = zoneParts(new Date(), deviceTZ()), el = $("#txnForm").elements;
   el.date.value = now.date; el.time.value = now.time; $("#fTz").innerHTML = zoneOptions(deviceTZ());
@@ -2744,6 +2909,9 @@ function openTagDialog(kind, editId) {
     (newBudget ? field("Category", `<select name="catId">${free.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}<option value="">${esc(__("New category"))}</option></select>`) : "") +
     (t ? field("Type", `<select name="role">${roleOpts}</select>`) : `<input type="hidden" name="role" value="${esc(role)}">`) +
     field("Name", `<input name="name" required maxlength="100" placeholder="${esc(__("Food"))}" value="${t ? esc(t.name) : ""}">`, "f-name") +
+    // the heading the tag is listed under in tag pickers (ADR 0028); empty: Ungrouped. The groups in use are suggested.
+    field("Group", `<input name="group" maxlength="100" list="tagGroupList" autocomplete="off" placeholder="${esc(__("Ungrouped"))}" value="${t ? esc(t.group || "") : ""}">`
+      + `<datalist id="tagGroupList">${tagGroupNames().map((g) => `<option value="${esc(g)}"></option>`).join("")}</datalist>`, "f-name") +
     moneyField(N_("Limit"), "limit", t && t.limitMinor, cur, "f-budget") +
     field(N_("Period"), `<select name="preset">${presetOpts}</select>`, "f-budget") +
     field(N_("Every"), `<span class="moneyrow"><input name="every" type="number" min="1" max="99" value="${every}"><select name="unit">${enumOptions(CYCLE_UNIT_L, Object.keys(CYCLE_UNIT_L), cyc === "range" ? "monthly" : cyc)}</select></span>`, "f-budget f-custom") +
@@ -2770,8 +2938,8 @@ function openTagDialog(kind, editId) {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target).entries());
     const into = newBudget && f.catId ? free.find((x) => x.id === f.catId) : null; // a budget on an existing category
-    // a budget added to an existing category keeps that category's note (its field is hidden then)
-    const body = { name: into ? into.name : f.name.trim(), memo: into ? into.memo || "" : f.memo || "" };
+    // a budget added to an existing category keeps that category's note and group (their fields are hidden then)
+    const body = { name: into ? into.name : f.name.trim(), memo: into ? into.memo || "" : f.memo || "", group: into ? into.group || "" : (f.group || "").trim() };
     if (f.role === "budget") {
       body.currency = f.limitCur; body.limitMinor = toMinor(f.limit, f.limitCur);
       if (f.preset === "range") Object.assign(body, { cycle: "range", cycleStart: f.rangeStart, cycleEnd: f.rangeEnd });
@@ -2798,6 +2966,7 @@ function openTemplateDialog(editId, draft) {
   const acc = accountsByUse().map((a) => accOption(a, own)).join("");
   const rng = body && body.expectedRangeMinor ? body.expectedRangeMinor : null;
   const amt = body && body.amountMinor > 0 ? decimal(body.amountMinor, body.currency) : "";
+  const tplTags = makeTagPicker("tplCats", { ids: body && flow(body) !== "allocate" ? txnCats(body) : [], label: __("Tags"), create: true, recent: true });
   openDialog(tp ? __("Edit transaction template") : __("New transaction template"), dialogForm(
     field("Name", `<input name="name" required placeholder="${esc(__("Streaming"))}" value="${src ? esc(src.name || "") : ""}">`) +
     field("Generates", `<select name="type">${enumOptions(TPL_TYPE_L, ["expense", "income", "allocate"], mode)}</select>`) +
@@ -2809,7 +2978,7 @@ function openTemplateDialog(editId, draft) {
     field(N_("Expected max (variable bill, optional)"), `<input name="rangeMax" type="number" step="any" value="${rng ? decimal(rng.max, body.currency) : ""}">`, "f-range") +
     field(N_("Day of month"), `<input name="dayOfMonth" type="number" min="1" max="31" value="${src && src.schedule.dayOfMonth || 1}">`, "f-dom") +
     field(N_("Start date"), `<input name="startDate" type="date" value="${src ? esc(src.schedule.startDate || "") : ""}">`, "f-sched") +
-    `<div class="drawerfield f-cats wide" role="group" aria-labelledby="tplCatsLab"><span id="tplCatsLab">${esc(__("Tags"))}</span><div class="tagpick" id="tplCats"></div></div>` +
+    `<div class="drawerfield f-cats wide">${tplTags.html()}</div>` +
     field("Title", `<input name="note" maxlength="200" value="${body ? esc(body.note || "") : ""}">`, "wide"),
     tp ? __("Save changes") : __("Add template"),
     tp ? `<button type="button" class="smallbtn" id="dlgToggle">${esc(tp.enabled ? __("Pause") : __("Resume"))}</button>${freq !== "never" ? `<button type="button" class="smallbtn" id="dlgGenerate">${esc(__("Generate due"))}</button>` : ""}` : ""));
@@ -2818,7 +2987,7 @@ function openTemplateDialog(editId, draft) {
   });
   onDlg("dlgGenerate", generateDue);
   const form = $("#dialogForm");
-  drawCats(body && flow(body) !== "allocate" ? txnCats(body) : [], $("#tplCats"));
+  tplTags.bind();
   const sync = () => {
     const alloc = form.elements.type.value === "allocate", never = form.elements.frequency.value === "never";
     const show = (sel, on) => form.querySelectorAll(sel).forEach((el) => { el.hidden = !on; });
@@ -2841,7 +3010,7 @@ function openTemplateDialog(editId, draft) {
     if (f.type !== "allocate") { // generates a transfer with an external side; keep a named one
       const ext = (body && flow(body) === f.type && namedExt(body)) || EXT_ID;
       Object.assign(tpl, { type: "transfer", accountId: "", fromAccountId: f.type === "expense" ? f.accountId : ext, toAccountId: f.type === "expense" ? ext : f.accountId });
-      tpl.tagIds = pickedCats($("#tplCats"));
+      tpl.tagIds = pickedCats("tplCats");
     }
     if (f.type !== "allocate" && f.frequency !== "never" && f.rangeMin && f.rangeMax) tpl.expectedRangeMinor = { min: toMinor(f.rangeMin, cur), max: toMinor(f.rangeMax, cur) };
     const schedule = f.frequency === "never" ? { frequency: "never" }

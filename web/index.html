@@ -11,8 +11,8 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-title" content="記數通">
-<link rel="stylesheet" href="style.css?v=122">
-<script src="theme.js?v=122"></script>
+<link rel="stylesheet" href="style.css?v=123">
+<script src="theme.js?v=123"></script>
 </head>
 <body>
 <div id="authScreen" class="authscreen" hidden></div>
@@ -97,7 +97,7 @@
     <label id="fAmtWrap"><span data-i18n="Amount">Amount</span> <input name="amount" type="number" step="any" min="0.01" required inputmode="decimal"></label>
     <div class="daterow"><label><span data-i18n="Date">Date</span> <input name="date" type="date" required></label><div class="timenow"><label><span data-i18n="Time">Time</span> <input name="time" type="time"></label><button type="button" id="fNowBtn" class="iconbtn nowbtn" data-i18n-aria="Fill in current date and time" data-i18n-title="Fill in current date and time"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.84 8.2A9 9 0 1 1 5.64 18.36"/><path d="M3.55 4.81L3.84 8.2L6.63 6.25"/><path d="M12 7.5V12l3 2"/></svg></button></div></div>
     <label id="fTzWrap"><span data-i18n="Time zone">Time zone</span> <select name="tz" id="fTz"></select></label>
-    <div id="fCatsWrap" class="drawerfield" role="group" aria-labelledby="fCatsLab"><span id="fCatsLab" data-i18n="Tags">Tags</span><div id="fCats" class="tagpick"></div></div>
+    <div id="fCatsWrap" class="drawerfield"></div>
     <label id="fTitleWrap"><span data-i18n="Title">Title</span> <input name="note" maxlength="200" data-i18n-placeholder="Groceries"></label>
     <label id="fMemoWrap"><span data-i18n="Note">Note</span> <textarea name="memo" rows="3" maxlength="4000" data-i18n-placeholder="Details worth remembering: who, why, receipt number…"></textarea></label>
     <div class="saverow">
@@ -117,7 +117,7 @@
   <div id="dialogBody"></div>
 </dialog>
 
-<script src="i18n.js?v=122"></script>
-<script src="app.js?v=122"></script>
+<script src="i18n.js?v=123"></script>
+<script src="app.js?v=123"></script>
 </body>
 </html>
