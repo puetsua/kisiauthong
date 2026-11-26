@@ -1530,7 +1530,7 @@ components:
         cycleEnd: { type: string, format: date, description: Range budgets only. }
         currency: { type: string, pattern: "^[A-Z]{3}$", description: "A budget's currency; required with limitMinor." }
         memo: { type: string, maxLength: 4000 }
-        group: { type: string, maxLength: 100, description: "The heading the tag is listed under in tag pickers, trimmed with white space folded; empty or left out for ungrouped (ADR 0028). PUT replaces it like the other fields." }
+        group: { type: string, maxLength: 100, description: "The group that orders the tag in tag pickers (by group, then name; ungrouped last), trimmed with white space folded; empty or left out for ungrouped (ADR 0028). PUT replaces it like the other fields." }
     TagView:
       type: object
       required: [id, name, currency]

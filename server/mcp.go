@@ -323,7 +323,7 @@ func init() {
 			"period":      enum("Budget period (monthly by default)", "daily", "weekly", "monthly", "yearly"),
 			"periodEvery": integer("Budget period length in periods, e.g. 2 with weekly for every two weeks"),
 			"note":        str("Optional free-text note for the user's own records, up to 4000 characters"),
-			"group":       str("Optional group the category is listed under in the app's tag pickers, e.g. Food; empty for ungrouped"),
+			"group":       str("Optional group that orders the category in the app's tag pickers, e.g. Food; empty for ungrouped"),
 		}, "name"), toolCreateTag},
 		{"merge_tags", "Merge categories the user chose into one: every transaction, template and dashboard widget with a merged category gets the kept one instead (once), and the merged ones are deleted. Only merge tags the user asked to merge; similar names may be kept apart on purpose. Use dryRun first to see what changes. The result has a mergeId that the web app can undo.", ScopeTags, obj(map[string]interface{}{
 			"targetId":   str("The category to keep"),

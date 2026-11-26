@@ -223,14 +223,27 @@ tr.unconfirmed td{background:var(--plannedbg)}
 .chip.cur.tgpchip button{color:var(--accent);min-width:28px;min-height:28px}
 .tagpicker .tgpq{flex:1 1 5em;min-width:5em;width:auto;margin:0;padding:6px 2px;border:0;border-radius:0;background:none;outline:none;box-shadow:none;font:inherit;font-size:1rem;color:var(--ink)}
 .tgplist{margin-top:4px;max-height:min(300px,45dvh);overflow-y:auto;overscroll-behavior:contain;padding:0 4px 4px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:0 10px 26px rgba(var(--shadow-rgb),.14)}
-.tgpghead{position:sticky;top:0;z-index:1;padding:8px 10px 4px;font-size:.78rem;font-weight:600;color:var(--muted);background:var(--surface)}
 .tgpopt{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--ink);overflow-wrap:anywhere}
 .tgpopt:first-child{margin-top:4px}
+.tgpopt>span{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:0 6px}
 .tgpopt:hover,.tgpopt.active{background:var(--hover2)}
 .tgpopt .tgpcheck{flex:none;visibility:hidden;color:var(--accent)}
 .tgpopt[aria-selected=true]{font-weight:600}.tgpopt[aria-selected=true] .tgpcheck{visibility:visible}
 .tgpcreate{color:var(--accent);font-weight:600}
 .tgpnone{margin:0;padding:12px 10px 6px;color:var(--muted);font-size:.92rem}
+/* budget tags (variant E): a dot on chips and pills, a bar on list rows; ended budgets a ring and a dashed bar, dimmed,
+   with "Ended" in text; plain tags carry no mark. The type is also read out (.tgpsr), so colour is never the only cue. */
+.tgpsr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.chip.cur.tgpchip.ty-budget::before,.chip.cur.tgpchip.ty-ended::before,.tgprecent .tagpick button.ty-budget::before,.tgprecent .tagpick button.ty-ended::before{content:"";flex:none;width:9px;height:9px;border-radius:50%;margin-right:4px;background:var(--amber)}
+.chip.cur.tgpchip.ty-ended::before,.tgprecent .tagpick button.ty-ended::before{width:5px;height:5px;background:none;border:2px solid var(--muted)}
+.tgprecent .tagpick button.ty-budget,.tgprecent .tagpick button.ty-ended{display:inline-flex;align-items:center}
+.chip.cur.tgpchip.ty-ended,.tgprecent .tagpick button.ty-ended{color:var(--muted);border-color:var(--line);background:var(--soft)}
+.chip.cur.tgpchip.ty-ended button{color:var(--muted)}
+.tgpended{font-size:.76rem;font-weight:400;color:var(--muted);margin-left:4px}
+.tgpopt .tgpended{margin-left:0}
+.tgpopt.ty-budget,.tgpopt.ty-ended{border-radius:0 6px 6px 0;padding-left:6px}
+.tgpopt.ty-budget{border-left:4px solid var(--amber)}
+.tgpopt.ty-ended{border-left:4px dashed var(--muted);color:var(--muted)}
 .tgprecent{display:flex;flex-direction:column;gap:2px;margin-top:10px}.tgprecent .tagpick{margin-top:4px}
 /* the Transactions filter: as tall as the dropdowns beside it, its list over the results */
 .filters .tagpicker{margin:0;flex:0 1 240px;min-width:180px}

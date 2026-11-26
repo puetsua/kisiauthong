@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// A tag's group is the heading it is listed under in tag pickers (issue #127,
+// A tag's group orders it in tag pickers (issue #127,
 // ADR 0028): optional, trimmed with its white space folded, at most 100
 // characters, kept per user, exported, kept through a merge and its undo, and
 // added to older databases by migration 17.

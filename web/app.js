@@ -2437,7 +2437,8 @@ function refreshToAccounts(sel) {
 /* ---------- tag picker (issue #127, ADR 0028) ----------
    One control for choosing tags, used by the add/edit form, the template dialog and the Transactions filter:
    a search field (an ARIA combobox) that holds the chosen tags as chips in the order they were picked, the
-   whole list under it in groups (a tag's group, then stroke order, Ungrouped last), and a "Recently used" row
+   whole list under it as one flat list (by group, then stroke order, Ungrouped last; no headings), budgets marked
+   with a dot and a bar (an ended one dimmed, marked Ended), and a "Recently used" row
    of the last tags entered, newest first. Nothing is pre-selected or highlighted (ADR 0015). The markup is
    a string (html()), so a screen can include it in its own innerHTML; bind() then wires it up by element id. */
 // tag names in stroke order (筆畫) for Chinese, the zh-Hant default; other scripts keep their usual order
@@ -2484,19 +2485,26 @@ function makeTagPicker(id, o) {
     return { extra, groups, flat, create };
   };
   const placeholder = () => (p.ids.length ? (multiple ? __("Search tags") : "") : o.empty || __("Search or choose tags"));
-  const chipsHTML = () => p.ids.map((x) => `<span class="chip cur tgpchip">${esc(nameOf(x))}<button type="button" data-tp-rm="${esc(x)}" aria-label="${esc(__("Remove {name}", { name: nameOf(x) }))}">×</button></span>`).join("");
+  // a budget carries a dot (and a bar in the list); an ended one a ring, dimmed, marked Ended; a plain tag nothing.
+  // A screen reader hears the type after the name. No legend: the marks only tell the two apart.
+  const kindOf = (x) => { const t = state.data.tags.find((y) => y.id === x); return !t || t.limitMinor === undefined ? "" : budgetEnded(t) ? "ended" : "budget"; };
+  const kindCls = (x) => (kindOf(x) ? ` ty-${kindOf(x)}` : "");
+  const kindText = (x) => (kindOf(x) === "ended" ? `<small class="tgpended">${esc(__("Ended"))}</small>` : "")
+    + (kindOf(x) ? `<span class="tgpsr">${esc(kindOf(x) === "ended" ? __(", ended budget") : __(", budget"))}</span>` : "");
+  const chipsHTML = () => p.ids.map((x) => `<span class="chip cur tgpchip${kindCls(x)}">${esc(nameOf(x))}${kindText(x)}<button type="button" data-tp-rm="${esc(x)}" aria-label="${esc(__("Remove {name}", { name: nameOf(x) }))}">×</button></span>`).join("");
   const listHTML = () => {
-    const { extra, groups, flat, create } = listed();
+    const { extra, flat, create } = listed();
     let n = 0;
-    const opt = (t) => { const i = n++; return `<div role="option" id="${id}-o${i}" data-tp-i="${i}" aria-selected="${p.ids.includes(t.id)}" class="tgpopt${i === p.active ? " active" : ""}"><span>${esc(t.name)}</span>${CHECK_SVG}</div>`; };
-    const body = extra.map(opt).join("") + groups.map((g, gi) => `<div role="group" aria-labelledby="${id}-g${gi}"><div class="tgpghead" id="${id}-g${gi}" role="presentation">${esc(g.group || __("Ungrouped"))}</div>${g.tags.map(opt).join("")}</div>`).join("")
+    const opt = (t) => { const i = n++; return `<div role="option" id="${id}-o${i}" data-tp-i="${i}" aria-selected="${p.ids.includes(t.id)}" class="tgpopt${kindCls(t.id)}${i === p.active ? " active" : ""}"><span>${esc(t.name)}${kindText(t.id)}</span>${CHECK_SVG}</div>`; };
+    // one flat list, no headings: the order (group, then stroke order, Ungrouped last) is the only grouping shown
+    const body = flat.map(opt).join("")
       + (create ? `<div role="option" id="${id}-o${n}" data-tp-i="${n}" data-tp-create aria-selected="false" class="tgpopt tgpcreate${n === p.active ? " active" : ""}"><span>${esc(__("Create tag “{name}”", { name: create }))}</span></div>` : "");
     const none = p.q.trim() && !flat.length ? `<p class="tgpnone">${esc(__("No tags match “{q}”.", { q: p.q.trim() }))}</p>` : !state.data.tags.length && !extra.length && !create ? `<p class="tgpnone">${esc(__("No categories yet."))}</p>` : "";
     return `${none}<div role="listbox" id="${id}-lb" aria-multiselectable="${multiple}" aria-label="${esc(o.label || o.ariaLabel || __("Tags"))}">${body}</div>`;
   };
   const recentHTML = () => {
     const ids = o.recent ? recentTags() : [];
-    return ids.length ? `<span class="qhead" id="${id}-rl">${esc(__("Recently used"))}</span><div class="tagpick">${ids.map((x) => `<button type="button" data-tp-t="${esc(x)}" aria-pressed="${p.ids.includes(x)}">${esc(nameOf(x))}</button>`).join("")}</div>` : "";
+    return ids.length ? `<span class="qhead" id="${id}-rl">${esc(__("Recently used"))}</span><div class="tagpick">${ids.map((x) => `<button type="button" data-tp-t="${esc(x)}" aria-pressed="${p.ids.includes(x)}"${kindOf(x) ? ` class="ty-${kindOf(x)}"` : ""}>${esc(nameOf(x))}${kindText(x)}</button>`).join("")}</div>` : "";
   };
   const html = () => `${o.label ? `<label class="tgplab" for="${id}-q">${esc(o.label)}</label>` : ""}<div class="tagpicker${multiple ? "" : " single"}" id="${id}">
     <div class="tgpbox"><span class="tgpchips" id="${id}-chips">${chipsHTML()}</span><input id="${id}-q" class="tgpq" type="text" role="combobox" aria-expanded="false" aria-controls="${id}-lb" aria-autocomplete="list" autocomplete="off" autocapitalize="off" spellcheck="false"${o.label ? "" : ` aria-label="${esc(o.ariaLabel || __("Tags"))}"`}${o.keep ? " data-live-keep" : ""} placeholder="${esc(placeholder())}"></div>
@@ -2547,8 +2555,10 @@ function makeTagPicker(id, o) {
     p.open = on;
     if (!on) { p.active = -1; }
     drawList();
-    // on a phone, bring the field to the top so the list has room above the keyboard
-    if (on && window.matchMedia && window.matchMedia("(max-width:800px)").matches && el("q").scrollIntoView) $(`#${id}`).scrollIntoView({ block: "start", behavior: "smooth" });
+    // on a phone, inside the transaction panel or a dialog (which scroll themselves), bring the field to the top so the
+    // list has room above the keyboard; on a page (the Transactions filter) the sticky top bar would cover it
+    const box = $(`#${id}`);
+    if (on && box.closest && box.closest("#drawer, dialog") && window.matchMedia && window.matchMedia("(max-width:800px)").matches) box.scrollIntoView({ block: "start", behavior: "smooth" });
   };
   const filter = () => { p.q = el("q").value; p.open = true; p.active = p.q.trim() ? 0 : -1; drawList(); };
   function bind() {
@@ -2909,7 +2919,7 @@ function openTagDialog(kind, editId) {
     (newBudget ? field("Category", `<select name="catId">${free.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}<option value="">${esc(__("New category"))}</option></select>`) : "") +
     (t ? field("Type", `<select name="role">${roleOpts}</select>`) : `<input type="hidden" name="role" value="${esc(role)}">`) +
     field("Name", `<input name="name" required maxlength="100" placeholder="${esc(__("Food"))}" value="${t ? esc(t.name) : ""}">`, "f-name") +
-    // the heading the tag is listed under in tag pickers (ADR 0028); empty: Ungrouped. The groups in use are suggested.
+    // the group that orders the tag in tag pickers (ADR 0028); empty: Ungrouped. The groups in use are suggested.
     field("Group", `<input name="group" maxlength="100" list="tagGroupList" autocomplete="off" placeholder="${esc(__("Ungrouped"))}" value="${t ? esc(t.group || "") : ""}">`
       + `<datalist id="tagGroupList">${tagGroupNames().map((g) => `<option value="${esc(g)}"></option>`).join("")}</datalist>`, "f-name") +
     moneyField(N_("Limit"), "limit", t && t.limitMinor, cur, "f-budget") +

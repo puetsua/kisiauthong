@@ -306,7 +306,8 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
 - **Tag groups** (issue #127, ADR 0028): the category/budget form has Group
   after Name: a text field suggesting the groups in use (`datalist`), with
   Ungrouped (未分組) as its placeholder when empty. The group only orders
-  and heads the tag picker's list; the Tags page cards do not show it.
+  the tag picker's list (which shows no headings); the Tags page cards do
+  not show it.
 - **Notes on accounts and tags** (issue #42): the user's own free text, edited
   as the last field of the account or category/budget form (a `textarea`
   labelled Note, 4000 characters, like a transaction note). The account page
@@ -426,7 +427,7 @@ topmost popup only.
 | Info button | `button.infobtn` (an (i) icon, 40px, `aria-haspopup="dialog"`, `aria-label` "About “{label}”") after a `label.checkrow`, both in a `div.checkline` | opens a short explanation of a choice in the dialog (`dialog.helpdlg`, a `.helplist` and Close); beside the label, never in it, so it toggles nothing. For a rule a label cannot carry, not for hints the layout already gives (Settings → Sync) |
 | Colour swatch | `.tswatches` of `button.tswatch` (`aria-pressed`) with the colour, its name and hex | the theme editor's main colours; the chosen one opens the picker under its group |
 | Colour picker | `.tpick`: `.tpsv` (`role=slider`, arrow keys), `.tphue` range, hex field, a plain contrast figure | the theme editor only; a figure, never a warning (ADR 0015) |
-| Tag picker | `makeTagPicker(id, opts)` → `.tagpicker`: `.tgpbox` (chips + `input.tgpq`, `role=combobox`), `.tgplist` (`role=listbox`, `.tgpghead` group headings, `.tgpopt` options), `.tgprecent` | choosing tags: the add form, the template dialog, the Transactions filter (`multiple: false`); see below |
+| Tag picker | `makeTagPicker(id, opts)` → `.tagpicker`: `.tgpbox` (chips + `input.tgpq`, `role=combobox`), `.tgplist` (`role=listbox`, `.tgpopt` options; `.ty-budget`/`.ty-ended` marks), `.tgprecent` | choosing tags: the add form, the template dialog, the Transactions filter (`multiple: false`); see below |
 
 ### Tag picker
 
@@ -439,9 +440,9 @@ Issue #127, ADR 0028. One control for choosing tags. A screen puts its
   last chip.
 - **The list.** Focusing or clicking the field opens the list *in place*
   under it (in the filter bar it opens over the results).
-  - It lists every tag under its group heading. Groups are in stroke order
-    (筆畫, `TAG_ORDER`), with Ungrouped (未分組) last; tags within a group
-    are in stroke order too.
+  - It is one flat list of every tag, with no headings. The order is by
+    group: groups in stroke order (筆畫, `TAG_ORDER`), with Ungrouped last;
+    tags within a group are in stroke order too.
   - Typing filters by name. An input method's unfinished word does not
     filter.
   - Keys: ↑/↓ move the active option (`aria-activedescendant`), Enter picks
@@ -450,6 +451,17 @@ Issue #127, ADR 0028. One control for choosing tags. A screen puts its
   - Leaving the field closes the list. On a phone, opening it scrolls the
     field to the top. Nothing focuses the field by itself, so the keyboard
     only appears when the user taps.
+- **Budget marks** (variant E of the issue #127 mockups). No legend, no
+  amounts, no bars.
+  - A running budget (`.ty-budget`) has a filled `--amber` dot before its
+    name on chips and Recently used pills, and a solid 4px bar on the left
+    of its list row.
+  - An ended budget (`.ty-ended`, `budgetEnded()`) has a ring and a dashed
+    bar, is dimmed (`--muted`, `--soft`), and is followed by "Ended"
+    (`.tgpended`).
+  - A plain tag has no mark.
+  - `.tgpsr` (visually hidden) adds ", budget" or ", ended budget" for
+    screen readers.
 - **Recently used** (`recent: true`): a `.tagpick` row of toggles under the
   field, holding the tags of the latest entries, the most recently entered
   first. It hides while the list is open. It is a plain order, never
@@ -458,7 +470,7 @@ Issue #127, ADR 0028. One control for choosing tags. A screen puts its
   ends with Create tag "…", which adds an ungrouped tag and picks it. When
   nothing matches, a note above it says so.
 - **Filter mode** (`multiple: false`): one choice replaces the last and
-  closes the list. Extra options (Uncategorised) come before the groups. The
+  closes the list. Extra options (Uncategorised) come first. The
   placeholder says what no choice means (All categories). There is no
   create and no recent row. A tag the address names that is not known yet
   is a "Checking…" chip (issue #79).

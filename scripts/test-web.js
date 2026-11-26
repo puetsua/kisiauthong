@@ -1238,7 +1238,7 @@ test("tag picker (#127): Recently used is the tags of the latest entries, newest
   } finally { Object.assign(t.state.data, { tags: was.tags, transactions: was.txns }); }
 });
 
-test("tag picker (#127): chips in picked order, a grouped list, search, Create tag, no pre-selection", () => {
+test("tag picker (#127): chips in picked order, one flat list, search, Create tag, no pre-selection", () => {
   const was = { tags: t.state.data.tags, txns: t.state.data.transactions };
   t.state.data.tags = [{ id: "g1", name: "早餐", group: "飲食" }, { id: "g2", name: "晚餐", group: "飲食" }, { id: "g3", name: "代墊" }];
   t.state.data.transactions = [];
@@ -1251,8 +1251,10 @@ test("tag picker (#127): chips in picked order, a grouped list, search, Create t
     assert.deepStrictEqual([...tp.value()], ["g2", "g1"]);
     assert.match(html, /<input id="tpx-q" class="tgpq" type="text" role="combobox" aria-expanded="false" aria-controls="tpx-lb"/);
     assert.match(html, /<div role="listbox" id="tpx-lb" aria-multiselectable="true"/);
-    assert.match(html, /<div role="group" aria-labelledby="tpx-g0"><div class="tgpghead" id="tpx-g0" role="presentation">飲食<\/div><div role="option" id="tpx-o0" data-tp-i="0" aria-selected="true" class="tgpopt"><span>早餐/);
-    assert.match(html, /role="presentation">Ungrouped<\/div><div role="option" id="tpx-o2" data-tp-i="2" aria-selected="false" class="tgpopt"><span>代墊/);
+    assert.match(html, /<div role="listbox" id="tpx-lb" aria-multiselectable="true" aria-label="Tags"><div role="option" id="tpx-o0" data-tp-i="0" aria-selected="true" class="tgpopt"><span>早餐<\/span>/,
+      "one flat list: the group's tags first, in stroke order");
+    assert.match(html, /<div role="option" id="tpx-o1" [^>]*><span>晚餐<\/span>.*<div role="option" id="tpx-o2" data-tp-i="2" aria-selected="false" class="tgpopt"><span>代墊<\/span>/, "then the ungrouped ones");
+    assert.doesNotMatch(html, /tgpghead|role="group" aria-labelledby="tpx-g|>飲食<|>Ungrouped</, "no group or type headings in the list");
     assert.doesNotMatch(html, /class="tgpopt active"/, "nothing highlighted before the user moves");
     assert.match(html, /class="tgprecent" id="tpx-recent" role="group" aria-labelledby="tpx-rl" hidden>/, "no Recently used row without history");
     assert.doesNotMatch(html, /Create tag/, "nothing to create while nothing is typed");
@@ -1276,7 +1278,7 @@ test("tag picker (#127): chips in picked order, a grouped list, search, Create t
     t.setLang("zh-TW");
     const plain = strip(t.makeTagPicker("tpy", { ids: [], ariaLabel: "x" }).html());
     assert.match(plain, /placeholder="搜尋或選擇標籤"/);
-    assert.match(plain, /role="presentation">未分組<\/div>/);
+    assert.doesNotMatch(plain, /未分組/, "Ungrouped is the tag form's word only, not a heading in the list");
   } finally { t.setLang("en"); Object.assign(t.state.data, { tags: was.tags, transactions: was.txns }); }
 });
 
@@ -1307,7 +1309,7 @@ test("tag picker (#127): the Transactions tag filter picks one tag or Uncategori
     assert.match(html, /<div class="tagpicker single" id="ftag">/);
     assert.match(html, /aria-label="Tags" data-live-keep placeholder="All categories"/, "nothing chosen reads All categories");
     assert.match(html, /<div role="listbox" id="ftag-lb" aria-multiselectable="false" aria-label="Tags"><div role="option" id="ftag-o0" data-tp-i="0" aria-selected="false" class="tgpopt"><span>Uncategorised<\/span>/);
-    assert.match(html, /role="presentation">Daily<\/div><div role="option" id="ftag-o1"/);
+    assert.match(html, /<div role="option" id="ftag-o1" data-tp-i="1" aria-selected="false" class="tgpopt"><span>Food<\/span>/, "then the tags, without headings");
     assert.doesNotMatch(html, /tgprecent" id="ftag-recent" role="group" aria-labelledby="ftag-rl">/, "no Recently used row in the filter");
     assert.doesNotMatch(html, /<select id="ftag"/);
     t.state.filter = { q: "", account: "", type: "", tag: "none" };
@@ -1316,6 +1318,28 @@ test("tag picker (#127): the Transactions tag filter picks one tag or Uncategori
     assert.match(html, /<span class="chip cur tgpchip">Uncategorised<button type="button" data-tp-rm="none" aria-label="Remove Uncategorised">/);
     assert.match(html, /placeholder=""/);
   } finally { Object.assign(t.state, { filter: was.filter }); t.state.data.tags = was.tags; location.hash = ""; }
+});
+
+test("tag picker (#127): budgets carry a dot and a bar, an ended one is dimmed and marked Ended, plain tags nothing", () => {
+  const was = { tags: t.state.data.tags, txns: t.state.data.transactions };
+  t.state.data.tags = [{ id: "g1", name: "Food", limitMinor: 300000, currency: "TWD", periodStart: "2026-11-01", periodEnd: "2026-11-30" },
+    { id: "g2", name: "Trip", limitMinor: 500000, currency: "TWD", cycle: "range", periodStart: "2026-10-01", periodEnd: "2026-10-10" }, { id: "g3", name: "Rent" }];
+  const row = (id, at, tagIds) => ({ id, fromAccountId: "a1", toAccountId: "acc-external", amountMinor: 100, currency: "TWD", date: at.slice(0, 10), state: "posted", createdAt: at, tagIds });
+  t.state.data.transactions = [row("x1", "2026-11-17T01:00:00Z", ["g1", "g2", "g3"])];
+  try {
+    const html = strip(t.makeTagPicker("tpt", { ids: ["g1", "g2", "g3"], label: "Tags", recent: true }).html());
+    assert.match(html, /<span class="chip cur tgpchip ty-budget">Food<span class="tgpsr">, budget<\/span><button/, "a running budget: the dot, and its type read out");
+    assert.match(html, /<span class="chip cur tgpchip ty-ended">Trip<small class="tgpended">Ended<\/small><span class="tgpsr">, ended budget<\/span><button/, "an ended one says so in text");
+    assert.match(html, /<span class="chip cur tgpchip">Rent<button/, "a plain tag has no mark");
+    assert.match(html, /class="tgpopt ty-budget"><span>Food<span class="tgpsr">, budget<\/span><\/span>/);
+    assert.match(html, /class="tgpopt ty-ended"><span>Trip<small class="tgpended">Ended<\/small>/);
+    assert.match(html, /class="tgpopt"><span>Rent<\/span>/);
+    assert.match(html, /data-tp-t="g1" aria-pressed="true" class="ty-budget">Food/, "Recently used marks budgets too");
+    assert.match(html, /data-tp-t="g3" aria-pressed="true">Rent<\/button>/);
+    assert.doesNotMatch(html, /legend|remaining|%/i, "no legend, amounts or bars");
+    t.setLang("zh-TW");
+    assert.match(strip(t.makeTagPicker("tpt", { ids: ["g2"], label: "x" }).html()), /Trip<small class="tgpended">已結束<\/small><span class="tgpsr">，已結束的預算<\/span>/);
+  } finally { t.setLang("en"); Object.assign(t.state.data, { tags: was.tags, transactions: was.txns }); }
 });
 
 test("tag groups (#127): the category form has a Group field with the groups in use, empty for Ungrouped", () => {

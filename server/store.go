@@ -475,7 +475,7 @@ func migrateAccountTagMemo(tx *sql.Tx) error {
 	return nil
 }
 
-// Migration 17 (issue #127, ADR 0028): a tag gets the group it is listed under in tag pickers.
+// Migration 17 (issue #127, ADR 0028): a tag gets the group that orders it in tag pickers.
 func migrateTagGroup(tx *sql.Tx) error {
 	has, err := hasColumn(tx, "tags", "tag_group")
 	if err != nil || has {

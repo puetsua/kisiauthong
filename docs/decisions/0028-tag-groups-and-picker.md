@@ -15,8 +15,8 @@ budgets and reports count.
 
 ## Decision
 
-- **Group:** a tag has an optional **`group`**: a heading it is listed
-  under in tag pickers, and nothing more.
+- **Group:** a tag has an optional **`group`**, which sets where it is
+  listed in tag pickers, and nothing more.
   - It is free text, trimmed, with runs of white space folded into one
     space, at most 100 characters.
   - An empty group means *Ungrouped*.
@@ -32,10 +32,22 @@ budgets and reports count.
   filter.
   - **The field:** a search field (an ARIA combobox) holds the chosen tags
     as removable chips, in the order they were picked.
-  - **The list:** it lists every tag, grouped.
-    - Groups come in stroke order (筆畫, the zh-Hant collation), with
-      Ungrouped last.
+  - **The list:** one flat list of every tag, with no group or type
+    headings.
+    - The order is by group: groups in stroke order (筆畫, the zh-Hant
+      collation), with Ungrouped last.
     - Tags within a group come in stroke order too.
+  - **Budget marks:** a budget (a tag with a limit) is told apart from a
+    plain tag on the chips, in the list and in Recently used.
+    - A running budget has a filled dot on chips and pills, and a solid bar
+      on the left of its list row.
+    - A budget whose fixed date range has ended has a ring and a dashed
+      bar, is dimmed, and says "Ended" in text.
+    - A plain tag has no mark.
+    - A screen reader hears ", budget" or ", ended budget" after the name,
+      so colour is never the only cue.
+    - There is no legend, and no amounts or progress bars.
+    - Reserves are not tags (ADR 0013), so they never appear here.
   - **Search:** typing filters by name (a substring, folding width and
     case); Zhuyin or pinyin initials are not matched. An input method's
     unfinished word does not filter.
