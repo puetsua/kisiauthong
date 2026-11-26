@@ -18,7 +18,7 @@ func testServer(t *testing.T) (*httptest.Server, *Store) {
 	s := openTestStore(t)
 	prev := store
 	store = s
-	srv := httptest.NewServer(newMux(""))
+	srv := httptest.NewServer(newHandler(""))
 	t.Cleanup(func() { srv.Close(); store = prev })
 	signinFailures.reset("127.0.0.1")
 	return srv, s
