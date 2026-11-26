@@ -2437,8 +2437,8 @@ function refreshToAccounts(sel) {
 /* ---------- tag picker (issue #127, ADR 0028) ----------
    One control for choosing tags, used by the add/edit form, the template dialog and the Transactions filter:
    a search field (an ARIA combobox) that holds the chosen tags as chips in the order they were picked, the
-   whole list under it as one flat list (by group, then stroke order, Ungrouped last; no headings), budgets marked
-   with a dot and a bar (an ended one dimmed, marked Ended), and a "Recently used" row
+   whole list under it as one flat list (by group, then stroke order, Ungrouped last; no headings), running budgets
+   marked with a dot and a bar (an ended budget looks like any tag), and a "Recently used" row
    of the last tags entered, newest first. Nothing is pre-selected or highlighted (ADR 0015). The markup is
    a string (html()), so a screen can include it in its own innerHTML; bind() then wires it up by element id. */
 // tag names in stroke order (筆畫) for Chinese, the zh-Hant default; other scripts keep their usual order
@@ -2485,12 +2485,11 @@ function makeTagPicker(id, o) {
     return { extra, groups, flat, create };
   };
   const placeholder = () => (p.ids.length ? (multiple ? __("Search tags") : "") : o.empty || __("Search or choose tags"));
-  // a budget carries a dot (and a bar in the list); an ended one a ring, dimmed, marked Ended; a plain tag nothing.
-  // A screen reader hears the type after the name. No legend: the marks only tell the two apart.
-  const kindOf = (x) => { const t = state.data.tags.find((y) => y.id === x); return !t || t.limitMinor === undefined ? "" : budgetEnded(t) ? "ended" : "budget"; };
+  // a running budget carries a dot (and a bar in the list); a plain tag nothing, and a budget whose date range has
+  // ended looks like a plain tag. A screen reader hears "budget" after the name. No legend.
+  const kindOf = (x) => { const t = state.data.tags.find((y) => y.id === x); return t && t.limitMinor !== undefined && !budgetEnded(t) ? "budget" : ""; };
   const kindCls = (x) => (kindOf(x) ? ` ty-${kindOf(x)}` : "");
-  const kindText = (x) => (kindOf(x) === "ended" ? `<small class="tgpended">${esc(__("Ended"))}</small>` : "")
-    + (kindOf(x) ? `<span class="tgpsr">${esc(kindOf(x) === "ended" ? __(", ended budget") : __(", budget"))}</span>` : "");
+  const kindText = (x) => (kindOf(x) ? `<span class="tgpsr">${esc(__(", budget"))}</span>` : "");
   const chipsHTML = () => p.ids.map((x) => `<span class="chip cur tgpchip${kindCls(x)}">${esc(nameOf(x))}${kindText(x)}<button type="button" data-tp-rm="${esc(x)}" aria-label="${esc(__("Remove {name}", { name: nameOf(x) }))}">×</button></span>`).join("");
   const listHTML = () => {
     const { extra, flat, create } = listed();

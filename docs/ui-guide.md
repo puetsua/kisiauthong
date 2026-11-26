@@ -427,7 +427,7 @@ topmost popup only.
 | Info button | `button.infobtn` (an (i) icon, 40px, `aria-haspopup="dialog"`, `aria-label` "About “{label}”") after a `label.checkrow`, both in a `div.checkline` | opens a short explanation of a choice in the dialog (`dialog.helpdlg`, a `.helplist` and Close); beside the label, never in it, so it toggles nothing. For a rule a label cannot carry, not for hints the layout already gives (Settings → Sync) |
 | Colour swatch | `.tswatches` of `button.tswatch` (`aria-pressed`) with the colour, its name and hex | the theme editor's main colours; the chosen one opens the picker under its group |
 | Colour picker | `.tpick`: `.tpsv` (`role=slider`, arrow keys), `.tphue` range, hex field, a plain contrast figure | the theme editor only; a figure, never a warning (ADR 0015) |
-| Tag picker | `makeTagPicker(id, opts)` → `.tagpicker`: `.tgpbox` (chips + `input.tgpq`, `role=combobox`), `.tgplist` (`role=listbox`, `.tgpopt` options; `.ty-budget`/`.ty-ended` marks), `.tgprecent` | choosing tags: the add form, the template dialog, the Transactions filter (`multiple: false`); see below |
+| Tag picker | `makeTagPicker(id, opts)` → `.tagpicker`: `.tgpbox` (chips + `input.tgpq`, `role=combobox`), `.tgplist` (`role=listbox`, `.tgpopt` options; `.ty-budget` marks), `.tgprecent` | choosing tags: the add form, the template dialog, the Transactions filter (`multiple: false`); see below |
 
 ### Tag picker
 
@@ -456,12 +456,9 @@ Issue #127, ADR 0028. One control for choosing tags. A screen puts its
   - A running budget (`.ty-budget`) has a filled `--amber` dot before its
     name on chips and Recently used pills, and a solid 4px bar on the left
     of its list row.
-  - An ended budget (`.ty-ended`, `budgetEnded()`) has a ring and a dashed
-    bar, is dimmed (`--muted`, `--soft`), and is followed by "Ended"
-    (`.tgpended`).
-  - A plain tag has no mark.
-  - `.tgpsr` (visually hidden) adds ", budget" or ", ended budget" for
-    screen readers.
+  - A plain tag has no mark. A budget whose date range has ended
+    (`budgetEnded()`) looks the same as a plain tag.
+  - `.tgpsr` (visually hidden) adds ", budget" for screen readers.
 - **Recently used** (`recent: true`): a `.tagpick` row of toggles under the
   field, holding the tags of the latest entries, the most recently entered
   first. It hides while the list is open. It is a plain order, never

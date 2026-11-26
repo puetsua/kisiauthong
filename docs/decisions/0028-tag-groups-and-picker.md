@@ -41,11 +41,10 @@ budgets and reports count.
     plain tag on the chips, in the list and in Recently used.
     - A running budget has a filled dot on chips and pills, and a solid bar
       on the left of its list row.
-    - A budget whose fixed date range has ended has a ring and a dashed
-      bar, is dimmed, and says "Ended" in text.
-    - A plain tag has no mark.
-    - A screen reader hears ", budget" or ", ended budget" after the name,
-      so colour is never the only cue.
+    - A plain tag has no mark. A budget whose fixed date range has ended
+      looks the same as a plain tag: not dimmed, no "Ended".
+    - A screen reader hears ", budget" after a running budget's name, so
+      colour is never the only cue.
     - There is no legend, and no amounts or progress bars.
     - Reserves are not tags (ADR 0013), so they never appear here.
   - **Search:** typing filters by name (a substring, folding width and
