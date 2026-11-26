@@ -56,6 +56,14 @@ browsers that pause pages in the background.
   - Fetches can overlap (a refresh, the page's own write). An answer to a
     fetch that began before the one on screen is dropped whole, and so is
     any answer that arrives after sign-out.
+  - The page hears of its own write before the write is answered. A refresh
+    that comes due while a request of the page's own is under way waits for
+    it: the fetch after that write brings the announced revision. Fetching
+    the books a second time beside it halved the speed of both on a phone's
+    network, so a saved transaction took twice as long to appear. A request
+    under way for more than 10 s (a stalled connection) no longer holds a
+    refresh back. A fetch asks for the books and the settings at once
+    (issue #130).
   - A setting saved and applied from its own answer (Settings, Customize
     dashboard, a dismissed notification) is not put back by a fetch begun
     before that: such a fetch draws its books but keeps the settings on
