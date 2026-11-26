@@ -303,6 +303,10 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   running ones, summary "Ended (n)" (已結束 (n)), 40px tall. It is closed by
   default; the browser remembers the last choice (`localStorage`) for every
   such list. With no ended budget there is no section.
+- **Tag groups** (issue #127, ADR 0028): the category/budget form has Group
+  after Name: a text field suggesting the groups in use (`datalist`), with
+  Ungrouped (未分組) as its placeholder when empty. The group only orders
+  and heads the tag picker's list; the Tags page cards do not show it.
 - **Notes on accounts and tags** (issue #42): the user's own free text, edited
   as the last field of the account or category/budget form (a `textarea`
   labelled Note, 4000 characters, like a transaction note). The account page
@@ -374,6 +378,9 @@ topmost popup only.
   `.qhead` title: Templates, then Recent), each an even grid (`.quickpicks`)
   of `.qpick` buttons (name, then amount · account), long names cut with an
   ellipsis. A template's name carries a bookmark icon (`.qtpl`).
+- Tags (spending and income) are the tag picker (`#fCatsWrap`, see
+  [Tag picker](#tag-picker)) with Recently used and Create tag. A transfer
+  has no tags.
 
 ### Dialog
 
@@ -381,8 +388,9 @@ topmost popup only.
   `field(label, control, cls)`. On desktop the form is two columns; give
   long fields the `wide` class. Secondary buttons go in `extra`
   (`.formactions`) above the full-width submit button.
-- Groups of toggles (category chips) use a `div.drawerfield` with a heading
-  span, not a `label`, so clicking the heading toggles nothing.
+- Groups of toggles use a `div.drawerfield` with a heading span, not a
+  `label`, so clicking the heading toggles nothing. Choosing tags is the tag
+  picker (the template dialog's Tags, `#tplCats`), never a group of toggles.
 - A button that fills a field sits beside it in a flex row and wraps below
   it when the row is too narrow: Take out's **Fill remaining**
   (`.amtfill`, `#dlgFill`, a `.smallbtn` as tall as the input) sets Amount
@@ -418,6 +426,44 @@ topmost popup only.
 | Info button | `button.infobtn` (an (i) icon, 40px, `aria-haspopup="dialog"`, `aria-label` "About “{label}”") after a `label.checkrow`, both in a `div.checkline` | opens a short explanation of a choice in the dialog (`dialog.helpdlg`, a `.helplist` and Close); beside the label, never in it, so it toggles nothing. For a rule a label cannot carry, not for hints the layout already gives (Settings → Sync) |
 | Colour swatch | `.tswatches` of `button.tswatch` (`aria-pressed`) with the colour, its name and hex | the theme editor's main colours; the chosen one opens the picker under its group |
 | Colour picker | `.tpick`: `.tpsv` (`role=slider`, arrow keys), `.tphue` range, hex field, a plain contrast figure | the theme editor only; a figure, never a warning (ADR 0015) |
+| Tag picker | `makeTagPicker(id, opts)` → `.tagpicker`: `.tgpbox` (chips + `input.tgpq`, `role=combobox`), `.tgplist` (`role=listbox`, `.tgpghead` group headings, `.tgpopt` options), `.tgprecent` | choosing tags: the add form, the template dialog, the Transactions filter (`multiple: false`); see below |
+
+### Tag picker
+
+Issue #127, ADR 0028. One control for choosing tags. A screen puts its
+`html()` in its markup and calls `bind()`; `value()` gives the chosen ids.
+
+- **The field.** It looks like one input (`.tgpbox`). The chosen tags sit in
+  it as `.chip.cur.tgpchip` chips, in the order they were picked, each with
+  × (`aria-label` "Remove {name}"). Backspace in the empty field removes the
+  last chip.
+- **The list.** Focusing or clicking the field opens the list *in place*
+  under it (in the filter bar it opens over the results).
+  - It lists every tag under its group heading. Groups are in stroke order
+    (筆畫, `TAG_ORDER`), with Ungrouped (未分組) last; tags within a group
+    are in stroke order too.
+  - Typing filters by name. An input method's unfinished word does not
+    filter.
+  - Keys: ↑/↓ move the active option (`aria-activedescendant`), Enter picks
+    it, and Esc closes the list, not the panel or dialog around it. While
+    the list is open, Enter never submits the form.
+  - Leaving the field closes the list. On a phone, opening it scrolls the
+    field to the top. Nothing focuses the field by itself, so the keyboard
+    only appears when the user taps.
+- **Recently used** (`recent: true`): a `.tagpick` row of toggles under the
+  field, holding the tags of the latest entries, the most recently entered
+  first. It hides while the list is open. It is a plain order, never
+  pre-selected (ADR 0015).
+- **Create tag** (`create: true`): when no tag has the typed name, the list
+  ends with Create tag "…", which adds an ungrouped tag and picks it. When
+  nothing matches, a note above it says so.
+- **Filter mode** (`multiple: false`): one choice replaces the last and
+  closes the list. Extra options (Uncategorised) come before the groups. The
+  placeholder says what no choice means (All categories). There is no
+  create and no recent row. A tag the address names that is not known yet
+  is a "Checking…" chip (issue #79).
+- **Live updates.** The field keeps `data-live-keep`; `refresh()` redraws the
+  chips and the list, never the input.
 | Toggle chips | `.tagpick` buttons with `aria-pressed` | many-of-many (categories) |
 | Status chip | `.chip` (`.due`, `.cur`) | a small state or value inside a row |
 | Version chip | `.verchip` after `.vertext` | marks a nightly build; never on a release or dev build |
