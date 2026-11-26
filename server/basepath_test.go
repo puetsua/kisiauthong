@@ -18,7 +18,7 @@ func TestBasePath(t *testing.T) {
 	prev, prevBase := store, basePath
 	store, basePath = s, "/kisiauthong/"
 	t.Cleanup(func() { store, basePath = prev, prevBase })
-	srv := httptest.NewServer(withBasePath(newMux(""), basePath))
+	srv := httptest.NewServer(withBasePath(newHandler(""), basePath))
 	t.Cleanup(srv.Close)
 	c := newClient(t, srv)
 	c.c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

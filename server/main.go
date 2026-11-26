@@ -210,7 +210,7 @@ func main() {
 	}
 	basePath = normBasePath(os.Getenv("KISIAUTHONG_BASE_PATH"))
 	log.Printf("kisiauthong %s listening on http://%s%s (db %s, web %s)", appVersion, addr, basePath, dbPath, web)
-	log.Fatal(http.ListenAndServe(addr, withBasePath(newMux(webDir), basePath)))
+	log.Fatal(http.ListenAndServe(addr, withBasePath(newHandler(webDir), basePath)))
 }
 
 // basePath is where the app lives on its host: "/" or e.g. "/kisiauthong/"
@@ -267,6 +267,10 @@ func healthcheck(addr string) int {
 	}
 	return 0
 }
+
+// newHandler is the whole server below the base path: every route, with JSON
+// answers gzip-compressed for clients that accept it (issue #132).
+func newHandler(webDir string) http.Handler { return withGzip(newMux(webDir)) }
 
 // newMux wires every route; tests use it too.
 func newMux(webDir string) *http.ServeMux {
