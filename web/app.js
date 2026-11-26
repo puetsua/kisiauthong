@@ -184,11 +184,20 @@ $("#toast").addEventListener("click", () => msg(""));
 // "/api/x" → "api/x": relative to the page, so the app also works under a
 // path prefix such as https://example.org/kisiauthong/ (KISIAUTHONG_BASE_PATH)
 const rel = (path) => (path.startsWith("/") ? path.slice(1) : path);
+// the page's own requests under way, each with when it began (a monotonic clock): a live refresh waits
+// for them (issue #130)
+const own = new Set();
 async function api(path, opts) {
-  const r = await fetch(rel(path), opts);
-  const d = await r.json().catch(() => ({}));
-  // the session ended (signed out elsewhere, expired): back to the sign-in screen
-  if (r.status === 401 && !path.startsWith("/api/auth/")) { showAuth("login"); throw new Error(__("Please sign in again.")); }
+  const req = { at: performance.now() };
+  own.add(req);
+  let r, d;
+  try {
+    r = await fetch(rel(path), opts);
+    d = await r.json().catch(() => ({}));
+  } finally { own.delete(req); }
+  // the session ended (signed out elsewhere, expired): back to the sign-in screen, once (load() asks for the
+  // books and the settings at once, and both are refused)
+  if (r.status === 401 && !path.startsWith("/api/auth/")) { if (state.me) showAuth("login"); throw new Error(__("Please sign in again.")); }
   if (!r.ok) throw new Error(d.error || r.statusText);
   return d;
 }
@@ -3680,9 +3689,11 @@ function render(refresh) {
 window.addEventListener("hashchange", render);
 async function load() {
   const seq = ++loads.seq, addr = addressKey(); // the filters only: typing a search changes the address too
+  // both at once: the page is drawn one round trip sooner, which a phone's network makes noticeable (issue #130)
+  let sErr = null;
+  const settings = api("/api/settings").catch((e) => { sErr = e; return null; });
   const data = await api("/api/state");
-  let s = null, sErr = null;
-  try { s = await api("/api/settings"); } catch (e) { sErr = e; }
+  const s = await settings;
   // fetches overlap (a write, a live refresh): an answer older than the one on screen is dropped whole
   if (seq < loads.applied) return false;
   loads.applied = seq;
@@ -3747,6 +3758,12 @@ const screenKey = () => currentScreen() + ":" + (hashParts().params.get("id") ||
 async function liveRefresh() {
   live.timer = 0;
   if (!state.me || !state.data || !(liveBehind() || live.force)) return;
+  // The page's own request is under way, such as the fetch after its own write: the server announces a write
+  // before it answers it, so that fetch brings the announced revision. Wait for it instead of fetching the
+  // books a second time beside it, which on a phone's network halves the speed of both and keeps the saved
+  // transaction off the screen for longer (issue #130). A request stalled for 10 s no longer holds it back.
+  const now = performance.now();
+  if ([...own].some((x) => now - x.at < 10000)) { liveSchedule(); return; }
   if (live.loading || liveBusy()) { liveSchedule(1500); return; } // a fetch is running, or a form is open
   const y = window.scrollY, forced = live.force, screen = screenKey();
   live.loading = true; live.force = false;

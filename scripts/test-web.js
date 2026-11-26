@@ -37,7 +37,7 @@ const docProps = {};
 const document = new Proxy({}, { get: (t, k) => (k in docProps ? docProps[k] : k === "querySelectorAll" ? listStub : k === "querySelector" ? $el : stub()) });
 const location = { hash: "", search: "", pathname: "/", href: "http://localhost/" };
 const sandbox = {
-  document, location, console, URL, URLSearchParams, Intl, Date, Math, JSON, Promise, setTimeout, clearTimeout,
+  document, location, console, URL, URLSearchParams, Intl, Date, Math, JSON, Promise, setTimeout, clearTimeout, performance,
   navigator: { languages: ["en"] }, history: { replaceState: (st, title, url) => { location.hash = url; } }, localStorage: { getItem: () => null, setItem: () => {} },
   fetch: () => new Promise(() => {}), MutationObserver: function () { return { observe: () => {} }; }, WeakMap, Map, Set,
   matchMedia: () => ({ matches: false, addEventListener: () => {} }), addEventListener: () => {},
@@ -46,7 +46,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog, own };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -1100,6 +1100,7 @@ test("live updates (#55): one stream after sign-in, a refresh for a new revision
       // a change from elsewhere: the page is still behind when the timer fires, so it fetches
       // (or waits while a form is open; the test DOM looks busy, so it waits and tries again)
       timers.length = 0;
+      t.own.clear(); // the sandbox's fetch never answers boot(): no request of the page's own is under way here
       t.liveOnChange('{"rev":"r-11"}');
       assert.strictEqual(t.liveBehind(), true);
       timers[0].fn();
@@ -1809,6 +1810,97 @@ later.push(["live refresh (#88): the scroll position is put back only on the scr
   } finally {
     t.liveStop();
     sandbox.api = realApi;
+    delete sandbox.scrollY; delete sandbox.scrollTo;
+    Object.assign(t.state, was);
+    dialog.open = wasUI.open; drawer.hidden = wasUI.hidden;
+    location.hash = "";
+    delete docProps.activeElement;
+    t.setLang("en");
+  }
+}]);
+later.push(["save then Overview (#130): the fetch after a save brings it alone, its settings beside it, and is drawn at once", async () => {
+  const was = { data: t.state.data, me: t.state.me, general: t.state.general, dashboard: t.state.dashboard, about: t.state.about, dismissed: t.state.dismissed };
+  const dialog = $el("#dialog"), drawer = $el("#drawer"), wasUI = { open: dialog.open, hidden: drawer.hidden };
+  const realFetch = sandbox.fetch, realSet = sandbox.setTimeout, realClear = sandbox.clearTimeout, realAuth = sandbox.showAuth;
+  const tick = () => new Promise((r) => realSet(r, 0));
+  // the real api(): every request the page makes waits in asked until the test answers it
+  const asked = [];
+  sandbox.fetch = (url) => new Promise((ok) => asked.push({ url, answer: (body, status = 200) => ok({ status, ok: status < 400, statusText: "", json: () => Promise.resolve(body) }) }));
+  const urls = () => asked.map((x) => x.url);
+  const reply = async (url, body, status) => { asked.find((x) => x.url === url && !x.done).answer(body, status); asked.find((x) => x.url === url && !x.done).done = true; await tick(); };
+  const timers = [];
+  let ids = 0;
+  sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms, id: ++ids }); return ids; };
+  sandbox.clearTimeout = (id) => { const i = timers.findIndex((x) => x.id === id); if (i >= 0) timers.splice(i, 1); };
+  const fire = async () => { const x = timers.shift(); x.fn(); await tick(); }; // a refresh it starts is answered by the test
+  sandbox.scrollY = 0; sandbox.scrollTo = () => {};
+  const settings = { dashboard: { items: [{ id: "recent", type: "recent" }] }, general: was.general || {}, about: was.about || {}, notifications: { dismissed: [] } };
+  const saved = { ...tx("t-new", "a1", "acc-external", 4200, "2026-11-18", "posted", "Saved on the phone"), time: "12:00" };
+  const books = (rev, extra = []) => ({ ...was.data, accounts: [acc, other, ext], transactions: [...extra, ...was.data.transactions], rev });
+  try {
+    docProps.activeElement = null; dialog.open = false; drawer.hidden = true; // the form has just closed
+    t.own.clear(); // the sandbox's fetch never answered boot()
+    t.state.me = { id: "usr-x" };
+    t.state.data = { ...books("r-1"), accounts: [acc, other], externals: [ext] };
+    t.state.dashboard = settings.dashboard;
+    location.hash = "#dashboard";
+    t.render({ type: "hashchange" });
+    assert.doesNotMatch($el("#view").innerHTML, /Saved on the phone/);
+    // the server announces the write before it answers it: the page hears of its own save first
+    assert.strictEqual(t.liveOnChange('{"rev":"r-2"}'), true);
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400]);
+    // then the save is answered and the page fetches the books: the settings in the same round trip
+    const done = sandbox.load();
+    assert.deepStrictEqual(urls().sort(), ["api/settings", "api/state"], "both asked at once, not one after the other");
+    // the live timer fires while that fetch is still under way (a phone's network): it waits for it
+    // instead of fetching the books a second time beside it
+    await fire();
+    assert.deepStrictEqual(urls().sort(), ["api/settings", "api/state"], "no second fetch of the books");
+    assert.deepStrictEqual(timers.map((x) => x.ms), [400], "it looks again a moment later");
+    await reply("api/settings", settings);
+    await reply("api/state", books("r-2", [saved]));
+    assert.strictEqual(await done, true);
+    assert.match($el("#view").innerHTML, /Saved on the phone/, "the saved transaction is on the Overview");
+    // the page shows the announced revision now: nothing more is fetched
+    await fire();
+    assert.strictEqual(asked.length, 2, "the save was fetched once");
+    assert.strictEqual(timers.length, 0);
+    // a change from elsewhere while the page's own fetch runs is still fetched once that fetch is in
+    const again = sandbox.load();
+    t.liveOnChange('{"rev":"r-4"}');
+    await fire();
+    assert.strictEqual(asked.length, 4, "held back while the page's own fetch runs");
+    await reply("api/settings", settings);
+    await reply("api/state", books("r-3", [saved]));
+    await again;
+    await fire();
+    assert.deepStrictEqual(urls().slice(4).sort(), ["api/settings", "api/state"], "then fetched: the page was still behind");
+    await reply("api/settings", settings);
+    await reply("api/state", books("r-4", [saved]));
+    assert.strictEqual(t.state.data.rev, "r-4");
+    // a request stalled for 10 s (a phone that lost its connection) no longer holds a refresh back,
+    // also after a quick request of the page's own has come and gone since
+    const stalled = sandbox.load(); stalled.catch(() => {});
+    t.own.forEach((x) => { x.at -= 11000; });
+    const quick = sandbox.api("/api/me");
+    await reply("api/me", { id: "usr-x" }); await quick;
+    t.liveOnChange('{"rev":"r-5"}');
+    await fire();
+    assert.strictEqual(asked.length, 11, "fetched beside the stalled one");
+    // the session ended: both requests of a fetch are refused, the sign-in screen is drawn once
+    let auth = 0;
+    sandbox.showAuth = () => { auth++; t.state.me = null; t.state.data = null; };
+    t.state.me = { id: "usr-x" };
+    const out = sandbox.load(); out.catch(() => {});
+    const [s1, s2] = asked.slice(-2);
+    s1.answer({ error: "sign in required" }, 401); s2.answer({ error: "sign in required" }, 401);
+    await tick(); await tick();
+    await assert.rejects(out, /Please sign in again/);
+    assert.strictEqual(auth, 1, "the sign-in screen once, so its message is not cleared by the second answer");
+  } finally {
+    t.liveStop();
+    sandbox.fetch = realFetch; sandbox.setTimeout = realSet; sandbox.clearTimeout = realClear; sandbox.showAuth = realAuth;
+    t.own.clear(); t.live.loading = false; // the stalled refresh was never answered
     delete sandbox.scrollY; delete sandbox.scrollTo;
     Object.assign(t.state, was);
     dialog.open = wasUI.open; drawer.hidden = wasUI.hidden;
