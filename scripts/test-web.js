@@ -122,12 +122,98 @@ test("scheduled row: the post-date chip has its own line, outside the ellipsized
   assert.doesNotMatch(strip(t.feedRow(txns[3])), /withpost|fpost/);
 });
 
-test("account page: unknown or external id goes back to Accounts", () => {
-  for (const id of ["nope", "acc-external"]) {
-    location.hash = "#acct?id=" + id;
-    t.screenAcct(view());
-    assert.strictEqual(location.hash, "#accounts"); // replaced in history, not pushed
+test("account page: unknown id goes back to Accounts", () => {
+  location.hash = "#acct?id=nope";
+  t.screenAcct(view());
+  assert.strictEqual(location.hash, "#accounts"); // replaced in history, not pushed
+});
+
+test("external account page (#125): received and paid per currency, posted only, by period", () => {
+  const keep = t.state.data.transactions;
+  const mk = (id, from, to, amount, currency, date, state = "posted") => ({ ...tx(id, from, to, amount, date, state, id), currency });
+  t.state.data.transactions = [...keep,
+    mk("e-lunch", "a1", "acc-external", 12000, "TWD", "2026-11-10"),
+    mk("e-ramen", "a2", "acc-external", 98000, "JPY", "2026-11-12"),
+    mk("e-refund", "acc-external", "a2", 2000, "JPY", "2026-11-13"),
+    mk("e-old", "acc-external", "a1", 30000, "TWD", "2025-03-02"),
+    mk("e-plan", "acc-external", "a1", 70000, "TWD", "2026-11-15", "planned"), // not confirmed yet: not counted
+    mk("e-move", "a1", "a2", 900000, "TWD", "2026-11-11")]; // between own accounts: not on this page
+  try {
+    location.hash = "#acct?id=acc-external&range=month";
+    const v = view();
+    t.screenAcct(v);
+    const html = strip(v.innerHTML);
+    assert.strictEqual(location.hash, "#acct?id=acc-external&range=month", "an external id opens its own page");
+    assert.match(html, /href="#accounts"/);
+    assert.match(html, /id="acctEdit"/);
+    assert.match(html, /<div class="tcard acard static"><span class="thead"><span class="aicon ext"[^]*<b>External<\/b>[^]*<small class="last">External account<\/small><\/div>/);
+    // the scheduled rows (Rent, Salary) sit beside the card, signed as the user sees them; never in the totals
+    assert.match(html, /acctpage withsched/);
+    const sched = html.slice(html.indexOf("acctSchedH"), html.indexOf('class="totals"'));
+    assert.ok(sched.indexOf("Rent") > 0 && sched.indexOf("Rent") < sched.indexOf("Salary"), "soonest first");
+    assert.match(sched, /famt out"><span class="asign">−<\/span>TWD 18,000</);
+    assert.doesNotMatch(html, /e-move|e-plan/);
+    // all time: 5 posted (November salary, lunch, ramen, refund, the old one); since the oldest; per currency, never converted
+    const tiles = html.slice(html.indexOf('class="totals"'), html.indexOf("periodbar"));
+    assert.match(tiles, /<span class="lab">Transactions<\/span><b>5<\/b><small>Since Mar 2, 2025<\/small>/);
+    assert.match(tiles, /<span class="lab">Received<\/span><span class="mamt"><span class="mprim"><span class="ccode">TWD<\/span><span class="amt tot">52,300<\/span><\/span><span class="msec"><span class="ccode">JPY<\/span><span class="amt tot">2,000<\/span>/);
+    assert.match(tiles, /<span class="lab">Paid<\/span><span class="mamt"><span class="mprim"><span class="ccode">TWD<\/span><span class="amt tot">120<\/span><\/span><span class="msec"><span class="ccode">JPY<\/span><span class="amt tot">98,000<\/span>/);
+    // November: 4 posted; the period line has Received + and Paid −
+    const sum = html.slice(html.indexOf('class="psum amtstyle"'), html.indexOf("feedpanel amtstyle"));
+    assert.match(sum, /<span>4 transaction\(s\)<\/span>/);
+    assert.match(sum, /<span class="psumpart"><span class="plab">Received<\/span><span class="mamt"><span class="mprim"><span class="ccode">TWD<\/span><span class="amt in">\+52,000<\/span>/);
+    assert.match(sum, /<span class="plab">Paid<\/span><span class="mamt"><span class="mprim"><span class="ccode">TWD<\/span><span class="amt out">−120<\/span><\/span><span class="msec"><span class="ccode">JPY<\/span><span class="amt out">−98,000<\/span>/);
+    assert.doesNotMatch(html.slice(html.indexOf("periodbar")), /e-old/, "last year's row is not in November");
+    // a period with nothing: the empty line, the all-time tiles stay
+    location.hash = "#acct?id=acc-external&range=month&at=2026-10-01";
+    const v2 = view();
+    t.screenAcct(v2);
+    assert.match(v2.innerHTML, /No transactions in this period\./);
+    assert.doesNotMatch(v2.innerHTML, /psum/);
+    assert.match(v2.innerHTML, /<b>5<\/b>/);
+    // zh-TW
+    t.setLang("zh-TW");
+    location.hash = "#acct?id=acc-external&range=month";
+    const v3 = view();
+    t.screenAcct(v3);
+    assert.match(strip(v3.innerHTML), /<b>外部<\/b>[^]*外部帳戶[^]*已收入[^]*已支付/);
+  } finally {
+    t.setLang("en");
+    t.state.data.transactions = keep;
   }
+});
+
+test("external account page (#125): a named external with nothing yet; Received or Paid only when there is some", () => {
+  const shop = { id: "x-shop", kind: "external", name: "Corner shop", icon: "shop", memo: "Fake shop" };
+  const d = t.state.data, keep = { externals: d.externals, all: d.allAccounts, txns: d.transactions };
+  d.externals = [...keep.externals, shop]; d.allAccounts = [...keep.all, shop];
+  try {
+    location.hash = "#acct?id=x-shop&range=year";
+    let v = view();
+    t.screenAcct(v);
+    let html = strip(v.innerHTML);
+    assert.match(html, /<b>Corner shop<\/b>/);
+    assert.match(html, /<b>0<\/b>/);
+    assert.doesNotMatch(html, /withsched|Received|Paid|Since/);
+    assert.match(html, /<p class="notetext">Fake shop<\/p>/, "its note, under the totals");
+    d.transactions = [...keep.txns, tx("s1", "a1", "x-shop", 4500, "2026-02-01", "posted", "Snacks")];
+    v = view();
+    t.screenAcct(v);
+    html = strip(v.innerHTML);
+    assert.match(html, /<span class="lab">Paid<\/span>/);
+    assert.doesNotMatch(html, /Received/);
+    assert.match(html, /<span class="famt out"><span class="asign">−<\/span>TWD 45<\/span>/);
+  } finally {
+    d.externals = keep.externals; d.allAccounts = keep.all; d.transactions = keep.txns;
+  }
+});
+
+test("an external account opens its page, like an own account", () => {
+  const b = { dataset: { detailAccount: "acc-external" }, listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; } };
+  t.bindDetails({ querySelectorAll: (sel) => (sel === "[data-detail-account]" ? [b] : []) });
+  location.hash = "";
+  b.listeners.click();
+  assert.match(location.hash, /^#acct\?id=acc-external&range=/);
 });
 
 test("notes (#42): a read-only panel on the account and tag pages, only when there is a note; lists unchanged", () => {

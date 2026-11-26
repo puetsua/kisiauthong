@@ -784,11 +784,8 @@ function bindActions(root) {
 function bindDetails(root) {
   // a title opens its edit form straight away; there is no read-only pane in between
   root.querySelectorAll("[data-detail-txn]").forEach((b) => b.addEventListener("click", () => openEditTxn(b.dataset.detailTxn)));
-  // an own account opens its page; an external one has no balance to show, so it opens its edit form
-  root.querySelectorAll("[data-detail-account]").forEach((b) => b.addEventListener("click", () => {
-    const id = b.dataset.detailAccount;
-    if (state.data.accounts.some((a) => a.id === id)) location.hash = acctURL(id, tagRange(), ""); else openAccountDialog(id);
-  }));
+  // an account opens its page: an own account's balance, or what came from and went to an external one (issue #125)
+  root.querySelectorAll("[data-detail-account]").forEach((b) => b.addEventListener("click", () => { location.hash = acctURL(b.dataset.detailAccount, tagRange(), ""); }));
   root.querySelectorAll("[data-detail-tag]").forEach((b) => b.addEventListener("click", () => { location.hash = tagURL(b.dataset.detailTag, tagRange(), ""); }));
   root.querySelectorAll("[data-detail-reserve]").forEach((b) => b.addEventListener("click", () => { location.hash = reserveURL(b.dataset.detailReserve, tagRange(), ""); }));
   root.querySelectorAll("[data-edit-alloc]").forEach((b) => b.addEventListener("click", () => openAllocDialog(null, "", b.dataset.editAlloc)));
@@ -1280,7 +1277,11 @@ const acctURL = (id, mode, at) => `#acct?${new URLSearchParams({ id, range: mode
 const touches = (t, id) => t.fromAccountId === id || t.toAccountId === id;
 function screenAcct(v) {
   const { params } = hashParts(), a = state.data.accounts.find((x) => x.id === params.get("id"));
-  if (!a) { leaveTo("#accounts"); return; }
+  if (!a) {
+    const x = state.data.externals.find((e) => e.id === params.get("id"));
+    if (x) screenExtAcct(v, x, params); else leaveTo("#accounts");
+    return;
+  }
   const { mode, p } = pagePeriod(params);
   $("#pageTitle").textContent = a.name;
   const txns = state.data.transactions.filter((t) => touches(t, a.id));
@@ -1293,6 +1294,41 @@ function screenAcct(v) {
     ${notePanel(a.memo)}
     <section class="tsection">${periodBar(mode, p)}
     ${posted.length ? `<section class="panel feedpanel">${feedHTML(posted, Infinity, { acct: a.id })}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
+  bindPeriodBar(v, mode, p, (m, at) => acctURL(a.id, m, at));
+  $("#acctEdit").addEventListener("click", () => openAccountDialog(a.id));
+  bindActions(v);
+  bindDays(v);
+}
+// What came from an external account and what went to it, per currency in minor units, never converted
+// (ADR 0011). Its transactions always have an own account on the other side, so none is between own accounts.
+function extTotals(id, list) {
+  const inn = {}, out = {};
+  list.forEach((t) => { const m = t.fromAccountId === id ? inn : t.toAccountId === id ? out : null; if (m) m[t.currency] = (m[t.currency] || 0) + t.amountMinor; });
+  return { in: inn, out };
+}
+// One external account (issue #125): its card, its scheduled rows, all-time Received / Paid, then its
+// posted transactions in a period with the period's Received / Paid. Amounts read as the user sees them
+// (money from it is +, money to it −); scheduled rows count from their date (ADR 0014).
+function screenExtAcct(v, a, params) {
+  const { mode, p } = pagePeriod(params);
+  $("#pageTitle").textContent = accName(a.id);
+  const txns = state.data.transactions.filter((t) => touches(t, a.id));
+  const sched = txns.filter(isSched).sort(bySoonest);
+  const posted = txns.filter((t) => t.state === "posted").sort(byNewest);
+  const inP = posted.filter((t) => t.date >= p.start && t.date <= p.end);
+  const all = extTotals(a.id, posted), per = extTotals(a.id, inP);
+  const tile = (lab, val, sub) => `<div class="totcard"><span class="lab">${esc(lab)}</span><b>${val}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
+  const tiles = tile(__("Transactions"), esc(String(posted.length)), posted.length ? __("Since {date}", { date: plainDay(posted[posted.length - 1].date) }) : "")
+    + moneyTile(__("Received"), all.in) + moneyTile(__("Paid"), all.out);
+  const part = (lab, m, sign, cls) => (Object.keys(m).length ? `<span class="psumpart"><span class="plab">${esc(lab)}</span>${moneyBlock(m, { sign, cls })}</span>` : "");
+  const schedHTML = sched.length ? `<section class="panel feedpanel sched" aria-labelledby="acctSchedH"><h3 id="acctSchedH">${esc(__("Scheduled"))}</h3><ul class="feed">${sched.map((t) => feedRow(t, { sched: true })).join("")}</ul></section>` : "";
+  v.innerHTML = `<div class="pagebar"><a class="smallbtn" href="#accounts">‹ ${esc(__("Accounts"))}</a><button type="button" class="smallbtn" id="acctEdit">${esc(__("Edit"))}</button></div>
+    <div class="acctpage${sched.length ? " withsched" : ""}"><div class="tgrid"><div class="tcard acard static"><span class="thead">${accIcon(a)}<span class="aname"><b>${esc(accName(a.id))}</b></span></span><small class="last">${esc(__("External account"))}</small></div></div>${schedHTML}</div>
+    <div class="totals">${tiles}</div>
+    ${notePanel(a.memo)}
+    <section class="tsection">${periodBar(mode, p)}
+    ${inP.length ? `<div class="psum amtstyle"><span>${esc(__("{n} transaction(s)", { n: inP.length }))}</span><span class="psumparts">${part(__("Received"), per.in, "+", "in")}${part(__("Paid"), per.out, "−", "out")}</span></div>
+      <section class="panel feedpanel amtstyle">${feedHTML(inP, openDays())}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
   bindPeriodBar(v, mode, p, (m, at) => acctURL(a.id, m, at));
   $("#acctEdit").addEventListener("click", () => openAccountDialog(a.id));
   bindActions(v);

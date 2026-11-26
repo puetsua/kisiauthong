@@ -217,7 +217,7 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   Accounts and Reserves pages start with their cards, with no summed total
   above them.
 - **Record pages** (a category: `#tag?id=…&range=month&at=2026-10-01`, a
-  reserve: `#reserve?id=…`, an own account: `#acct?id=…`): the
+  reserve: `#reserve?id=…`, an account, own or external: `#acct?id=…`): the
   top bar shows the record's name and the nav keeps its parent page `.on`.
   The page starts with `.pagebar` (‹ parent link left, Edit right), then
   figures as `.totcard` tiles, then panels of transactions. A period to page
@@ -230,6 +230,13 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   (not a button there: `.acard.static`), never a longer one;
   details go in the panels under it. An account's page puts its blue
   Scheduled panel beside the card on wide screens (`.acctpage.withsched`).
+  An external account's page (issue #125) has no balance: its card is the
+  icon, name and "External account"; then Transactions / Received / Paid
+  tiles (all time, posted only, a money tile only when it has an amount);
+  the period line (`.psum`) shows the period's Received (+, `.amt.in`) and
+  Paid (−, `.amt.out`) per currency; rows are signed as the user sees them
+  (money from it +); the period line and the rows are `.amtstyle`, so
+  Settings → Spending and income applies to them as on the Transactions list.
 - **Select mode** (Tags → Manage tags): the page becomes checkbox cards
   (real `<input type="checkbox">` in a `<label class="tcard pcard">`), with a
   Cancel in a head panel and a sticky `.mergebar` holding the live count
@@ -313,8 +320,8 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   labelled Note, 4000 characters, like a transaction note). The account page
   (under its card) and the tag page (under its totals) show it read-only in a
   `.panel.notepanel`, with line breaks kept, only when there is a note. Lists
-  and cards never show notes. External accounts have no page, so their note
-  lives in their form only. Merging tags keeps the kept tag's note; the merged
+  and cards never show notes. An external account's page shows its note under
+  the totals. Merging tags keeps the kept tag's note; the merged
   tags' notes go with them, and Undo brings them back.
 
 - **Live updates** (ADR 0023): a page fetches the books again when they change

@@ -330,6 +330,7 @@ dialog textarea{width:100%;padding:10px;border:1px solid var(--fieldline);border
 .amtstyle .fnet .in{color:var(--amt-in)}
 [data-amounts=sign] .amtstyle .famt.in,[data-amounts=sign] .amtstyle .famt.out{color:var(--ink)}
 [data-amounts=sign] .amtstyle .fnet span{color:inherit}
+.amtstyle .psumpart .amt.out{color:var(--amt-out)}[data-amounts=sign] .amtstyle .psumpart .amt{color:var(--ink)}
 [data-amounts=color] .amtstyle .asign{font-size:0}
 .feed li>.smallbtn{flex:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -533,7 +534,7 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 .msec .amt{font-weight:500;text-align:right}
 .msec .ccode{font-size:.68rem}
 .totcard .mamt{margin-top:2px}.totcard .mprim .amt{font-size:1.6rem}.amt.tot{color:var(--accent)}
-.psum>.mamt{margin-left:auto}.psum .mamt{align-items:flex-end}.psum .mprim .amt{font-size:1.15rem}.psum .msec{justify-content:end}
+.psum>.mamt{margin-left:auto}.psumparts{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px 18px;margin-left:auto}.psumpart{display:inline-flex;align-items:baseline;gap:8px}.psumpart .plab{color:var(--muted);font-weight:500}.psum .mamt{align-items:flex-end}.psum .mprim .amt{font-size:1.15rem}.psum .msec{justify-content:end}
 .tsechead{flex-wrap:wrap}.tsechead .seg{margin:0}.tsechead .seg button{padding:5px 12px}
 /* a record's own page (a category): back link and actions, then figures, then lists */
 .pagebar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 16px}
