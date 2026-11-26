@@ -352,6 +352,19 @@ func validMemo(m *string) error {
 	return nil
 }
 
+// maxTagGroupRunes bounds a tag's group name, a short heading like a tag name.
+const maxTagGroupRunes = 100
+
+// validTagGroup trims a tag's group and folds runs of white space (line breaks
+// included) into one space, so one group is never two headings (ADR 0028).
+func validTagGroup(g *string) error {
+	*g = strings.Join(strings.Fields(*g), " ")
+	if utf8.RuneCountInString(*g) > maxTagGroupRunes {
+		return fmt.Errorf("group longer than %d characters", maxTagGroupRunes)
+	}
+	return nil
+}
+
 func validateAccount(a *Account) error {
 	a.Name = strings.TrimSpace(a.Name)
 	if a.Name == "" {
