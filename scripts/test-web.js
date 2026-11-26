@@ -1919,12 +1919,14 @@ later.push(["save guard (#131): two submits of the transaction form while the fi
   let loads = 0;
   const attrs = {};
   form.setAttribute = (k, v) => { attrs[k] = v; };
+  form.getAttribute = (k) => attrs[k];
   form.removeAttribute = (k) => { delete attrs[k]; };
   sandbox.FormData = function (f) { return new Map(Object.entries(f.fields)); };
   form.fields = { accountId: "a1", amount: "5", date: "2026-11-18", note: "[TEST] double", memo: "", time: "", tz: "" };
   form.querySelectorAll = (sel) => (sel === "button[type=submit]" ? [save] : listStub());
   sandbox.api = (path, opts) => { posts.push([opts && opts.method, path]); return new Promise((ok, no) => held.push({ ok, no })); };
-  sandbox.load = async () => { loads++; };
+  let reload = null; // the books' reload after a save, held open
+  sandbox.load = () => { loads++; return new Promise((ok) => { reload = ok; }); };
   t.state.txnType = "expense"; t.state.editingTxn = null;
   const submit = () => form.listeners.submit.forEach((fn) => fn({ preventDefault: () => {}, target: form }));
   const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -1944,17 +1946,20 @@ later.push(["save guard (#131): two submits of the transaction form while the fi
     assert.strictEqual(posts.length, 2, "the retry sends one more request, not two");
     held[1].ok({ id: "t-new" }); await tick();
     assert.strictEqual(loads, 1, "a saved transaction reloads the books once");
-    assert.strictEqual(save.disabled, false, "enabled again after saving, for the next transaction");
+    assert.strictEqual(save.disabled, false, "enabled again once saved, while the books still reload: ready for the next transaction");
+    submit(); await tick();
+    assert.strictEqual(posts.filter(([m]) => m === "POST").length, 3, "the next transaction saves during the reload");
+    held[2].ok({ id: "t-next" }); reload(); await tick();
   } finally {
     sandbox.api = realApi; sandbox.load = realLoad; form.querySelectorAll = realQSA;
-    delete sandbox.FormData; delete form.fields; delete form.setAttribute; delete form.removeAttribute;
+    delete sandbox.FormData; delete form.fields; delete form.setAttribute; delete form.getAttribute; delete form.removeAttribute;
     Object.assign(t.state, was);
   }
 }]);
 later.push(["save guard (#131): every form in the web UI submits through onSubmit", async () => {
   const src = read("app.js");
   // the one addEventListener("submit") is onSubmit's own; a form wired directly would have the gap again
-  assert.strictEqual((src.match(/addEventListener\("submit"/g) || []).length, 1, "only onSubmit listens for submit");
-  assert.ok((src.match(/onSubmit\(/g) || []).length >= 18, "the dialog, transaction, sign-in and Settings forms use onSubmit");
+  assert.strictEqual((src.match(/addEventListener\(\s*["'`]submit["'`]|\.onsubmit\s*=/g) || []).length, 1, "only onSubmit listens for submit");
+  assert.ok((src.match(/onSubmit\(\S+, async \(e\) =>/g) || []).length >= 17, "the dialog, transaction, sign-in and Settings forms use onSubmit");
 }]);
 require("./run-tests.js")(later, n);

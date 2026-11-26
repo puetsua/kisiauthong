@@ -2826,7 +2826,10 @@ function syncSchedNote() {
       : __("Until then it is not in the balance; the amount is held in {account} so it cannot be reserved or spent. Moving the date to today or earlier posts it.", { account: accName(body.fromAccountId) });
 }
 ["input", "change"].forEach((ev) => $("#txnForm").addEventListener(ev, syncSchedNote));
-$("#fPostNow").addEventListener("click", () => { $("#txnForm").elements.date.value = schedToday(); $("#txnForm").requestSubmit(); });
+$("#fPostNow").addEventListener("click", () => {
+  if ($("#txnForm").getAttribute("aria-busy")) return; // a save is under way (onSubmit); leave its date alone
+  $("#txnForm").elements.date.value = schedToday(); $("#txnForm").requestSubmit();
+});
 $("#fDelete").addEventListener("click", async () => { showActions(false); if (state.editingTxn && await deleteTxn(state.editingTxn)) { state.editingTxn = null; closeDrawer(); } });
 $("#drawerBackdrop").addEventListener("click", closeDrawer);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden && !$("#dialog").open) closeDrawer(); });
@@ -2871,8 +2874,10 @@ onSubmit($("#txnForm"), async (e) => {
     const done = body.date > schedToday() ? __("Scheduled for {date}.", { date: dayLabel(body.date) }) : was && isSched(was) ? __("Posted.") : "";
     if (state.editingTxn) { await put("/api/transactions/" + state.editingTxn, body); msg(done || __("Transaction updated.")); }
     else { await post("/api/transactions", body); msg(done || __("Saved.")); }
-    state.editingTxn = null; closeDrawer(); await load();
-  } catch (err) { errMsg(err); }
+    state.editingTxn = null; closeDrawer();
+  } catch (err) { errMsg(err); return; }
+  // the panel stays on the page: it is ready for the next transaction while the books reload
+  load().catch(errMsg);
 });
 
 function openDialog(title, html) {
