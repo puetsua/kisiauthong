@@ -212,7 +212,8 @@ test("launch with an unreachable saved server: the reason, Retry and Change serv
   assert.deepStrictEqual(s.cmds(), ["app_state", "probe"], "nothing saved or opened");
   assert.deepStrictEqual(s.view(), ["open"]);
   assert.strictEqual(s.els.openErrTitle.textContent, STRINGS.en.unreachableTitle);
-  assert.ok(s.els.openErrText.textContent.includes(base), "with the address tried");
+  // the whole message, with the address tried in place of {url}
+  assert.strictEqual(s.els.openErrText.textContent, STRINGS.en.unreachableText.split("{url}").join(base));
   assert.strictEqual(s.els.openStatus.textContent, "");
   assert.ok(s.visible("openRetry") && s.visible("openChange"));
   assert.strictEqual(s.els.openRetry.textContent, STRINGS.en.retry);
