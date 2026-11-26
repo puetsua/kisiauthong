@@ -2438,7 +2438,7 @@ function refreshToAccounts(sel) {
    One control for choosing tags, used by the add/edit form, the template dialog and the Transactions filter:
    a search field (an ARIA combobox) that holds the chosen tags as chips in the order they were picked, the
    whole list under it as one flat list (by group, then stroke order, Ungrouped last; no headings), running budgets
-   marked with a dot and a bar (an ended budget looks like any tag), and a "Recently used" row
+   marked with a gauge icon and a bar (an ended budget looks like any tag), and a "Recently used" row
    of the last tags entered, newest first. Nothing is pre-selected or highlighted (ADR 0015). The markup is
    a string (html()), so a screen can include it in its own innerHTML; bind() then wires it up by element id. */
 // tag names in stroke order (筆畫) for Chinese, the zh-Hant default; other scripts keep their usual order
@@ -2464,6 +2464,8 @@ function recentTags() {
   return out.slice(0, RECENT_TAGS);
 }
 const pickers = {};
+// a budget's mark on chips and pills (variant B of the issue #127 mockups): a gauge, in the text colour
+const GAUGE_SVG = '<svg class="tgpicon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 16a8 8 0 1 1 16 0" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M12 16l4-5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="16" r="1.6" fill="currentColor"/></svg>';
 const CHECK_SVG = '<svg class="tgpcheck" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 // id: the element id prefix; o: { ids: the chosen tag ids, label: a visible heading (else ariaLabel),
 // multiple (default true): several tags, or one that replaces the last; create: offer "Create tag" for a
@@ -2485,12 +2487,13 @@ function makeTagPicker(id, o) {
     return { extra, groups, flat, create };
   };
   const placeholder = () => (p.ids.length ? (multiple ? __("Search tags") : "") : o.empty || __("Search or choose tags"));
-  // a running budget carries a dot (and a bar in the list); a plain tag nothing, and a budget whose date range has
-  // ended looks like a plain tag. A screen reader hears "budget" after the name. No legend.
+  // a running budget carries a gauge icon on chips and pills (and a bar in the list); a plain tag nothing, and a budget
+  // whose date range has ended looks like a plain tag. A screen reader hears "budget" after the name. No legend.
   const kindOf = (x) => { const t = state.data.tags.find((y) => y.id === x); return t && t.limitMinor !== undefined && !budgetEnded(t) ? "budget" : ""; };
   const kindCls = (x) => (kindOf(x) ? ` ty-${kindOf(x)}` : "");
   const kindText = (x) => (kindOf(x) ? `<span class="tgpsr">${esc(__(", budget"))}</span>` : "");
-  const chipsHTML = () => p.ids.map((x) => `<span class="chip cur tgpchip${kindCls(x)}">${esc(nameOf(x))}${kindText(x)}<button type="button" data-tp-rm="${esc(x)}" aria-label="${esc(__("Remove {name}", { name: nameOf(x) }))}">×</button></span>`).join("");
+  const kindIcon = (x) => (kindOf(x) ? GAUGE_SVG : "");
+  const chipsHTML = () => p.ids.map((x) => `<span class="chip cur tgpchip${kindCls(x)}">${kindIcon(x)}${esc(nameOf(x))}${kindText(x)}<button type="button" data-tp-rm="${esc(x)}" aria-label="${esc(__("Remove {name}", { name: nameOf(x) }))}">×</button></span>`).join("");
   const listHTML = () => {
     const { extra, flat, create } = listed();
     let n = 0;
@@ -2503,7 +2506,7 @@ function makeTagPicker(id, o) {
   };
   const recentHTML = () => {
     const ids = o.recent ? recentTags() : [];
-    return ids.length ? `<span class="qhead" id="${id}-rl">${esc(__("Recently used"))}</span><div class="tagpick">${ids.map((x) => `<button type="button" data-tp-t="${esc(x)}" aria-pressed="${p.ids.includes(x)}"${kindOf(x) ? ` class="ty-${kindOf(x)}"` : ""}>${esc(nameOf(x))}${kindText(x)}</button>`).join("")}</div>` : "";
+    return ids.length ? `<span class="qhead" id="${id}-rl">${esc(__("Recently used"))}</span><div class="tagpick">${ids.map((x) => `<button type="button" data-tp-t="${esc(x)}" aria-pressed="${p.ids.includes(x)}"${kindOf(x) ? ` class="ty-${kindOf(x)}"` : ""}>${kindIcon(x)}${esc(nameOf(x))}${kindText(x)}</button>`).join("")}</div>` : "";
   };
   const html = () => `${o.label ? `<label class="tgplab" for="${id}-q">${esc(o.label)}</label>` : ""}<div class="tagpicker${multiple ? "" : " single"}" id="${id}">
     <div class="tgpbox"><span class="tgpchips" id="${id}-chips">${chipsHTML()}</span><input id="${id}-q" class="tgpq" type="text" role="combobox" aria-expanded="false" aria-controls="${id}-lb" aria-autocomplete="list" autocomplete="off" autocapitalize="off" spellcheck="false"${o.label ? "" : ` aria-label="${esc(o.ariaLabel || __("Tags"))}"`}${o.keep ? " data-live-keep" : ""} placeholder="${esc(placeholder())}"></div>

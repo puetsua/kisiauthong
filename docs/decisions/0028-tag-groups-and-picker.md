@@ -39,8 +39,8 @@ budgets and reports count.
     - Tags within a group come in stroke order too.
   - **Budget marks:** a budget (a tag with a limit) is told apart from a
     plain tag on the chips, in the list and in Recently used.
-    - A running budget has a filled dot on chips and pills, and a solid bar
-      on the left of its list row.
+    - A running budget has a gauge icon before its name on chips and
+      pills, and a solid bar on the left of its list row.
     - A plain tag has no mark. A budget whose fixed date range has ended
       looks the same as a plain tag: not dimmed, no "Ended".
     - A screen reader hears ", budget" after a running budget's name, so
