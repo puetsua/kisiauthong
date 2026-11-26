@@ -48,7 +48,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog, own };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, screenAccount, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog, own };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -1956,6 +1956,16 @@ later.push(["save guard (#131): two submits of the transaction form while the fi
     Object.assign(t.state, was);
   }
 }]);
+test("profile (#116): Display name, Colour, Photo; no Colour while a photo is set", () => {
+  const was = t.state.me, realApi = sandbox.api;
+  sandbox.api = () => Promise.resolve([]); // the passkey and key cards ask the server: no request left open
+  const labels = (me) => { t.state.me = me; const v = view(); t.screenAccount(v); const profile = v.innerHTML.split("<h3>Passkeys</h3>")[0]; return [...profile.matchAll(/<span class="sl">([^<]*)<\/span>/g)].map((m) => m[1]); };
+  try {
+    const me = { username: "demo", displayName: "Demo", hasAvatar: false };
+    assert.deepStrictEqual(labels(me), ["Display name", "Colour", "Photo"]);
+    assert.deepStrictEqual(labels({ ...me, hasAvatar: true }), ["Display name", "Photo"]);
+  } finally { t.state.me = was; sandbox.api = realApi; }
+});
 later.push(["save guard (#131): every form in the web UI submits through onSubmit", async () => {
   const src = read("app.js");
   // the one addEventListener("submit") is onSubmit's own; a form wired directly would have the gap again
