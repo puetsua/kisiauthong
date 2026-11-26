@@ -253,6 +253,44 @@ test("launch with an unreachable saved server: the reason, Retry and Change serv
   assert.deepStrictEqual(s.calls.slice(-1)[0], ["save_server", { id: null, name: null, url: "https://other.example.org/", connect: true }]);
 });
 
+test("launch: a redirect to another saved address uses that entry; a failed save shows why (issue #126)", async () => {
+  const other = { id: "b", url: "https://books.example.net/kisiauthong/" };
+  const two = { locale: "en", active: "a", servers: [saved.servers[0], other] };
+  let fail = false;
+  const s = openScreen("", (cmd, args) => {
+    if (cmd === "app_state") return Promise.resolve(two);
+    if (cmd === "probe") return Promise.resolve(reachable(other.url + "api/auth/status"));
+    return fail ? Promise.reject(new Error("disk full")) : Promise.resolve(null);
+  });
+  await settle();
+  assert.deepStrictEqual(s.calls.slice(-1)[0], ["save_server", { id: "b", name: null, url: other.url, connect: true }], "no second entry with one address");
+  assert.ok(s.els.openChange.disabled, "the server is being opened");
+  fail = true;
+  s.els.openRetry.on.click();
+  await settle();
+  assert.deepStrictEqual(s.view(), ["open"]);
+  assert.strictEqual(s.els.openErrTitle.textContent, STRINGS.en.saveTitle);
+  assert.ok(s.els.openErrText.textContent.includes("disk full"));
+  assert.ok(s.visible("openRetry") && !s.els.openChange.disabled);
+  // Change server → Connect while it checks: Cancel waits
+  let release;
+  const s2 = openScreen("", (cmd) => cmd === "app_state" ? Promise.resolve(saved)
+    : cmd === "probe" ? new Promise((r) => { release = r; }) : Promise.resolve(null));
+  await settle();
+  release({ error: "timeout" });
+  await settle();
+  s2.els.openChange.on.click();
+  s2.els.form.on.submit({ preventDefault() {} });
+  assert.ok(s2.els.cancel.disabled, "Cancel is off while the address is checked");
+  const n = s2.calls.length;
+  s2.els.cancel.on.click();
+  release({ error: "timeout" });
+  await settle();
+  assert.deepStrictEqual(s2.view(), ["form"]);
+  assert.ok(!s2.els.cancel.disabled && s2.visible("err"));
+  assert.deepStrictEqual(s2.cmds().slice(n), [], "nothing more asked");
+});
+
 test("first run and Settings → Servers still show the server form (issue #126)", async () => {
   // no saved server: the first-run form, nothing checked
   let s = openScreen("", (cmd) => Promise.resolve(cmd === "app_state" ? { locale: "en", active: null, servers: [] } : null));

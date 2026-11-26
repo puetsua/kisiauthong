@@ -28,7 +28,7 @@
   let S = window.KstStrings.en, editing = null, busy = false;
   // at launch: the saved server being opened, and which check is the latest
   // (a check the user left with Change server must not open the server)
-  let opening = null, attempt = 0;
+  let opening = null, attempt = 0, saved = [];
 
   function show(view) {
     $("form").hidden = view !== "form";
@@ -40,6 +40,8 @@
     $("url").readOnly = on;
     $("name").readOnly = on;
     $("go").textContent = on ? S.connecting : mode === "edit" ? S.save : S.connect;
+    // Change server at launch: Cancel would go back to opening the saved server
+    if (opening) $("cancel").disabled = on;
   }
   function clearError() {
     $("err").hidden = true;
@@ -104,19 +106,24 @@
     show("open");
     $("openErr").hidden = true;
     $("openRetry").hidden = true;
+    $("openChange").disabled = false;
     $("openStatus").textContent = S.connecting;
     let r = await checkServer(opening.url, (u) => call("probe", { url: u }));
     if (n !== attempt) return;
     if (r.ok) {
+      $("openChange").disabled = true; // the shell is about to open it
+      // its own entry, also when a redirect moved its address (as Connect saves
+      // it), unless another saved entry already has that address
+      const same = saved.find((p) => p.url === r.url);
       try {
-        // its own entry, also when a redirect moved its address (as Connect saves it)
-        await call("save_server", { id: opening.id, name: null, url: r.url, connect: true });
+        await call("save_server", { id: same ? same.id : opening.id, name: null, url: r.url, connect: true });
         return; // the shell opens the server; Connecting… stays until then
       } catch (err) {
         r = { ok: false, kind: "save", url: reason(err) };
       }
       if (n !== attempt) return;
     }
+    $("openChange").disabled = false;
     $("openStatus").textContent = "";
     fillError("openErr", r.kind, r.url || opening.url);
     $("openRetry").hidden = false;
@@ -162,6 +169,7 @@
     $("cancel").hidden = mode === "start" || !st.active;
     setBusy(false);
     if (editing) { $("name").value = editing.name || ""; $("url").value = editing.url; }
+    saved = st.servers || [];
     opening = mode === "start" ? serverToOpen(st) : null;
     if (!opening) { show("form"); return; }
     let host = opening.url;
