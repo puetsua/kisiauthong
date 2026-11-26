@@ -1320,7 +1320,7 @@ test("tag picker (#127): the Transactions tag filter picks one tag or Uncategori
   } finally { Object.assign(t.state, { filter: was.filter }); t.state.data.tags = was.tags; location.hash = ""; }
 });
 
-test("tag picker (#127): running budgets carry a gauge icon and a bar; plain tags and ended budgets nothing", () => {
+test("tag picker (#127): running budgets carry a gauge icon after the name; plain tags and ended budgets nothing", () => {
   const was = { tags: t.state.data.tags, txns: t.state.data.transactions };
   t.state.data.tags = [{ id: "g1", name: "Food", limitMinor: 300000, currency: "TWD", periodStart: "2026-11-01", periodEnd: "2026-11-30" },
     { id: "g2", name: "Trip", limitMinor: 500000, currency: "TWD", cycle: "range", periodStart: "2026-10-01", periodEnd: "2026-10-10" }, { id: "g3", name: "Rent" }];
@@ -1328,18 +1328,18 @@ test("tag picker (#127): running budgets carry a gauge icon and a bar; plain tag
   t.state.data.transactions = [row("x1", "2026-11-17T01:00:00Z", ["g1", "g2", "g3"])];
   try {
     const html = strip(t.makeTagPicker("tpt", { ids: ["g1", "g2", "g3"], label: "Tags", recent: true }).html());
-    assert.match(html, /<span class="chip cur tgpchip ty-budget"><svg class="tgpicon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">.*?<\/svg>Food<span class="tgpsr">, budget<\/span><button/, "a running budget: the gauge, and its type read out");
+    assert.match(html, /<span class="chip cur tgpchip ty-budget">Food<svg class="tgpicon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">.*?<\/svg><span class="tgpsr">, budget<\/span><button/, "a running budget: the gauge after the name, and its type read out");
     assert.match(html, /<span class="chip cur tgpchip">Trip<button/, "an ended budget looks like a plain tag");
     assert.match(html, /<span class="chip cur tgpchip">Rent<button/, "a plain tag has no mark");
-    assert.match(html, /class="tgpopt ty-budget"><span>Food<span class="tgpsr">, budget<\/span><\/span>/);
+    assert.match(html, /class="tgpopt ty-budget"><span>Food<svg class="tgpicon"[^>]*>.*?<\/svg><span class="tgpsr">, budget<\/span><\/span>/, "the list row too");
     assert.match(html, /class="tgpopt"><span>Trip<\/span>/);
     assert.match(html, /class="tgpopt"><span>Rent<\/span>/);
-    assert.match(html, /data-tp-t="g1" aria-pressed="true" class="ty-budget"><svg class="tgpicon"[^>]*>.*?<\/svg>Food/, "Recently used marks budgets too");
-    assert.strictEqual((html.match(/tgpicon/g) || []).length, 2, "the icon on the chip and the pill only, not on list rows (they have the bar)");
+    assert.match(html, /data-tp-t="g1" aria-pressed="true" class="ty-budget">Food<svg class="tgpicon"/, "Recently used marks budgets too");
+    assert.strictEqual((html.match(/tgpicon/g) || []).length, 3, "one icon each on the chip, the list row and the pill");
     assert.match(html, /data-tp-t="g2" aria-pressed="true">Trip<\/button>/);
     assert.doesNotMatch(html, /ty-ended|Ended|legend|remaining|%/i, "no ended mark, legend, amounts or bars");
     t.setLang("zh-TW");
-    assert.match(strip(t.makeTagPicker("tpt", { ids: ["g1"], label: "x" }).html()), /Food<span class="tgpsr">，預算<\/span>/);
+    assert.match(strip(t.makeTagPicker("tpt", { ids: ["g1"], label: "x" }).html()), /Food<svg class="tgpicon"[^>]*>.*?<\/svg><span class="tgpsr">，預算<\/span>/);
   } finally { t.setLang("en"); Object.assign(t.state.data, { tags: was.tags, transactions: was.txns }); }
 });
 

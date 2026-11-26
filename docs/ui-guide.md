@@ -451,11 +451,11 @@ Issue #127, ADR 0028. One control for choosing tags. A screen puts its
   - Leaving the field closes the list. On a phone, opening it scrolls the
     field to the top. Nothing focuses the field by itself, so the keyboard
     only appears when the user taps.
-- **Budget marks** (the gauge of variant B and the side bar of variant E in
-  the issue #127 mockups). No legend, no amounts, no progress bars.
+- **Budget marks** (the gauge of variant B in the issue #127 mockups). No
+  legend, no side bar, no amounts, no progress bars.
   - A running budget (`.ty-budget`) has a gauge icon (`GAUGE_SVG`,
-    `.tgpicon`, in the text colour) before its name on chips and Recently
-    used pills, and a solid 4px `--amber` bar on the left of its list row.
+    `.tgpicon`, in the text colour) *after* its name on chips, Recently used
+    pills and list rows.
   - A plain tag has no mark. A budget whose date range has ended
     (`budgetEnded()`) looks the same as a plain tag.
   - `.tgpsr` (visually hidden) adds ", budget" for screen readers.

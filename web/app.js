@@ -2438,7 +2438,7 @@ function refreshToAccounts(sel) {
    One control for choosing tags, used by the add/edit form, the template dialog and the Transactions filter:
    a search field (an ARIA combobox) that holds the chosen tags as chips in the order they were picked, the
    whole list under it as one flat list (by group, then stroke order, Ungrouped last; no headings), running budgets
-   marked with a gauge icon and a bar (an ended budget looks like any tag), and a "Recently used" row
+   marked with a gauge icon after the name (an ended budget looks like any tag), and a "Recently used" row
    of the last tags entered, newest first. Nothing is pre-selected or highlighted (ADR 0015). The markup is
    a string (html()), so a screen can include it in its own innerHTML; bind() then wires it up by element id. */
 // tag names in stroke order (筆畫) for Chinese, the zh-Hant default; other scripts keep their usual order
@@ -2487,17 +2487,17 @@ function makeTagPicker(id, o) {
     return { extra, groups, flat, create };
   };
   const placeholder = () => (p.ids.length ? (multiple ? __("Search tags") : "") : o.empty || __("Search or choose tags"));
-  // a running budget carries a gauge icon on chips and pills (and a bar in the list); a plain tag nothing, and a budget
-  // whose date range has ended looks like a plain tag. A screen reader hears "budget" after the name. No legend.
+  // a running budget carries a gauge icon after its name on chips, pills and list rows; a plain tag nothing, and a
+  // budget whose date range has ended looks like a plain tag. A screen reader hears "budget" after the name. No legend.
   const kindOf = (x) => { const t = state.data.tags.find((y) => y.id === x); return t && t.limitMinor !== undefined && !budgetEnded(t) ? "budget" : ""; };
   const kindCls = (x) => (kindOf(x) ? ` ty-${kindOf(x)}` : "");
   const kindText = (x) => (kindOf(x) ? `<span class="tgpsr">${esc(__(", budget"))}</span>` : "");
   const kindIcon = (x) => (kindOf(x) ? GAUGE_SVG : "");
-  const chipsHTML = () => p.ids.map((x) => `<span class="chip cur tgpchip${kindCls(x)}">${kindIcon(x)}${esc(nameOf(x))}${kindText(x)}<button type="button" data-tp-rm="${esc(x)}" aria-label="${esc(__("Remove {name}", { name: nameOf(x) }))}">×</button></span>`).join("");
+  const chipsHTML = () => p.ids.map((x) => `<span class="chip cur tgpchip${kindCls(x)}">${esc(nameOf(x))}${kindIcon(x)}${kindText(x)}<button type="button" data-tp-rm="${esc(x)}" aria-label="${esc(__("Remove {name}", { name: nameOf(x) }))}">×</button></span>`).join("");
   const listHTML = () => {
     const { extra, flat, create } = listed();
     let n = 0;
-    const opt = (t) => { const i = n++; return `<div role="option" id="${id}-o${i}" data-tp-i="${i}" aria-selected="${p.ids.includes(t.id)}" class="tgpopt${kindCls(t.id)}${i === p.active ? " active" : ""}"><span>${esc(t.name)}${kindText(t.id)}</span>${CHECK_SVG}</div>`; };
+    const opt = (t) => { const i = n++; return `<div role="option" id="${id}-o${i}" data-tp-i="${i}" aria-selected="${p.ids.includes(t.id)}" class="tgpopt${kindCls(t.id)}${i === p.active ? " active" : ""}"><span>${esc(t.name)}${kindIcon(t.id)}${kindText(t.id)}</span>${CHECK_SVG}</div>`; };
     // one flat list, no headings: the order (group, then stroke order, Ungrouped last) is the only grouping shown
     const body = flat.map(opt).join("")
       + (create ? `<div role="option" id="${id}-o${n}" data-tp-i="${n}" data-tp-create aria-selected="false" class="tgpopt tgpcreate${n === p.active ? " active" : ""}"><span>${esc(__("Create tag “{name}”", { name: create }))}</span></div>` : "");
@@ -2506,7 +2506,7 @@ function makeTagPicker(id, o) {
   };
   const recentHTML = () => {
     const ids = o.recent ? recentTags() : [];
-    return ids.length ? `<span class="qhead" id="${id}-rl">${esc(__("Recently used"))}</span><div class="tagpick">${ids.map((x) => `<button type="button" data-tp-t="${esc(x)}" aria-pressed="${p.ids.includes(x)}"${kindOf(x) ? ` class="ty-${kindOf(x)}"` : ""}>${kindIcon(x)}${esc(nameOf(x))}${kindText(x)}</button>`).join("")}</div>` : "";
+    return ids.length ? `<span class="qhead" id="${id}-rl">${esc(__("Recently used"))}</span><div class="tagpick">${ids.map((x) => `<button type="button" data-tp-t="${esc(x)}" aria-pressed="${p.ids.includes(x)}"${kindOf(x) ? ` class="ty-${kindOf(x)}"` : ""}>${esc(nameOf(x))}${kindIcon(x)}${kindText(x)}</button>`).join("")}</div>` : "";
   };
   const html = () => `${o.label ? `<label class="tgplab" for="${id}-q">${esc(o.label)}</label>` : ""}<div class="tagpicker${multiple ? "" : " single"}" id="${id}">
     <div class="tgpbox"><span class="tgpchips" id="${id}-chips">${chipsHTML()}</span><input id="${id}-q" class="tgpq" type="text" role="combobox" aria-expanded="false" aria-controls="${id}-lb" aria-autocomplete="list" autocomplete="off" autocapitalize="off" spellcheck="false"${o.label ? "" : ` aria-label="${esc(o.ariaLabel || __("Tags"))}"`}${o.keep ? " data-live-keep" : ""} placeholder="${esc(placeholder())}"></div>

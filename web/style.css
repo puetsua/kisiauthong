@@ -231,12 +231,12 @@ tr.unconfirmed td{background:var(--plannedbg)}
 .tgpopt[aria-selected=true]{font-weight:600}.tgpopt[aria-selected=true] .tgpcheck{visibility:visible}
 .tgpcreate{color:var(--accent);font-weight:600}
 .tgpnone{margin:0;padding:12px 10px 6px;color:var(--muted);font-size:.92rem}
-/* running budget tags: a gauge icon on chips and pills, a bar on list rows; plain tags (and budgets whose date range
-   has ended) carry no mark. "budget" is also read out (.tgpsr), so the icon is never the only cue. */
+/* running budget tags: a gauge icon after the name on chips, pills and list rows; plain tags (and budgets whose date
+   range has ended) carry no mark. "budget" is also read out (.tgpsr), so the icon is never the only cue. */
 .tgpsr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
-.tgpicon{flex:none;margin-right:4px}
+.tgpicon{flex:none;margin-left:4px}
+.tgpopt .tgpicon{margin-left:0;align-self:center}
 .tgprecent .tagpick button.ty-budget{display:inline-flex;align-items:center}
-.tgpopt.ty-budget{border-radius:0 6px 6px 0;padding-left:6px;border-left:4px solid var(--amber)}
 .tgprecent{display:flex;flex-direction:column;gap:2px;margin-top:10px}.tgprecent .tagpick{margin-top:4px}
 /* the Transactions filter: as tall as the dropdowns beside it, its list over the results */
 .filters .tagpicker{margin:0;flex:0 1 240px;min-width:180px}
