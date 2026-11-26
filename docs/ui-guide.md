@@ -286,11 +286,17 @@ Check every UI change at 390×844 and 360 wide as well as on desktop.
   widget with columns shows its table on desktop and, through
   `phoneSwap(table, cards)`, the same cards as its full page on phones
   (budget cards, account cards, a spending list). A widget whose amounts
-  come in several currencies and are compared with each other (Spending)
-  shows one currency at a time behind `.seg.curtabs` currency tabs, in the
+  come in several currencies and are compared with each other (Spending,
+  Income) shows one currency at a time behind `.seg.curtabs` currency tabs, in the
   currency order below; the
   picked tab is remembered per widget on the device, otherwise the first tab
   is shown (the default currency when it has spending). Currencies are never mixed in one list.
+  Income this month (issue #125) puts a `.psum` total line (the tab's
+  currency, its transaction count) above its rows, since an income with two
+  categories sits on both rows; its rows are by category or, as a widget
+  setting, by source (the external account). Some widget types are not on
+  the default dashboard (`extra` in `DASH_WIDGETS`, `extraWidgets` on the
+  server): a user adds them in Customize.
   - **Customize dashboard, desktop:** the dashboard itself is edited, with
     previews. The pane on the right lists the widget types to add, or the
     settings of the selected widget. Widgets move by dragging (a mouse from

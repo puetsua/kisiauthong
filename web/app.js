@@ -284,16 +284,19 @@ const DASH_WIDGETS = [
   { id: "balances", label: N_("Balances by currency"), pick: "currencies" },
   { id: "budgets", label: N_("Budgets"), pick: "budgets" },
   { id: "spending", label: N_("Spending this month"), rows: 8 },
+  // not on the default dashboard (extra): added in Customize, rows by category or by source (issue #125)
+  { id: "income", label: N_("Income this month"), rows: 8, extra: 1 },
   { id: "reserves", label: N_("Reserves"), pick: "reserves" },
   { id: "accounts", label: N_("Accounts"), pick: "accounts" },
   { id: "recent", label: N_("Recent transactions"), rows: 6 },
 ];
 // The dashboard is a list of widgets, top to bottom. A widget type can be used any number of
 // times, each copy with its own options: { id, type, size?, title?, rows?, include? }.
-const DASH_DEFAULT = { items: DASH_WIDGETS.map((w) => ({ id: w.id, type: w.id })) };
+const DASH_DEFAULT = { items: DASH_WIDGETS.filter((w) => !w.extra).map((w) => ({ id: w.id, type: w.id })) };
 const widgetDef = (type) => DASH_WIDGETS.find((w) => w.id === type);
 const widgetLabel = (type) => __(widgetDef(type).label);
-const widgetName = (w) => w.title || widgetLabel(w.type);
+const incomeBySource = (o) => o.type === "income" && o.by === "source";
+const widgetName = (w) => w.title || (incomeBySource(w) ? __("Income sources this month") : widgetLabel(w.type));
 function dashLayout() {
   const s = state.dashboard || DASH_DEFAULT;
   return { items: (s.items || []).filter((w) => widgetDef(w.type)).map((w) => JSON.parse(JSON.stringify(w))) };
@@ -328,6 +331,13 @@ const WIDGET_COLS = {
     { key: "pct", label: N_("% of spending"), num: 1, v: (x) => pctFmt(x.pct) },
     { key: "spent", label: N_("Spent"), on: 1, num: 1, v: (x) => fmt(x.amountMinor, x.currency) },
   ],
+  // rows by category; by source, widgetCols puts the source in the name column
+  income: [
+    { key: "name", label: N_("Category"), on: 1, v: (x) => x.tagId ? `<button class="titlelink" data-detail-tag="${esc(x.tagId)}">${esc(tagName(x.tagId))}</button>` : `<span class="muted">${esc(__("Uncategorised"))}</span>` },
+    { key: "share", label: N_("Share"), on: 1, v: (x) => bar(x.share) },
+    { key: "pct", label: N_("% of income"), num: 1, v: (x) => pctFmt(x.pct) },
+    { key: "received", label: N_("Received"), on: 1, num: 1, v: (x) => fmt(x.amountMinor, x.currency) },
+  ],
   accounts: [
     { key: "name", label: N_("Account"), on: 1, v: (a) => `<button class="titlelink" data-detail-account="${esc(a.id)}">${esc(a.name)}</button>` },
     { key: "currency", label: N_("Currency"), v: (a) => esc(a.currency) },
@@ -340,9 +350,13 @@ const WIDGET_COLS = {
   ],
 };
 const defaultCols = (type) => WIDGET_COLS[type].filter((c) => c.on).map((c) => c.key);
+// An income source: a named external account opens its form as everywhere; the anonymous one is not a name.
+const sourceCol = { key: "name", label: N_("Income source"), on: 1,
+  v: (x) => x.accountId !== EXT_ID && accById(x.accountId) ? `<button class="titlelink" data-detail-account="${esc(x.accountId)}">${esc(accName(x.accountId))}</button>` : `<span class="muted">${esc(accName(x.accountId))}</span>` };
+const widgetColDefs = (type, o) => (o && incomeBySource({ ...o, type }) ? WIDGET_COLS[type].map((c) => (c.key === "name" ? sourceCol : c)) : WIDGET_COLS[type]);
 // the shown columns of a widget, in order
 function widgetCols(type, o) {
-  const all = WIDGET_COLS[type], keys = o.columns && o.columns.length ? o.columns : defaultCols(type);
+  const all = widgetColDefs(type, o), keys = o.columns && o.columns.length ? o.columns : defaultCols(type);
   return keys.map((k) => all.find((c) => c.key === k)).filter(Boolean);
 }
 // a widget's table on desktop and its cards on phones (CSS shows one), as the full pages do
@@ -360,7 +374,7 @@ document.addEventListener("toggle", (e) => {
 }, true);
 const phoneSwap = (tableHTML, phoneHTML) => `<div class="wdesk">${tableHTML}</div><div class="wphone">${phoneHTML}</div>`;
 const colTable = (cols, xs) => table(cols.map((c) => ({ t: c.label, num: c.num })), xs.map((x) => row(cols.map((c) => ({ l: c.label, v: c.v(x), num: c.num })))).join(""));
-// The currency tab a Spending widget shows, per widget and per device: the one picked last while it still
+// The currency tab a Spending (or Income) widget shows, per widget and per device: the one picked last while it still
 // has spending this month, else the first tab (curs is in currency order, so the default currency if it has any).
 const SPEND_CUR_KEY = "kisiauthong.spendingCurrency";
 let spendCurs = {};
@@ -413,6 +427,26 @@ function widgetBody(type, o) {
         `<button type="button" data-spend-cur="${esc(c)}" data-widget="${esc(o.id || "")}" class="${c === cur ? "on" : ""}" aria-pressed="${c === cur}">${esc(c)}</button>`).join("")}</div>`;
       return tabs + phoneSwap(colTable(widgetCols(type, o), list), `<ul class="splist">${rowsHTML}</ul>`);
     }
+    case "income": {
+      // posted income this month (issue #125), from the server like spending: one currency at a time behind
+      // tabs, never converted; a total line per currency (each income once, even with two categories),
+      // then the rows by category or by source, largest first. Transfers between own accounts are not income,
+      // and scheduled income counts from its date.
+      const m = d.incomeThisMonth || { totals: [], byCategory: [], bySource: [] };
+      const bySrc = incomeBySource({ ...o, type }), byCur = {};
+      (bySrc ? m.bySource : m.byCategory).forEach((x) => { (byCur[x.currency] = byCur[x.currency] || []).push(x); });
+      const curs = curSort(Object.keys(byCur));
+      if (!curs.length) return `<p class="muted">${esc(__("No posted income this month."))}</p>`;
+      const cur = spendCur(o.id, curs), xs = byCur[cur];
+      const tot = m.totals.find((x) => x.currency === cur) || { amountMinor: 0, count: 0 };
+      const list = xs.slice(0, rows).map((x) => ({ ...x, share: xs[0].amountMinor ? x.amountMinor / xs[0].amountMinor * 100 : 0, pct: tot.amountMinor ? x.amountMinor / tot.amountMinor * 100 : 0 }));
+      const name = widgetColDefs(type, o)[0].v;
+      const rowsHTML = list.map((x) => `<li><span class="sptop">${name(x)}<b>${fmt(x.amountMinor, x.currency)}</b></span>${bar(x.share)}</li>`).join("");
+      const tabs = curs.length < 2 ? "" : `<div class="seg curtabs" role="group" aria-label="${esc(__("Currency"))}">${curs.map((c) =>
+        `<button type="button" data-spend-cur="${esc(c)}" data-widget="${esc(o.id || "")}" class="${c === cur ? "on" : ""}" aria-pressed="${c === cur}">${esc(c)}</button>`).join("")}</div>`;
+      const sum = `<div class="psum"><span>${esc(__("Total"))} <span class="lab2">· ${esc(__("{n} transaction(s)", { n: tot.count }))}</span></span>${moneyBlock({ [cur]: tot.amountMinor }, { sign: "+", cls: "in" })}</div>`;
+      return tabs + sum + phoneSwap(colTable(widgetCols(type, o), list), `<ul class="splist">${rowsHTML}</ul>`);
+    }
     case "reserves": {
       const list = d.reserves.filter((r) => inc(r.id));
       return list.length ? `<div class="tgrid">${list.map(reserveCard).join("")}</div>` : `<p class="muted">${esc(__("No reserves yet."))}</p>`;
@@ -450,6 +484,7 @@ const UP = ARROW("M12 19V5M6 11l6-6 6 6"), DOWN = ARROW("M12 5v14M6 13l6 6 6-6")
 // The short line under a widget's name in a collapsed tile on phones: its width, and its rows when it has them.
 function tileMeta(w) {
   const def = widgetDef(w.type), parts = [__(w.size === "half" ? "Half width" : "Full width")];
+  if (incomeBySource(w)) parts.push(__("By source"));
   if (def.rows) parts.push(__("Rows: {n}", { n: w.rows || def.rows }));
   return parts.join(" · ");
 }
@@ -468,7 +503,7 @@ function dashTile(w, i, draft, phone) {
 }
 // Columns editor: shown columns first in their order, then the hidden ones; tick to show, arrows to reorder.
 function colPicker(o) {
-  const all = WIDGET_COLS[o.type], shown = widgetCols(o.type, o).map((c) => c.key);
+  const all = widgetColDefs(o.type, o), shown = widgetCols(o.type, o).map((c) => c.key);
   const list = [...shown, ...all.map((c) => c.key).filter((k) => !shown.includes(k))];
   return `<fieldset><legend>${esc(__("Columns"))}</legend><ul class="colpick">${list.map((k, i) => {
     const c = all.find((x) => x.key === k), name = __(c.label);
@@ -495,11 +530,12 @@ function dashPaneHTML(draft, phone) {
 }
 // A widget's settings; inline (phones) they sit under the tile's bar, which already names it.
 function dashSettingsHTML(o, inline) {
-  const w = widgetDef(o.type), label = widgetLabel(o.type);
+  const w = widgetDef(o.type), label = widgetName({ ...o, title: "" }); // the name it has without a title
   const items = w.pick ? pickItems(w.pick) : [];
   const shown = (x) => !(o.include && o.include.length) || o.include.includes(x);
   return `<div class="paneform">
       <label>${esc(__("Title"))} <input type="text" data-dash-title value="${esc(o.title || "")}" placeholder="${esc(label)}" maxlength="60"></label>
+      ${o.type === "income" ? `<label>${esc(__("Rows by"))} <select data-dash-by><option value="category">${esc(__("Category"))}</option><option value="source" ${o.by === "source" ? "selected" : ""}>${esc(__("Income source"))}</option></select></label>` : ""}
       <label>${esc(__("Width"))} <select data-dash-size><option value="full">${esc(__("Full width"))}</option><option value="half" ${o.size === "half" ? "selected" : ""}>${esc(__("Half width"))}</option></select></label>
       ${w.rows ? `<label>${esc(__("Rows"))} <input type="number" data-dash-rows min="1" max="50" value="${o.rows || w.rows}"></label>` : ""}
       ${WIDGET_COLS[o.type] ? colPicker(o) : ""}
@@ -609,6 +645,13 @@ function screenDashboardEditor(v) {
       if (f) f.focus();
     });
     on("[data-dash-title]", "input", (t) => { setWidgetOpt(id, "title", t.value.trim()); refresh(); });
+    // rows by category or by source: the column names, the default title and the bar's line change, so draw it all
+    on("[data-dash-by]", "change", (b) => {
+      setWidgetOpt(id, "by", b.value === "source" ? "source" : undefined);
+      draw();
+      const again = (inline ? canvas : pane).querySelector("[data-dash-by]");
+      if (again) again.focus();
+    });
     on("[data-dash-size]", "change", (sz) => { setWidgetOpt(id, "size", sz.value === "half" ? "half" : undefined); refresh(); });
     on("[data-dash-rows]", "change", (r) => {
       const def = widgetDef(draftItem(id).type), n = Math.min(50, Math.max(1, parseInt(r.value, 10) || def.rows));

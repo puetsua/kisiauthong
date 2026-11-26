@@ -289,6 +289,101 @@ func (d *Data) SpendingByCategory(ref, today string, curOrder []string) []TagSpe
 	return out
 }
 
+// IncomeTotal is the posted income in one currency in a month: the amount
+// and how many transactions make it up.
+type IncomeTotal struct {
+	Currency    string `json:"currency"`
+	AmountMinor int64  `json:"amountMinor"`
+	Count       int    `json:"count"`
+}
+
+// SourceIncome is posted income in one currency from one external account.
+type SourceIncome struct {
+	AccountID   string `json:"accountId"`
+	Currency    string `json:"currency"`
+	AmountMinor int64  `json:"amountMinor"`
+}
+
+// MonthIncome is the income of one calendar month (issue #125): a total per
+// currency, and rows by category and by source (the external account the
+// money came from).
+type MonthIncome struct {
+	Totals     []IncomeTotal  `json:"totals"`
+	ByCategory []TagSpend     `json:"byCategory"`
+	BySource   []SourceIncome `json:"bySource"`
+}
+
+// IncomeThisMonth sums posted income (external -> own account) in ref's
+// calendar month per currency, per (category tag, currency) and per (source,
+// currency), mirroring SpendingByCategory: currencies in curOrder and never
+// mixed, largest first within a currency. Transfers between own accounts are
+// not income, and scheduled income (dated after today) counts once it posts.
+// An income with two category tags shows on both category rows, but counts
+// once in its currency's total.
+func (d *Data) IncomeThisMonth(ref, today string, curOrder []string) MonthIncome {
+	month := ref[:7]
+	cats := map[string][]string{}
+	for _, tt := range d.TransactionTags {
+		cats[tt.TransactionID] = append(cats[tt.TransactionID], tt.TagID)
+	}
+	type key struct{ id, cur string }
+	byTag, bySrc := map[key]int64{}, map[key]int64{}
+	totals := map[string]*IncomeTotal{}
+	for _, t := range d.Transactions {
+		if !happened(t, today) || !d.IsIncome(t) || len(t.Date) < 7 || t.Date[:7] != month {
+			continue
+		}
+		tot := totals[t.Currency]
+		if tot == nil {
+			tot = &IncomeTotal{Currency: t.Currency}
+			totals[t.Currency] = tot
+		}
+		tot.AmountMinor += t.AmountMinor
+		tot.Count++
+		bySrc[key{t.FromAccountID, t.Currency}] += t.AmountMinor
+		tags := cats[t.ID]
+		if len(tags) == 0 {
+			tags = []string{""}
+		}
+		for _, tag := range tags {
+			byTag[key{tag, t.Currency}] += t.AmountMinor
+		}
+	}
+	less := currencyLess(curOrder)
+	out := MonthIncome{Totals: []IncomeTotal{}, ByCategory: []TagSpend{}, BySource: []SourceIncome{}}
+	for _, v := range totals {
+		out.Totals = append(out.Totals, *v)
+	}
+	sort.Slice(out.Totals, func(i, j int) bool { return less(out.Totals[i].Currency, out.Totals[j].Currency) })
+	for k, v := range byTag {
+		out.ByCategory = append(out.ByCategory, TagSpend{TagID: k.id, Currency: k.cur, AmountMinor: v})
+	}
+	sort.Slice(out.ByCategory, func(i, j int) bool {
+		a, b := out.ByCategory[i], out.ByCategory[j]
+		if a.Currency != b.Currency {
+			return less(a.Currency, b.Currency)
+		}
+		if a.AmountMinor != b.AmountMinor {
+			return a.AmountMinor > b.AmountMinor
+		}
+		return a.TagID < b.TagID
+	})
+	for k, v := range bySrc {
+		out.BySource = append(out.BySource, SourceIncome{AccountID: k.id, Currency: k.cur, AmountMinor: v})
+	}
+	sort.Slice(out.BySource, func(i, j int) bool {
+		a, b := out.BySource[i], out.BySource[j]
+		if a.Currency != b.Currency {
+			return less(a.Currency, b.Currency)
+		}
+		if a.AmountMinor != b.AmountMinor {
+			return a.AmountMinor > b.AmountMinor
+		}
+		return a.AccountID < b.AccountID
+	})
+	return out
+}
+
 // currencyLess orders currency codes as every list of currencies is ordered
 // (issue #71, the web UI's curCmp): those in order first, in that order, then
 // any other code alphabetically.

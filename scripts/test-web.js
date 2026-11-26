@@ -48,7 +48,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, screenAccount, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog, own };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, widgetName, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, screenAccount, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog, own };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -362,6 +362,53 @@ test("one currency order everywhere (#71): the frequently used list in its Setti
     assert.strictEqual(top(t.currencyOptions("USD")), "TWD,USD,JPY,EUR,GBP");
   } finally {
     t.state.general = saved.general; d.accounts = saved.accounts; d.tags = saved.tags; d.spendingThisMonth = saved.spending;
+  }
+});
+
+test("Income this month (#125): per currency behind tabs, a total line, rows by category or by source", () => {
+  const d = t.state.data, saved = { general: t.state.general, all: d.allAccounts, tags: d.tags, income: d.incomeThisMonth };
+  try {
+    t.state.general = { defaultCurrency: "TWD", currencies: ["TWD", "USD"] };
+    d.allAccounts = [{ id: "a1", kind: "own", name: "Bank", currency: "TWD" }, { id: "acc-external", kind: "external", name: "External" }, { id: "emp", kind: "external", name: "Employer" }];
+    d.tags = [{ id: "sal", name: "Salary" }, { id: "ref", name: "Refund" }];
+    // as the server sends it: each income once in the total, on every category it carries
+    d.incomeThisMonth = {
+      totals: [{ currency: "TWD", amountMinor: 5139900, count: 3 }, { currency: "USD", amountMinor: 2500, count: 1 }],
+      byCategory: [{ tagId: "sal", currency: "TWD", amountMinor: 5000000 }, { tagId: "", currency: "TWD", amountMinor: 100000 }, { tagId: "ref", currency: "TWD", amountMinor: 39900 }, { tagId: "sal", currency: "USD", amountMinor: 2500 }],
+      bySource: [{ accountId: "emp", currency: "TWD", amountMinor: 5000000 }, { accountId: "acc-external", currency: "TWD", amountMinor: 139900 }, { accountId: "emp", currency: "USD", amountMinor: 2500 }],
+    };
+    const cat = strip(t.widgetBody("income", { id: "in1", type: "income" }));
+    assert.match(cat, /^<div class="seg curtabs"[^>]*><button type="button" data-spend-cur="TWD" data-widget="in1" class="on" aria-pressed="true">TWD<\/button><button type="button" data-spend-cur="USD"/, "one currency at a time, the default first");
+    assert.match(cat, /<div class="psum"><span>Total <span class="lab2">· 3 transaction\(s\)<\/span><\/span><span class="mamt"><span class="mprim"><span class="ccode">TWD<\/span><span class="amt in">\+51,399<\/span><\/span><\/span><\/div>/, "the total counts each income once");
+    assert.match(cat, /<th class="">Category<\/th><th class="">Share<\/th><th class="num">Received<\/th>/, "the default columns");
+    assert.match(cat, /data-detail-tag="sal">Salary<\/button>.*TWD 50,000.*Uncategorised.*TWD 1,000.*data-detail-tag="ref">Refund/s, "largest first");
+    assert.doesNotMatch(cat, /USD 2,500/, "never mixed with another currency");
+    assert.match(strip(t.widgetBody("income", { id: "in1", type: "income", columns: ["name", "pct"] })), /Salary<\/button><\/div><\/td><td data-label="% of income" class="num"><div class="tdv">97%/, "% of income, of the total");
+    // by source: a named external account opens its form, the anonymous one is not a link
+    const src = strip(t.widgetBody("income", { id: "in2", type: "income", by: "source" }));
+    assert.match(src, /<th class="">Income source<\/th>/);
+    assert.match(src, /data-detail-account="emp">Employer<\/button>.*<span class="muted">External<\/span>.*TWD 1,399/s);
+    assert.strictEqual(t.widgetName({ type: "income", by: "source" }), "Income sources this month");
+    assert.strictEqual(t.tileMeta({ id: "in2", type: "income", by: "source" }), "Full width · By source · Rows: 8");
+    // nothing yet this month
+    d.incomeThisMonth = { totals: [], byCategory: [], bySource: [] };
+    assert.strictEqual(t.widgetBody("income", { id: "in1", type: "income" }), '<p class="muted">No posted income this month.</p>');
+    // added in Customize, not on the default dashboard; its settings choose the rows
+    assert.ok(!t.DASH_DEFAULT.items.some((w) => w.type === "income"), "not on the default dashboard");
+    assert.match(t.dashPaneHTML({ items: [] }, true), /data-pal-add="income" aria-label="Add Income this month"/);
+    t.state.dashSel = "in2";
+    const tile = t.dashTile({ id: "in2", type: "income", by: "source" }, 0, { items: [{ id: "in2", type: "income", by: "source" }] }, true);
+    assert.match(tile, /<span class="tnm">Income sources this month<\/span>/);
+    assert.match(tile, /data-dash-title value="" placeholder="Income sources this month".*<select data-dash-by><option value="category">Category<\/option><option value="source" selected>Income source<\/option><\/select>/s);
+    assert.match(tile, /<li data-col="name"><label><input type="checkbox" data-col-on checked> Income source<\/label>/, "the column picker names the source column");
+    t.state.dashSel = null;
+    t.setLang("zh-TW");
+    try {
+      d.incomeThisMonth = { totals: [{ currency: "TWD", amountMinor: 39900, count: 1 }], byCategory: [{ tagId: "ref", currency: "TWD", amountMinor: 39900 }], bySource: [] };
+      assert.match(strip(t.widgetBody("income", { id: "in1", type: "income" })), /合計 <span class="lab2">· 1 筆交易<\/span>.*<th class="">分類<\/th>.*<th class="num">已收入<\/th>/s);
+    } finally { t.setLang("en"); }
+  } finally {
+    t.state.general = saved.general; d.allAccounts = saved.all; d.tags = saved.tags; d.incomeThisMonth = saved.income;
   }
 });
 
@@ -1079,7 +1126,7 @@ test("Customize dashboard on phones: tiles are bars, settings open under the bar
   assert.doesNotMatch(open, /data-pane-back|tilebody/, "no back link inline, no preview");
   // the pane on phones only adds: every type, again and again (copies are allowed), as "+ type" buttons
   const pane = t.dashPaneHTML(draft, true);
-  assert.strictEqual((pane.match(/class="paladd" data-pal-add=/g) || []).length, 6);
+  assert.strictEqual((pane.match(/class="paladd" data-pal-add=/g) || []).length, 7);
   assert.match(pane, /^<h3>Add widget<\/h3>\s*<div class="palgrid"><button type="button" class="paladd" data-pal-add="balances" aria-label="Add Balances by currency"><span aria-hidden="true">\+<\/span>Balances by currency<\/button>/);
   assert.doesNotMatch(pane, /grip|droptrash|data-pal="|data-pane-back|paneform/, "no drag handles, no drop zone, no settings in the pane");
   // desktop stays as it was: previews, settings in the pane, the palette with grips
