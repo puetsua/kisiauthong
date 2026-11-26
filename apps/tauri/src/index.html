@@ -15,7 +15,7 @@
     <div class="bname"><div class="zh" lang="nan-Hant-TW">記數通</div><div class="en" lang="en">KiSiauThong</div></div>
   </section>
   <section class="formpane">
-    <form id="form" class="sheet" novalidate>
+    <form id="form" class="sheet" novalidate hidden>
       <h1 id="title"></h1>
       <p id="lead" class="lead"></p>
       <label class="flabel" id="nameRow" hidden><span id="nameLabel"></span><input id="name" class="field" type="text" maxlength="80" autocomplete="off"></label>
@@ -25,6 +25,14 @@
       <button class="primarybtn big" id="go" type="submit"></button>
       <button class="ghostbtn big" id="cancel" type="button" hidden></button>
     </form>
+    <div id="open" class="sheet" hidden>
+      <h1 id="openTitle"></h1>
+      <p id="openUrl" class="lead mono"></p>
+      <p id="openStatus" class="status" role="status" aria-live="polite"></p>
+      <div class="errbox" id="openErr" role="alert" hidden><b id="openErrTitle"></b><span id="openErrText"></span></div>
+      <button class="primarybtn big" id="openRetry" type="button" hidden></button>
+      <button class="ghostbtn big" id="openChange" type="button"></button>
+    </div>
     <div id="upd" class="sheet" hidden>
       <h1 id="updTitle"></h1>
       <p id="updVersion" class="lead"></p>

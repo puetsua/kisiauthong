@@ -32,8 +32,14 @@ apps/tauri/
 ## How it works
 
 1. At launch the window opens the bundled server screen. With no saved server
-   it asks for one address (variant B of issue #28). With one in use it checks
-   it and opens it, or shows why it cannot, with the address filled in.
+   it asks for one address (variant B of issue #28). With one saved it never
+   shows the server form (issue #126): it shows the server's name and address
+   while it checks the server in use, then opens it in the screen's place,
+   where the web UI, or its sign-in or account setup, appears. When the check
+   fails it shows why, with **Retry** and **Change server**. Change server is
+   the server form, filled with the saved address: Connect adds (or reuses)
+   the address typed and opens it, and Cancel goes back to opening the saved
+   server, which stays in Settings → Servers.
 2. **Connect** normalises the address (trim, `https://` when there is no
    scheme, base path kept, trailing slash), refuses unencrypted `http://` off
    the local network, then asks `GET <address>api/auth/status`. A KiSiauThong

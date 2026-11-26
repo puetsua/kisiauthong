@@ -111,7 +111,18 @@
     return "en";
   }
 
-  const api = { normalizeServerUrl, statusUrl, cleartextAllowed, baseFromFinal, classifyProbe, checkServer, pickLang };
+  // The server the app opens at launch (issue #126): the one in use, else the
+  // most recently used saved one; null only when no server is saved, the one
+  // case that shows the server form (first run, issue #28).
+  function serverToOpen(state) {
+    const servers = (state && Array.isArray(state.servers)) ? state.servers : [];
+    const active = servers.find((s) => s.id === state.active);
+    if (active) return active;
+    // ISO 8601 UTC strings sort by time; never used sorts first
+    return servers.reduce((best, s) => (!best || (s.lastUsed || "") > (best.lastUsed || "") ? s : best), null);
+  }
+
+  const api = { normalizeServerUrl, statusUrl, cleartextAllowed, baseFromFinal, classifyProbe, checkServer, pickLang, serverToOpen };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.KstConnect = api;
 })(this);

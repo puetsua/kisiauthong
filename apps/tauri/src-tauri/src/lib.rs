@@ -1413,6 +1413,28 @@ mod tests {
     }
 
     #[test]
+    fn opening_the_saved_server_at_launch_keeps_its_entry() {
+        // issue #126: the launch view saves the checked address on the server's own
+        // entry, also when a redirect moved it, and opens it in the screen's place
+        let mut s = Store::default();
+        let a = s.upsert(None, Some("Home"), "http://192.168.1.20/kisiauthong/").unwrap();
+        let b = s.upsert(None, None, "https://other.example.org/").unwrap();
+        s.activate(&a, "2026-11-23T00:00:00Z".into());
+        assert_eq!(
+            save(&mut s, Some(&a), None, "http://192.168.1.20/kisiauthong/", true).unwrap(),
+            Saved::Open(Url::parse("http://192.168.1.20/kisiauthong/").unwrap())
+        );
+        assert_eq!(
+            save(&mut s, Some(&a), None, "https://books.example.org/kisiauthong/", true).unwrap(),
+            Saved::Open(Url::parse("https://books.example.org/kisiauthong/").unwrap())
+        );
+        assert_eq!(s.servers.len(), 2, "no second entry for the moved address");
+        assert_eq!(s.active.as_deref(), Some(a.as_str()));
+        assert_eq!(s.get(&a).unwrap().name.as_deref(), Some("Home"), "the name stays");
+        assert_eq!(s.get(&b).unwrap().url, "https://other.example.org/");
+    }
+
+    #[test]
     fn the_page_gone_back_to_shows_what_the_screen_asked_once() {
         let settings = Url::parse("https://books.example.org/kisiauthong/#settings").unwrap();
         let about = Url::parse("https://books.example.org/kisiauthong/#settings?about").unwrap();

@@ -125,6 +125,203 @@ test("strings: both languages have the same keys and {url} placeholders, and eve
   }
 });
 
+test("serverToOpen: the server in use, else the last used, and none only when nothing is saved (issue #126)", () => {
+  const home = { id: "a", url: base, lastUsed: "2026-11-20T08:00:00Z" };
+  const nas = { id: "b", url: "http://192.168.1.20:8080/", lastUsed: "2026-11-21T08:00:00Z" };
+  const fresh = { id: "c", url: "https://other.example.org/" };
+  assert.strictEqual(C.serverToOpen({ active: "a", servers: [home, nas] }), home);
+  assert.strictEqual(C.serverToOpen({ active: null, servers: [home, nas, fresh] }), nas);
+  assert.strictEqual(C.serverToOpen({ active: "gone", servers: [fresh, home] }), home);
+  assert.strictEqual(C.serverToOpen({ active: null, servers: [fresh] }), fresh);
+  assert.strictEqual(C.serverToOpen({ active: null, servers: [] }), null);
+  assert.strictEqual(C.serverToOpen({}), null);
+});
+
+// The bundled server screen (index.html + first-run.js) in a stand-in DOM: the
+// elements and their `hidden` as index.html starts them, and the shell's
+// commands answered by `answer(cmd, args)`. Returns what a test looks at.
+function openScreen(search, answer) {
+  const html = fs.readFileSync(path.join(app, "index.html"), "utf8");
+  const els = {};
+  const element = (id) => {
+    const e = {
+      id, hidden: false, disabled: false, readOnly: false, value: "", className: "", attrs: {}, on: {}, focused: false,
+      _text: "",
+      get textContent() { return this._text; },
+      set textContent(t) { this._text = String(t); },
+      classList: { set: new Set(), add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); } },
+      setAttribute(k, v) { this.attrs[k] = v; },
+      removeAttribute(k) { delete this.attrs[k]; },
+      append(...xs) { for (const x of xs) this._text += typeof x === "string" ? x : x.textContent; },
+      addEventListener(type, fn) { this.on[type] = fn; },
+      focus() { for (const o of Object.values(els)) o.focused = false; this.focused = true; },
+    };
+    return e;
+  };
+  for (const m of html.matchAll(/<\w+\b([^>]*)>/g)) {
+    const id = (m[1].match(/\bid="([^"]+)"/) || [])[1];
+    if (!id) continue;
+    els[id] = element(id);
+    els[id].hidden = /\shidden(?=[\s>]|$)/.test(m[1]);
+  }
+  const calls = [];
+  const win = {
+    KstConnect: C,
+    KstStrings: STRINGS,
+    __TAURI_INTERNALS__: { invoke: (cmd, args) => { calls.push([cmd, args]); return answer(cmd, args); } },
+  };
+  const doc = {
+    getElementById: (id) => { assert.ok(els[id], `index.html has #${id}`); return els[id]; },
+    createElement: () => element(""),
+    documentElement: {},
+  };
+  const src = fs.readFileSync(path.join(app, "first-run.js"), "utf8");
+  new Function("window", "document", "location", "navigator", "URL", "URLSearchParams", src)(
+    win, doc, { search: search }, { languages: ["en-US"] }, URL, URLSearchParams);
+  const visible = (id) => !!els[id] && !els[id].hidden;
+  const view = () => ["form", "open", "upd"].filter(visible);
+  return { els, calls, view, visible, cmds: () => calls.map((c) => c[0]) };
+}
+const settle = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0)); };
+const saved = { locale: "en-US", active: "a", servers: [{ id: "a", name: "Home", url: base, lastUsed: "2026-11-20T08:00:00Z" }] };
+// a KiSiauThong server's answer to the probe of `url`
+const reachable = (url) => ({ status: 200, finalUrl: url, contentType: "application/json", body: '{"needsSetup":false,"user":null}' });
+
+test("launch with a saved server: no server form; the server is checked and opened (issue #126)", async () => {
+  const s = openScreen("", (cmd, args) => cmd === "app_state" ? Promise.resolve(saved) : cmd === "probe" ? Promise.resolve(reachable(args.url)) : Promise.resolve(null));
+  assert.deepStrictEqual(s.view(), [], "nothing before the screen knows whether a server is saved");
+  await settle();
+  assert.deepStrictEqual(s.cmds(), ["app_state", "probe", "save_server"]);
+  assert.deepStrictEqual(s.calls[1][1], { url: base + "api/auth/status" });
+  assert.deepStrictEqual(s.calls[2][1], { id: "a", name: null, url: base, connect: true }, "its own entry, opened in the screen's place");
+  assert.deepStrictEqual(s.view(), ["open"], "the form never shows");
+  assert.strictEqual(s.els.openTitle.textContent, "Home");
+  assert.strictEqual(s.els.openUrl.textContent, base);
+  assert.strictEqual(s.els.openStatus.textContent, STRINGS.en.connecting);
+  assert.ok(s.els.openRetry.hidden && s.els.openErr.hidden);
+});
+
+test("launch with an unreachable saved server: the reason, Retry and Change server, never the empty form (issue #126)", async () => {
+  let up = false, pending = null;
+  const s = openScreen("", (cmd, args) => {
+    if (cmd === "app_state") return Promise.resolve(saved);
+    if (cmd === "probe") return pending ? pending.promise : Promise.resolve(up ? reachable(args.url) : { error: "connect", detail: "refused" });
+    return Promise.resolve(null);
+  });
+  await settle();
+  assert.deepStrictEqual(s.cmds(), ["app_state", "probe"], "nothing saved or opened");
+  assert.deepStrictEqual(s.view(), ["open"]);
+  assert.strictEqual(s.els.openErrTitle.textContent, STRINGS.en.unreachableTitle);
+  // the whole message, with the address tried in place of {url}
+  assert.strictEqual(s.els.openErrText.textContent, STRINGS.en.unreachableText.split("{url}").join(base));
+  assert.strictEqual(s.els.openStatus.textContent, "");
+  assert.ok(s.visible("openRetry") && s.visible("openChange"));
+  assert.strictEqual(s.els.openRetry.textContent, STRINGS.en.retry);
+  // Retry: checked again, opened once it answers
+  up = true;
+  s.els.openRetry.on.click();
+  await settle();
+  assert.deepStrictEqual(s.cmds().slice(2), ["probe", "save_server"]);
+  assert.ok(s.els.openErr.hidden);
+  // Change server: the form, filled with the saved address; Cancel goes back to opening it
+  s.els.openChange.on.click();
+  assert.deepStrictEqual(s.view(), ["form"]);
+  assert.strictEqual(s.els.title.textContent, STRINGS.en.changeServer);
+  assert.strictEqual(s.els.url.value, base);
+  assert.ok(s.visible("cancel") && s.els.nameRow.hidden && s.els.err.hidden);
+  assert.strictEqual(s.els.go.textContent, STRINGS.en.connect);
+  const before = s.calls.length;
+  s.els.cancel.on.click();
+  await settle();
+  assert.deepStrictEqual(s.view(), ["open"]);
+  assert.deepStrictEqual(s.cmds().slice(before), ["probe", "save_server"], "Cancel: back to opening the saved server, not cancel_form");
+  // a check still running when the user picks Change server never opens the old server
+  let release;
+  pending = { promise: new Promise((r) => { release = r; }) };
+  s.els.openRetry.on.click();
+  await settle();
+  s.els.openChange.on.click();
+  const mark = s.calls.length;
+  release(reachable(base + "api/auth/status"));
+  pending = null;
+  await settle();
+  assert.deepStrictEqual(s.cmds().slice(mark), [], "the late answer is dropped");
+  assert.deepStrictEqual(s.view(), ["form"]);
+  // Connect on the form adds (or reuses) the address typed and opens it
+  s.els.url.value = "https://other.example.org/";
+  s.els.form.on.submit({ preventDefault() {} });
+  await settle();
+  assert.deepStrictEqual(s.calls.slice(-1)[0], ["save_server", { id: null, name: null, url: "https://other.example.org/", connect: true }]);
+});
+
+test("launch: a redirect to another saved address uses that entry; a failed save shows why (issue #126)", async () => {
+  const other = { id: "b", url: "https://books.example.net/kisiauthong/" };
+  const two = { locale: "en", active: "a", servers: [saved.servers[0], other] };
+  let fail = false;
+  const s = openScreen("", (cmd, args) => {
+    if (cmd === "app_state") return Promise.resolve(two);
+    if (cmd === "probe") return Promise.resolve(reachable(other.url + "api/auth/status"));
+    return fail ? Promise.reject(new Error("disk full")) : Promise.resolve(null);
+  });
+  await settle();
+  assert.deepStrictEqual(s.calls.slice(-1)[0], ["save_server", { id: "b", name: null, url: other.url, connect: true }], "no second entry with one address");
+  assert.ok(s.els.openChange.disabled, "the server is being opened");
+  fail = true;
+  s.els.openRetry.on.click();
+  await settle();
+  assert.deepStrictEqual(s.view(), ["open"]);
+  assert.strictEqual(s.els.openErrTitle.textContent, STRINGS.en.saveTitle);
+  assert.ok(s.els.openErrText.textContent.includes("disk full"));
+  assert.ok(s.visible("openRetry") && !s.els.openChange.disabled);
+  // Change server → Connect while it checks: Cancel waits
+  let release;
+  const s2 = openScreen("", (cmd) => cmd === "app_state" ? Promise.resolve(saved)
+    : cmd === "probe" ? new Promise((r) => { release = r; }) : Promise.resolve(null));
+  await settle();
+  release({ error: "timeout" });
+  await settle();
+  s2.els.openChange.on.click();
+  s2.els.form.on.submit({ preventDefault() {} });
+  assert.ok(s2.els.cancel.disabled, "Cancel is off while the address is checked");
+  const n = s2.calls.length;
+  s2.els.cancel.on.click();
+  release({ error: "timeout" });
+  await settle();
+  assert.deepStrictEqual(s2.view(), ["form"]);
+  assert.ok(!s2.els.cancel.disabled && s2.visible("err"));
+  assert.deepStrictEqual(s2.cmds().slice(n), [], "nothing more asked");
+});
+
+test("first run and Settings → Servers still show the server form (issue #126)", async () => {
+  // no saved server: the first-run form, nothing checked
+  let s = openScreen("", (cmd) => Promise.resolve(cmd === "app_state" ? { locale: "en", active: null, servers: [] } : null));
+  await settle();
+  assert.deepStrictEqual(s.view(), ["form"]);
+  assert.strictEqual(s.els.title.textContent, STRINGS.en.firstTitle);
+  assert.ok(s.els.cancel.hidden);
+  assert.deepStrictEqual(s.cmds(), ["app_state"]);
+  // Add server, with a server saved and in use: the form, Cancel back to Settings
+  s = openScreen("?mode=add&lang=zh-TW", (cmd) => Promise.resolve(cmd === "app_state" ? saved : null));
+  await settle();
+  assert.deepStrictEqual(s.view(), ["form"]);
+  assert.strictEqual(s.els.title.textContent, STRINGS["zh-TW"].addTitle);
+  assert.ok(s.visible("cancel") && s.visible("nameRow"));
+  assert.deepStrictEqual(s.cmds(), ["app_state"], "the saved server is not opened");
+  s.els.cancel.on.click();
+  assert.deepStrictEqual(s.cmds(), ["app_state", "cancel_form"]);
+  // Edit server: the form, filled in
+  s = openScreen("?mode=edit&id=a", (cmd) => Promise.resolve(cmd === "app_state" ? saved : null));
+  await settle();
+  assert.deepStrictEqual(s.view(), ["form"]);
+  assert.strictEqual(s.els.title.textContent, STRINGS.en.editTitle);
+  assert.strictEqual(s.els.url.value, base);
+  assert.strictEqual(s.els.name.value, "Home");
+  // a plain browser (no app): the empty form
+  s = openScreen("", () => Promise.reject(new Error("no app")));
+  await settle();
+  assert.deepStrictEqual(s.view(), ["form"]);
+});
+
 test("the screen's colour tokens are web/style.css's Default theme, light and dark", () => {
   // the server screen belongs to no account: Default, in the system's light or dark (issue #85)
   const css = (f) => fs.readFileSync(f, "utf8");

@@ -52,8 +52,10 @@ impl Store {
         };
         match serde_json::from_str::<Store>(&text) {
             Ok(mut s) => {
-                if s.active.as_ref().is_some_and(|a| !s.servers.iter().any(|p| &p.id == a)) {
-                    s.active = None;
+                // a saved list always has a server in use, so the app opens one
+                // at launch instead of the empty server form (issue #126)
+                if !s.active.as_ref().is_some_and(|a| s.servers.iter().any(|p| &p.id == a)) {
+                    s.active = s.last_used();
                 }
                 s
             }
@@ -126,10 +128,15 @@ impl Store {
             return false;
         }
         if self.active.as_deref() == Some(id) {
-            // ISO 8601 UTC strings sort by time; never used sorts first
-            self.active = self.servers.iter().max_by(|a, b| a.last_used.cmp(&b.last_used)).map(|p| p.id.clone());
+            self.active = self.last_used();
         }
         true
+    }
+
+    /// The most recently used server's id (None when none is saved).
+    fn last_used(&self) -> Option<String> {
+        // ISO 8601 UTC strings sort by time; never used sorts first
+        self.servers.iter().max_by(|a, b| a.last_used.cmp(&b.last_used)).map(|p| p.id.clone())
     }
 }
 
@@ -317,6 +324,18 @@ mod tests {
         let s = store();
         s.save(&file).unwrap();
         assert_eq!(Store::load(&file), s);
+        // no server in use (an older file, or one edited by hand): the last used one is (issue #126)
+        let mut lost = store();
+        let nas = lost.servers[1].id.clone();
+        lost.active = None;
+        lost.servers[0].last_used = None;
+        lost.save(&file).unwrap();
+        assert_eq!(Store::load(&file).active.as_deref(), Some(nas.as_str()));
+        lost.active = Some("gone".into());
+        lost.save(&file).unwrap();
+        assert_eq!(Store::load(&file).active.as_deref(), Some(nas.as_str()), "a removed id too");
+        Store { version: 1, ..Store::default() }.save(&file).unwrap();
+        assert_eq!(Store::load(&file).active, None, "nothing saved: first run");
         fs::write(&file, "{not json").unwrap();
         assert_eq!(Store::load(&file).servers.len(), 0);
         let kept = fs::read_dir(&dir).unwrap().filter_map(Result::ok).any(|e| e.file_name().to_string_lossy().contains("unreadable"));
