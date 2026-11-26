@@ -108,7 +108,7 @@ const I18N = {
     "Has a note": "有備註",
     "Details worth remembering: who, why, receipt number…": "值得記下的細節：和誰、為什麼、收據號碼…", "Enter an amount other than zero.": "金額不能是 0。",
     "{box} holds {amount} in {account}; you can take out at most that.": "{box}在{account}只有 {amount}，最多只能取出這個金額。",
-    "External": "外部", "External accounts": "外部帳戶", "New external account": "新增外部帳戶",
+    "External": "外部", "External accounts": "外部帳戶", "New external account": "新增外部帳戶", "External account": "外部帳戶", "Paid": "已支付",
     "Paid to": "付給", "Received from": "收自", "Employer": "雇主", "Notifications": "通知", "Notifications ({n})": "通知（{n}）", "Dismiss": "清除", "Dismiss all": "全部清除",
     "You're all caught up.": "沒有新通知。", "Open in Transactions": "到交易頁查看", "Waiting for confirmation · {date} · {amount}": "等待確認 · {date} · {amount}",
     "{name} is over budget": "{name}超出預算",
