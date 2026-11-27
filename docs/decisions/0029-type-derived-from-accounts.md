@@ -86,7 +86,12 @@ Income are simplified transfers with one side kept to external accounts.
   - On: a tagged own → own transfer counts as spending in the budget's
     currency.
   - The tag page's net follows the same rule.
-  - The spending report stays gross spending to external accounts.
+  - **The switch affects budgets, and the tag page's net, only.** The
+    spending report never follows it: the dashboard's Spending widget
+    (本月支出) and MCP `spending_by_category` always count only money paid to
+    external accounts (own → external), whatever any budget's
+    `countTransfers` is. A transfer between own accounts never appears there,
+    tagged or not.
   - A tag without a budget never keeps the switch.
 
 ## Consequences

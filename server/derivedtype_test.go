@@ -174,3 +174,55 @@ func TestMCPTransferWithAnExternalSide(t *testing.T) {
 		t.Fatalf("external -> external accepted")
 	}
 }
+
+// The spending report (the Spending widget, MCP spending_by_category) never follows the budget switch
+// (ADR 0029): it counts only money paid to external accounts, while the budget counts the tagged transfer.
+func TestSpendingIgnoresCountTransfers(t *testing.T) {
+	b := sampleBook(t)
+	today := b.today()
+	limit := int64(1000000)
+	tag := Tag{ID: "tag-test-house", Name: "[TEST] House fund", Currency: "TWD", LimitMinor: &limit, Cycle: "monthly", CountTransfers: true}
+	if err := b.insertTag(tag); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.reload(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.addTransaction(Transaction{Type: "transfer", FromAccountID: "acc-a", ToAccountID: "acc-b", AmountMinor: 4321, Date: today, TagIDs: []string{tag.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.addTransaction(Transaction{Type: "transfer", FromAccountID: "acc-a", ToAccountID: "acc-c", AmountMinor: 777, Date: today}); err != nil {
+		t.Fatal(err)
+	}
+	// the budget counts the tagged transfer…
+	start, end := BudgetPeriod(*b.data.tagByID(tag.ID), today)
+	if got := b.data.BudgetSpent(tag.ID, start, end, today); got != 4321 {
+		t.Fatalf("budget spent = %d, want 4321", got)
+	}
+	// …the spending report never does, tagged or not
+	for _, s := range b.data.SpendingByCategory(today, today, []string{"TWD"}) {
+		if s.TagID == tag.ID {
+			t.Errorf("Spending counted a transfer between own accounts under %s: %+v", tag.Name, s)
+		}
+	}
+	before := map[string]int64{}
+	b.data.Tags[len(b.data.Tags)-1].CountTransfers = false
+	for _, s := range b.data.SpendingByCategory(today, today, []string{"TWD"}) {
+		before[s.TagID+"/"+s.Currency] = s.AmountMinor
+	}
+	b.data.Tags[len(b.data.Tags)-1].CountTransfers = true
+	for _, s := range b.data.SpendingByCategory(today, today, []string{"TWD"}) {
+		if before[s.TagID+"/"+s.Currency] != s.AmountMinor {
+			t.Errorf("the switch changed the report: %+v (off: %d)", s, before[s.TagID+"/"+s.Currency])
+		}
+	}
+	out, err := toolSpending(b, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range out["spending"].([]map[string]interface{}) {
+		if r["categoryId"] == tag.ID {
+			t.Errorf("MCP spending_by_category counted the transfer: %v", r)
+		}
+	}
+}

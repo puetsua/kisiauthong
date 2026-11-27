@@ -258,6 +258,9 @@ type TagSpend struct {
 // largest first within a currency. Currencies are never mixed. An
 // expense linked to two category tags counts toward both, as in BudgetSpent.
 // Unlike BudgetSpent it is gross spending: income never reduces it (ADR 0021).
+// It counts only money paid to external accounts: a transfer between own
+// accounts never counts here, even under a budget whose CountTransfers is on;
+// that switch is for budgets (and the tag page's net) only (ADR 0029).
 // Scheduled expenses (dated after today) count once they post.
 func (d *Data) SpendingByCategory(ref, today string, curOrder []string) []TagSpend {
 	month := ref[:7]
