@@ -2245,4 +2245,32 @@ test("shortcut without an amount (#121): optional in the dialog, no amount in li
     Object.assign(d, was);
   }
 });
+test("transfer tags (#144): saving an edited transfer keeps the tags it has; a new one has none", () => {
+  const d = t.state.data, was = { transactions: d.transactions, tags: d.tags, accounts: d.accounts, externals: d.externals, allAccounts: d.allAccounts, txnType: t.state.txnType, editingTxn: t.state.editingTxn };
+  const { formBody } = vm.runInContext("({ formBody })", sandbox);
+  const form = $el("#txnForm");
+  const move = { id: "tr1", fromAccountId: "a1", toAccountId: "a2", type: "transfer", amountMinor: 1000000, currency: "TWD", date: "2026-11-17", state: "posted", note: "[TEST] cash for a trip", tagIds: ["g1", "g2"] };
+  const buy = { id: "ex1", fromAccountId: "a1", toAccountId: "acc-external", type: "transfer", amountMinor: 500, currency: "TWD", date: "2026-11-17", state: "posted", note: "[TEST] snack", tagIds: ["g1"] };
+  Object.assign(d, { transactions: [move, buy], tags: [{ id: "g1", name: "Travel" }, { id: "g2", name: "Cash" }], accounts: [acc, other], externals: [ext], allAccounts: [acc, other, ext] });
+  sandbox.FormData = function (f) { return new Map(Object.entries(f.fields)); };
+  form.fields = { accountId: "a1", toAccountId: "a2", amount: "10000", date: "2026-11-17", note: "[TEST] cash for a trip", memo: "", time: "", tz: "" };
+  try {
+    t.state.txnType = "transfer";
+    t.state.editingTxn = "tr1";
+    let { body } = formBody();
+    assert.deepStrictEqual([...body.tagIds], ["g1", "g2"], "an unchanged save sends the transfer's tags, so the PUT keeps them");
+    assert.strictEqual(body.fromAccountId, "a1");
+    assert.strictEqual(body.toAccountId, "a2");
+    t.state.editingTxn = null;
+    ({ body } = formBody());
+    assert.deepStrictEqual([...body.tagIds], [], "a new transfer has no tags");
+    t.state.editingTxn = "ex1";
+    ({ body } = formBody());
+    assert.deepStrictEqual([...body.tagIds], [], "an expense switched to Transfer leaves its tags, as before");
+  } finally {
+    delete sandbox.FormData; delete form.fields;
+    Object.assign(d, { transactions: was.transactions, tags: was.tags, accounts: was.accounts, externals: was.externals, allAccounts: was.allAccounts });
+    Object.assign(t.state, { txnType: was.txnType, editingTxn: was.editingTxn });
+  }
+});
 require("./run-tests.js")(later, n);
