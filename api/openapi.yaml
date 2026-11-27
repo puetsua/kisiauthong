@@ -1486,14 +1486,16 @@ components:
     Transaction:
       type: object
       description: >-
-        A money movement, stored as a transfer (ADR 0013). type expense or
-        income with accountId is input only. A posted transaction dated after
-        today is served as scheduled (ADR 0014); sent back, scheduled means
-        posted.
-      required: [type]
+        A money movement from one account to another (ADR 0013). Its type is
+        derived from the accounts and never stored (ADR 0029): own to external
+        is expense, external to own is income, own to own is transfer;
+        external to external is rejected. On input, transfer (or no type)
+        takes fromAccountId and toAccountId as given; expense and income are
+        also shorthands with accountId. A posted transaction dated after today
+        is served as scheduled (ADR 0014); sent back, scheduled means posted.
       properties:
         id: { type: string, readOnly: true }
-        type: { type: string, enum: [transfer, expense, income], description: Always transfer once stored. }
+        type: { type: string, enum: [transfer, expense, income], description: "Served: what the accounts make it (ADR 0029). Sent: transfer or left out takes the accounts as given; expense or income must match them." }
         accountId: { type: string, writeOnly: true, description: "The own account of an expense or income shorthand." }
         fromAccountId: { type: string }
         toAccountId: { type: string }
@@ -1531,6 +1533,7 @@ components:
         currency: { type: string, pattern: "^[A-Z]{3}$", description: "A budget's currency; required with limitMinor." }
         memo: { type: string, maxLength: 4000 }
         group: { type: string, maxLength: 100, description: "The group that orders the tag in tag pickers (by group, then name; ungrouped last), trimmed with white space folded; empty or left out for ungrouped (ADR 0028). PUT replaces it like the other fields." }
+        countTransfers: { type: boolean, default: false, description: "With a budget: transfers between own accounts that carry the tag count as spending (ADR 0029). Dropped when the tag has no budget." }
     TagView:
       type: object
       required: [id, name, currency]
@@ -1547,7 +1550,8 @@ components:
         cycleEnd: { type: string }
         periodStart: { type: string, format: date }
         periodEnd: { type: string, format: date }
-        spentMinor: { type: integer, format: int64, description: "Net spending in the current period (ADR 0021)." }
+        spentMinor: { type: integer, format: int64, description: "Net spending in the current period (ADR 0021); with countTransfers, tagged transfers between own accounts too (ADR 0029)." }
+        countTransfers: { type: boolean, description: "Present (true) when the budget counts transfers between own accounts (ADR 0029)." }
         remainingMinor: { type: integer, format: int64 }
     Reserve:
       type: object
@@ -1599,10 +1603,9 @@ components:
         occurrenceDate: { type: string, format: date, readOnly: true }
     TemplateBody:
       type: object
-      description: What a template generates; allocate makes allocations into reserveId from accountId.
-      required: [type]
+      description: What a template generates; allocate makes allocations into reserveId from accountId. Any other type is a money movement whose type is derived from fromAccountId and toAccountId, as for a transaction (ADR 0029).
       properties:
-        type: { type: string, enum: [transfer, expense, income, allocate] }
+        type: { type: string, enum: [transfer, expense, income, allocate], description: "Served: allocate, or what the accounts make it. Sent: transfer or left out takes the accounts as given." }
         accountId: { type: string }
         fromAccountId: { type: string }
         toAccountId: { type: string }
@@ -1665,6 +1668,7 @@ components:
         today: { type: string, format: date, description: "The user's today." }
         spendingThisMonth:
           type: array
+          description: "Posted spending this calendar month per (category, currency): only money paid to external accounts. Transfers between own accounts never count here, whatever a budget's countTransfers is (ADR 0029)."
           items:
             type: object
             required: [tagId, currency, amountMinor]

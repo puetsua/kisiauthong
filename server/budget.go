@@ -105,7 +105,7 @@ func normalizeTag(t *Tag) error {
 	t.Currency = normCurrency(t.Currency)
 	{
 		if t.LimitMinor == nil {
-			t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency = "", 0, "", "", ""
+			t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.CountTransfers = "", 0, "", "", "", false
 			return nil
 		}
 		if *t.LimitMinor <= 0 {

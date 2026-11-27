@@ -275,12 +275,12 @@ func init() {
 			"limit":     integer("At most this many (default 50, up to 500)"),
 			"offset":    integer("Skip this many first, for paging"),
 		}), toolListTransactions},
-		{"spending_by_category", "Total posted spending per category and currency in one calendar month.", ScopeRead, obj(map[string]interface{}{
+		{"spending_by_category", "Total posted spending per category and currency in one calendar month: only money paid to external accounts. Transfers between own accounts never count here, even under a budget set to count them (that switch is for the budget only).", ScopeRead, obj(map[string]interface{}{
 			"month": str("YYYY-MM; this month when left out"),
 		}), toolSpending},
 		{"list_templates", "List recurring transaction templates (salary, rent, subscriptions, automatic saving) and when each is next due.", ScopeRead,
 			obj(map[string]interface{}{}), toolListTemplates},
-		{"add_transaction", "Record a transaction. spending: accountId pays (toAccountId may name an external account, e.g. the shop). income: accountId receives (fromAccountId may name the external payer). transfer: fromAccountId to toAccountId, both own accounts in one currency. To set money aside use add_allocation.",
+		{"add_transaction", "Record a transaction. spending: accountId pays (toAccountId may name an external account, e.g. the shop). income: accountId receives (fromAccountId may name the external payer). transfer: fromAccountId to toAccountId; two own accounts must share a currency, and an external side makes it spending or income (the kind follows the accounts). External to external is not a transaction. To set money aside use add_allocation.",
 			ScopeTransactions, obj(map[string]interface{}{
 				"kind":          enum("What happened", "spending", "income", "transfer"),
 				"amount":        num("Positive decimal amount in the own account's currency, e.g. \"120.5\""),
@@ -317,13 +317,14 @@ func init() {
 			"note":           str("Optional free-text note for the user's own records, up to 4000 characters"),
 		}, "name"), toolCreateAccount},
 		{"create_tag", "Create a category, optionally with a budget.", ScopeTags, obj(map[string]interface{}{
-			"name":        str("Name"),
-			"currency":    str("ISO 4217 code of the budget"),
-			"budget":      num("Budget per period, decimal"),
-			"period":      enum("Budget period (monthly by default)", "daily", "weekly", "monthly", "yearly"),
-			"periodEvery": integer("Budget period length in periods, e.g. 2 with weekly for every two weeks"),
-			"note":        str("Optional free-text note for the user's own records, up to 4000 characters"),
-			"group":       str("Optional group that orders the category in the app's tag pickers, e.g. Food; empty for ungrouped"),
+			"name":           str("Name"),
+			"currency":       str("ISO 4217 code of the budget"),
+			"budget":         num("Budget per period, decimal"),
+			"period":         enum("Budget period (monthly by default)", "daily", "weekly", "monthly", "yearly"),
+			"periodEvery":    integer("Budget period length in periods, e.g. 2 with weekly for every two weeks"),
+			"note":           str("Optional free-text note for the user's own records, up to 4000 characters"),
+			"group":          str("Optional group that orders the category in the app's tag pickers, e.g. Food; empty for ungrouped"),
+			"countTransfers": map[string]interface{}{"type": "boolean", "description": "With a budget: also count transfers between own accounts that carry the category (off by default)"},
 		}, "name"), toolCreateTag},
 		{"merge_tags", "Merge categories the user chose into one: every transaction, template and dashboard widget with a merged category gets the kept one instead (once), and the merged ones are deleted. Only merge tags the user asked to merge; similar names may be kept apart on purpose. Use dryRun first to see what changes. The result has a mergeId that the web app can undo.", ScopeTags, obj(map[string]interface{}{
 			"targetId":   str("The category to keep"),
@@ -416,7 +417,7 @@ func toolListTags(b *Book, _ json.RawMessage) (map[string]interface{}, error) {
 			spent := b.data.BudgetSpent(t.ID, start, end, today)
 			m["budget"] = map[string]interface{}{"limit": money(*t.LimitMinor, t.Currency), "spent": money(spent, t.Currency),
 				"remaining": money(*t.LimitMinor-spent, t.Currency), "period": t.Cycle, "periodEvery": max(t.CycleEvery, 1),
-				"periodStart": start, "periodEnd": end}
+				"periodStart": start, "periodEnd": end, "countsTransfers": t.CountTransfers}
 		}
 		cats = append(cats, m)
 	}
@@ -750,10 +751,14 @@ func toolAddTransaction(b *Book, raw json.RawMessage) (map[string]interface{}, e
 	if t.Type == "" {
 		return nil, fmt.Errorf("kind must be spending, income or transfer (use add_allocation to set money aside)")
 	}
-	// the amount is in the own account's currency
+	// the amount is in the own account's currency: a transfer's own side is its source,
+	// or its destination when the money comes from an external account (ADR 0029)
 	ownID := in.AccountID
 	if t.Type == "transfer" {
 		ownID = in.FromAccountID
+		if from := b.data.accountByID(ownID); from != nil && from.IsExternal() {
+			ownID = in.ToAccountID
+		}
 	}
 	a := b.data.accountByID(ownID)
 	if a == nil || a.IsExternal() {
@@ -892,12 +897,13 @@ func toolCreateTag(b *Book, raw json.RawMessage) (map[string]interface{}, error)
 		Name, Currency, Period, Note, Group string
 		Budget                              json.Number
 		PeriodEvery                         int
+		CountTransfers                      bool
 	}](raw)
 	if err != nil {
 		return nil, err
 	}
 	t := Tag{ID: newID("tag"), Name: strings.TrimSpace(in.Name), Currency: normCurrency(in.Currency),
-		Cycle: in.Period, CycleEvery: in.PeriodEvery, Memo: in.Note, Group: in.Group}
+		Cycle: in.Period, CycleEvery: in.PeriodEvery, Memo: in.Note, Group: in.Group, CountTransfers: in.CountTransfers}
 	if t.Name == "" {
 		return nil, fmt.Errorf("name required")
 	}

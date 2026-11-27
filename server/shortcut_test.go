@@ -26,7 +26,7 @@ func TestShortcutTemplate(t *testing.T) {
 	if tp.Schedule != (Schedule{Frequency: "never", Interval: 1}) {
 		t.Fatalf("schedule kept extra fields: %+v", tp.Schedule)
 	}
-	if tp.Template.Type != "transfer" || len(tp.Template.TagIDs) != 1 {
+	if tp.Template.Type != "expense" || len(tp.Template.TagIDs) != 1 { // derived from its accounts (ADR 0029)
 		t.Fatalf("template body: %+v", tp.Template)
 	}
 	if occ := Occurrences(tp, "2000-01-01", "2099-12-31"); len(occ) != 0 {

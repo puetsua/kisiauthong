@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS accounts%[1]s (
   PRIMARY KEY(user_id, id));
 CREATE TABLE IF NOT EXISTS transactions%[1]s (
   user_id TEXT NOT NULL, id TEXT NOT NULL, from_account_id TEXT NOT NULL DEFAULT '',
-  to_account_id TEXT NOT NULL DEFAULT '', type TEXT NOT NULL,
+  to_account_id TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL,
   time TEXT NOT NULL DEFAULT '', tz TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '', transaction_template_id TEXT, occurrence_date TEXT, created_at TEXT NOT NULL DEFAULT '',
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS tags%[1]s (
   user_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, limit_minor INTEGER,
   cycle TEXT NOT NULL DEFAULT '', cycle_every INTEGER NOT NULL DEFAULT 0, cycle_start TEXT NOT NULL DEFAULT '',
   cycle_end TEXT NOT NULL DEFAULT '', currency TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '',
-  tag_group TEXT NOT NULL DEFAULT '',
+  tag_group TEXT NOT NULL DEFAULT '', count_transfers INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY(user_id, id));
 CREATE TABLE IF NOT EXISTS transaction_tags%[1]s (
   user_id TEXT NOT NULL, transaction_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY(user_id, transaction_id, tag_id));
@@ -180,6 +180,8 @@ var migrations = []func(tx *sql.Tx) error{
 	migrateTagMerges,                 // 15
 	migrateAccountTagMemo,            // 16
 	migrateTagGroup,                  // 17
+	migrateDerivedTransactionType,    // 18
+	migrateBudgetCountTransfers,      // 19
 }
 
 func (s *Store) migrate() error {
@@ -485,6 +487,38 @@ func migrateTagGroup(tx *sql.Tx) error {
 	return err
 }
 
+// Migration 18 (ADR 0029): a transaction's type is derived from its accounts (own →
+// external is an expense, external → own an income, own → own a transfer), so the
+// stored type column goes. Every row left by migrations 1 and 14 holds "transfer"
+// with both accounts set, so nothing is lost; a row of any other type would mean an
+// unknown older shape, and the migration stops rather than drop it. Templates keep
+// their JSON: its type is derived again when the books load.
+func migrateDerivedTransactionType(tx *sql.Tx) error {
+	has, err := hasColumn(tx, "transactions", "type")
+	if err != nil || !has {
+		return err
+	}
+	var odd int
+	if err := tx.QueryRow(`SELECT count(*) FROM transactions WHERE type<>'transfer'`).Scan(&odd); err != nil {
+		return err
+	}
+	if odd > 0 {
+		return fmt.Errorf("%d transaction(s) of a type other than transfer: expected none after migrations 1 and 14", odd)
+	}
+	_, err = tx.Exec(`ALTER TABLE transactions DROP COLUMN type`)
+	return err
+}
+
+// Migration 19 (ADR 0029): a budget may count transfers between own accounts; off for every existing one.
+func migrateBudgetCountTransfers(tx *sql.Tx) error {
+	has, err := hasColumn(tx, "tags", "count_transfers")
+	if err != nil || has {
+		return err
+	}
+	_, err = tx.Exec(`ALTER TABLE tags ADD COLUMN count_transfers INTEGER NOT NULL DEFAULT 0`)
+	return err
+}
+
 // Migration 3: transactions get a free-text memo beside the short title.
 func migrateAddTransactionMemo(tx *sql.Tx) error {
 	has, err := hasColumn(tx, "transactions", "memo")
@@ -609,7 +643,7 @@ func (b *Book) reload() error {
 		d.Accounts = append(d.Accounts, a)
 	}
 	rows.Close()
-	tr, err := db.Query(`SELECT id,from_account_id,to_account_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at FROM transactions WHERE user_id=? ORDER BY date,time,id`, uid)
+	tr, err := db.Query(`SELECT id,from_account_id,to_account_id,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at FROM transactions WHERE user_id=? ORDER BY date,time,id`, uid)
 	if err != nil {
 		return err
 	}
@@ -617,16 +651,17 @@ func (b *Book) reload() error {
 	for tr.Next() {
 		var t Transaction
 		var tplID, occ sql.NullString
-		if err := tr.Scan(&t.ID, &t.FromAccountID, &t.ToAccountID, &t.Type, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Time, &t.TZ, &t.Note, &t.Memo, &tplID, &occ, &t.CreatedAt); err != nil {
+		if err := tr.Scan(&t.ID, &t.FromAccountID, &t.ToAccountID, &t.State, &t.AmountMinor, &t.Currency, &t.Date, &t.Time, &t.TZ, &t.Note, &t.Memo, &tplID, &occ, &t.CreatedAt); err != nil {
 			return err
 		}
 		t.At = instant(t.Date, t.Time, t.TZ)
+		t.Type = d.Kind(t.FromAccountID, t.ToAccountID) // derived, never stored (ADR 0029)
 		t.TransactionTemplateID = tplID.String
 		t.OccurrenceDate = occ.String
 		d.Transactions = append(d.Transactions, t)
 	}
 	tr.Close()
-	tg, err := db.Query(`SELECT id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo,tag_group FROM tags WHERE user_id=? ORDER BY name`, uid)
+	tg, err := db.Query(`SELECT id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo,tag_group,count_transfers FROM tags WHERE user_id=? ORDER BY name`, uid)
 	if err != nil {
 		return err
 	}
@@ -634,9 +669,11 @@ func (b *Book) reload() error {
 	for tg.Next() {
 		var t Tag
 		var lm sql.NullInt64
-		if err := tg.Scan(&t.ID, &t.Name, &lm, &t.Cycle, &t.CycleEvery, &t.CycleStart, &t.CycleEnd, &t.Currency, &t.Memo, &t.Group); err != nil {
+		var ct int
+		if err := tg.Scan(&t.ID, &t.Name, &lm, &t.Cycle, &t.CycleEvery, &t.CycleStart, &t.CycleEnd, &t.Currency, &t.Memo, &t.Group, &ct); err != nil {
 			return err
 		}
+		t.CountTransfers = ct != 0
 		if lm.Valid {
 			t.LimitMinor = &lm.Int64
 		}
@@ -682,6 +719,9 @@ func (b *Book) reload() error {
 		}
 		if err := json.Unmarshal([]byte(sj), &x.Schedule); err != nil {
 			return err
+		}
+		if x.Template.Type != "allocate" { // what it generates is derived from its accounts (ADR 0029)
+			x.Template.Type = d.Kind(x.Template.FromAccountID, x.Template.ToAccountID)
 		}
 		d.TransactionTemplates = append(d.TransactionTemplates, x)
 	}
@@ -820,8 +860,8 @@ func (b *Book) insertAccount(a Account) error {
 	return err
 }
 func (b *Book) insertTag(t Tag) error {
-	_, err := b.exec(`INSERT INTO tags(user_id,id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo,tag_group) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo, t.Group)
+	_, err := b.exec(`INSERT INTO tags(user_id,id,name,limit_minor,cycle,cycle_every,cycle_start,cycle_end,currency,memo,tag_group,count_transfers) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo, t.Group, b2i(t.CountTransfers))
 	return err
 }
 func (b *Book) insertReserve(r Reserve) error {
@@ -859,12 +899,23 @@ func (b *Book) insertTransaction(t Transaction) error {
 	if t.CreatedAt == "" {
 		t.CreatedAt = createdStamp()
 	}
-	_, err := b.exec(`INSERT INTO transactions(user_id,id,from_account_id,to_account_id,type,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.FromAccountID, t.ToAccountID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate), t.CreatedAt)
+	_, err := b.exec(`INSERT INTO transactions(user_id,id,from_account_id,to_account_id,state,amount_minor,currency,date,time,tz,note,memo,transaction_template_id,occurrence_date,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.FromAccountID, t.ToAccountID, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, nullEmpty(t.TransactionTemplateID), nullEmpty(t.OccurrenceDate), t.CreatedAt)
 	return err
 }
+
+// storedBody is a template's body as kept in template_json: a money movement keeps the type
+// "transfer" and its accounts, since expense or income is derived from them when the books
+// load (ADR 0029); an allocation template keeps "allocate".
+func storedBody(b TemplateBody) TemplateBody {
+	if b.Type != "allocate" {
+		b.Type = "transfer"
+	}
+	return b
+}
+
 func (b *Book) insertTemplate(t TransactionTemplate) error {
-	tj, _ := json.Marshal(t.Template)
+	tj, _ := json.Marshal(storedBody(t.Template))
 	sj, _ := json.Marshal(t.Schedule)
 	_, err := b.exec(`INSERT INTO transaction_templates(user_id,id,name,enabled,template_json,schedule_json) VALUES(?,?,?,?,?,?)`, t.ID, t.Name, b2i(t.Enabled), string(tj), string(sj))
 	return err
@@ -903,8 +954,8 @@ func (b *Book) updateAccount(a Account) error {
 	return b.reload()
 }
 func (b *Book) updateTag(t Tag) error {
-	if _, err := b.s.db.Exec(`UPDATE tags SET name=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,memo=?,tag_group=? WHERE user_id=? AND id=?`,
-		t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo, t.Group, b.uid, t.ID); err != nil {
+	if _, err := b.s.db.Exec(`UPDATE tags SET name=?,limit_minor=?,cycle=?,cycle_every=?,cycle_start=?,cycle_end=?,currency=?,memo=?,tag_group=?,count_transfers=? WHERE user_id=? AND id=?`,
+		t.Name, n64(t.LimitMinor), t.Cycle, t.CycleEvery, t.CycleStart, t.CycleEnd, t.Currency, t.Memo, t.Group, b2i(t.CountTransfers), b.uid, t.ID); err != nil {
 		return err
 	}
 	return b.reload()
@@ -963,8 +1014,8 @@ func (b *Book) deleteAllocation(id string) (bool, error) {
 }
 
 func (b *Book) updateTransaction(t Transaction) error {
-	if _, err := b.s.db.Exec(`UPDATE transactions SET from_account_id=?,to_account_id=?,type=?,state=?,amount_minor=?,currency=?,date=?,time=?,tz=?,note=?,memo=? WHERE user_id=? AND id=?`,
-		t.FromAccountID, t.ToAccountID, t.Type, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, b.uid, t.ID); err != nil {
+	if _, err := b.s.db.Exec(`UPDATE transactions SET from_account_id=?,to_account_id=?,state=?,amount_minor=?,currency=?,date=?,time=?,tz=?,note=?,memo=? WHERE user_id=? AND id=?`,
+		t.FromAccountID, t.ToAccountID, t.State, t.AmountMinor, t.Currency, t.Date, t.Time, t.TZ, t.Note, t.Memo, b.uid, t.ID); err != nil {
 		return err
 	}
 	// the links are the transaction's categories
@@ -994,7 +1045,7 @@ func (b *Book) deleteTransaction(id string) (bool, error) {
 	return true, b.reload()
 }
 func (b *Book) updateTemplate(t TransactionTemplate) error {
-	tj, _ := json.Marshal(t.Template)
+	tj, _ := json.Marshal(storedBody(t.Template))
 	sj, _ := json.Marshal(t.Schedule)
 	if _, err := b.s.db.Exec(`UPDATE transaction_templates SET name=?,enabled=?,template_json=?,schedule_json=? WHERE user_id=? AND id=?`,
 		t.Name, b2i(t.Enabled), string(tj), string(sj), b.uid, t.ID); err != nil {

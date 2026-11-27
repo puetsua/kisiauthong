@@ -395,9 +395,17 @@ topmost popup only.
   ellipsis. A template's name carries a bookmark icon (`.qtpl`). A shortcut
   without an amount shows the account only and, when used, leaves Amount
   empty with the focus there (issue #121).
-- Tags (spending and income) are the tag picker (`#fCatsWrap`, see
-  [Tag picker](#tag-picker)) with Recently used and Create tag. A transfer
-  has no tags.
+- One form for every type (ADR 0029): every tab has the same fields, From
+  (`#fFromWrap`) before To (`#fToWrap`), and Tags. The tab only decides
+  which accounts each side offers: Expense keeps To (Paid to) to external
+  accounts, Income keeps From (Received from) to them, and Transfer offers
+  any account on both sides (`sidesFor`, `fillSides`, shared with the
+  template dialog). Labels are the field names only, with no qualifier
+  hints. A side kept to the only external account is a disabled (greyed)
+  select, never hidden. Switching tabs keeps the tags and carries the
+  accounts over; the type sent is what the accounts make it.
+- Tags are the tag picker (`#fCatsWrap`, see [Tag picker](#tag-picker))
+  with Recently used and Create tag, on every tab.
 
 ### Dialog
 
