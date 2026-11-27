@@ -688,6 +688,8 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 .infobtn{flex:none;display:grid;place-items:center;width:40px;height:40px;margin:-6px 0;padding:0;border:0;border-radius:50%;background:none;color:var(--muted);cursor:pointer}
 .infobtn:hover{background:var(--hover);color:var(--accent)}
 .infobtn:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;color:var(--accent)}
+/* a Settings row label with its (i) after it (issue #117) */
+.slline{display:flex;align-items:center;gap:2px;min-width:0}
 dialog.helpdlg{width:min(560px,calc(100vw - 32px))}
 .helplist{margin:4px 0 0;padding-left:1.2em;line-height:1.55}
 .helplist li+li{margin-top:8px}

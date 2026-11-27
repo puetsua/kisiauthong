@@ -48,7 +48,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, widgetName, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, screenAccount, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog, own, drawTotp, copyText };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, widgetName, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, openHelp, AMT_HELP, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, screenAccount, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog, own, drawTotp, copyText };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -607,15 +607,42 @@ test("spending and income display (#66): Settings → Appearance has the select,
   // moved from Display to Appearance (issue #85)
   assert.doesNotMatch(v.innerHTML.slice(v.innerHTML.indexOf('id="set-display"'), v.innerHTML.indexOf('id="set-appearance"')), /setAmtStyle/);
   const display = v.innerHTML.slice(v.innerHTML.indexOf('id="set-appearance"'), v.innerHTML.indexOf('id="set-data"'));
-  assert.match(display, /<label for="setAmtStyle" class="sl">Spending and income<\/label>/);
+  // the label, its (i) and the select; the Color only rule is in the (i)'s dialog, not a hint below (issue #117)
+  assert.match(display, /<div class="srow"><div class="slline"><label for="setAmtStyle" class="sl">Spending and income<\/label><button type="button" class="infobtn" id="setAmtHelp" aria-haspopup="dialog" aria-label="About “Spending and income”"[^>]*>.*?<\/button><\/div><div class="sc"><select id="setAmtStyle">/s);
   assert.match(display, /<option value="both" >Signs and color<\/option><option value="sign" selected>Signs only \(\+ \/ −\)<\/option><option value="color" >Color only<\/option>/);
-  assert.match(display, /<select id="setAmtStyle" aria-describedby="setAmtHint">/);
-  assert.match(display, /<p class="shint" id="setAmtHint">With Color only/);
+  assert.doesNotMatch(display, /setAmtHint|aria-describedby|With Color only/);
   t.setLang("zh-TW");
   t.screenSettings(v);
-  assert.match(v.innerHTML, />收支顯示<\/label>.*>符號和顏色<.*>只用 \+ \/ − 符號<.*>只用顏色</s);
+  assert.match(v.innerHTML, />收支顯示<\/label><button type="button" class="infobtn" id="setAmtHelp" aria-haspopup="dialog" aria-label="關於「收支顯示」".*>符號和顏色<.*>只用 \+ \/ − 符號<.*>只用顏色</s);
   t.setLang("en");
   t.state.general = { ...t.state.general, amountStyle: "both" };
+});
+
+test("spending and income display (#117): the (i) opens the Color only rule, and Close gives the focus back to it", () => {
+  const listeners = {}, classes = new Set(), focused = [];
+  const dlg = { showModal: () => {}, classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c) },
+    addEventListener: (k, f) => { listeners[k] = f; }, close: () => { const f = listeners.close; delete listeners.close; if (f) f(); } };
+  const clicks = {};
+  elements.set("#dialog", dlg);
+  elements.set("#setAmtHelp", { addEventListener: (k, f) => { clicks[k] = f; } });
+  docProps.getElementById = (id) => ({ focus: () => focused.push(id) });
+  try {
+    t.screenSettings(view());
+    assert.ok(clicks.click, "the (i) has a click handler");
+    clicks.click();
+    assert.strictEqual($el("#dialogTitle").textContent, "Spending and income");
+    const body = $el("#dialogBody").innerHTML;
+    assert.match(body, /<ul class="helplist"><li>With Color only, spending and income differ only by color and by the icon in front of each row\.<\/li><\/ul>/);
+    assert.match(body, /<button type="button" class="primarybtn" id="helpOk">Close<\/button>/);
+    assert.ok(classes.has("helpdlg"));
+    dlg.close();
+    assert.ok(!classes.has("helpdlg"));
+    assert.deepStrictEqual(focused, ["setAmtHelp"]);
+    t.setLang("zh-TW");
+    t.openHelp(...t.AMT_HELP, "setAmtHelp");
+    assert.strictEqual($el("#dialogTitle").textContent, "收支顯示");
+    assert.match($el("#dialogBody").innerHTML, /<li>只用顏色時，收入和支出只靠顏色和每列前面的圖示分辨。<\/li>.*>關閉<\/button>/s);
+  } finally { t.setLang("en"); elements.delete("#dialog"); elements.delete("#setAmtHelp"); delete docProps.getElementById; }
 });
 
 test("spending and income display (#66): the stylesheet colors only the list, and spending has its own red", () => {
@@ -841,7 +868,7 @@ test("Settings → Sync (#104): a redraw of Settings gives the focus back to the
   try {
     t.screenSettings(view()); // a live refresh after the (i) help was closed
     assert.strictEqual(hits, 1);
-    docProps.activeElement = { id: "syncHelpOk", dataset: {}, closest: () => null }; // the focus is in the help dialog
+    docProps.activeElement = { id: "helpOk", dataset: {}, closest: () => null }; // the focus is in the help dialog
     t.screenSettings(view());
     assert.strictEqual(hits, 1, "not taken from outside the page");
   } finally { elements.delete("#syncCustomHelp"); delete docProps.activeElement; }
@@ -897,7 +924,7 @@ test("Settings → Sync (#104): each (i) opens what its choice does, per ADR 002
   assert.match(body, /When a theme was changed on two devices, the last change is kept\. Deleting a theme deletes it on all of them\./, "newer wins, deletes spread");
   assert.match(body, /<li>Turning it off keeps the copies on the server\.<\/li><\/ul>/);
   assert.doesNotMatch(body, /Themes made separately|This choice is per device|Light or dark mode/);
-  assert.match(body, /<button type="button" class="primarybtn" id="syncHelpOk">Close<\/button>/);
+  assert.match(body, /<button type="button" class="primarybtn" id="helpOk">Close<\/button>/);
   t.openSyncHelp("selected");
   assert.strictEqual($el("#dialogTitle").textContent, "Sync theme selection");
   body = $el("#dialogBody").innerHTML;
