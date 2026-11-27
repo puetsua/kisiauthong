@@ -2179,6 +2179,9 @@ test("shortcut without an amount (#121): optional in the dialog, no amount in li
   try {
     const amountInput = () => strip($el("#dialogBody").innerHTML).match(/<input name="amount"[^>]*>/)[0];
     t.openTemplateDialog(null, { name: "", template: null, schedule: { frequency: "never" } });
+    assert.match(strip($el("#dialogBody").innerHTML), /^<form id="dialogForm"><label class="wide"><span>Template name<\/span><input name="name"[^>]*><\/label><label class="wide"><span>Title<\/span><input name="note"/, "Template name first, Title right under it");
+    const html = read("index.html"), at = (s) => html.indexOf(s);
+    assert.ok(at('id="fQuick"') < at('id="fTitleWrap"') && at('id="fTitleWrap"') < at('id="fAccWrap"') && at('id="fTitleWrap"') < at('id="fAmtWrap"') && at('id="fTitleWrap"') < at('id="fCatsWrap"'), "the add form's Title comes right after the quick picks");
     assert.doesNotMatch(amountInput(), /required/, "a shortcut's amount is optional");
     assert.match(amountInput(), /value=""/);
     t.openTemplateDialog(null, { name: "Rent", template: null, schedule: { frequency: "monthly" } });
@@ -2209,6 +2212,7 @@ test("shortcut without an amount (#121): optional in the dialog, no amount in li
     t.openTemplateDialog("tpl-c");
     assert.doesNotMatch(amountInput(), /required/);
     assert.match(strip($el("#dialogBody").innerHTML), /selected>永不<\/option>/, "zh-TW: Frequency Never");
+    assert.match(strip($el("#dialogBody").innerHTML), /<span>範本名稱<\/span>/, "zh-TW: Template name");
   } finally {
     t.setLang("en"); form.elements = wasEls;
     Object.assign(d, was);

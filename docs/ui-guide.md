@@ -362,8 +362,8 @@ topmost popup only.
   edges, scrolls inside itself, 14px radius.
 - On desktop the form is two columns: short fields pair up (account with
   payee or target account; amount; date and time with time
-  zone; title), while notes, quick picks, the type selector, categories and
-  the note field span both. The order is set in CSS (`order`), so fields
+  zone), while notes, quick picks, the type selector, the title, categories
+  and the note field span both. The order is set in CSS (`order`), so fields
   that a type hides leave no gaps. On phones it is one column.
 - Date and time share `.daterow` with an icon-only now button
   (`#fNowBtn.nowbtn`, ⟲ around clock hands, `aria-label`/`title` "Fill in
@@ -382,7 +382,8 @@ topmost popup only.
   today and saves. Amounts in it go through `fmt()`, so hiding amounts masks
   them.
 - Order: title row, type selector (`.seg`), quick picks (add only, for the
-  chosen type), fields, then the save row.
+  chosen type), Title (`#fTitleWrap`, issue #121), the other fields, then
+  the save row.
 - **Save row** (`.saverow`): the primary button (full width on phones,
   320px at the right on desktop) and an icon-only ⋯
   button (`#fMoreBtn`, `aria-label` "More actions") that opens `.actmenu`
@@ -407,6 +408,8 @@ topmost popup only.
 - Groups of toggles use a `div.drawerfield` with a heading span, not a
   `label`, so clicking the heading toggles nothing. Choosing tags is the tag
   picker (the template dialog's Tags, `#tplCats`), never a group of toggles.
+- The template dialog starts with Template name and, under it, Title (both
+  `wide`); Amount, Tags and Title of a shortcut may stay empty (issue #121).
 - A button that fills a field sits beside it in a flex row and wraps below
   it when the row is too narrow: Take out's **Fill remaining**
   (`.amtfill`, `#dlgFill`, a `.smallbtn` as tall as the input) sets Amount

@@ -3103,7 +3103,8 @@ function openTemplateDialog(editId, draft) {
   const amt = body && body.amountMinor > 0 ? decimal(body.amountMinor, body.currency) : "";
   const tplTags = makeTagPicker("tplCats", { ids: body && flow(body) !== "allocate" ? txnCats(body) : [], label: __("Tags"), create: true, recent: true });
   openDialog(tp ? __("Edit transaction template") : __("New transaction template"), dialogForm(
-    field("Name", `<input name="name" required placeholder="${esc(__("Streaming"))}" value="${src ? esc(src.name || "") : ""}">`) +
+    field(N_("Template name"), `<input name="name" required placeholder="${esc(__("Streaming"))}" value="${src ? esc(src.name || "") : ""}">`, "wide") +
+    field("Title", `<input name="note" maxlength="200" value="${body ? esc(body.note || "") : ""}">`, "wide") +
     field("Generates", `<select name="type">${enumOptions(TPL_TYPE_L, ["expense", "income", "allocate"], mode)}</select>`) +
     field("Account", `<select name="accountId">${acc}</select>`) +
     field("Reserve", `<select name="reserveId">${state.data.reserves.map((r) => `<option value="${esc(r.id)}" ${body && body.reserveId === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("") || `<option value="">${esc(__("No reserves yet."))}</option>`}</select>`, "f-res") +
@@ -3113,8 +3114,7 @@ function openTemplateDialog(editId, draft) {
     field(N_("Expected max (variable bill, optional)"), `<input name="rangeMax" type="number" step="any" value="${rng ? decimal(rng.max, body.currency) : ""}">`, "f-range") +
     field(N_("Day of month"), `<input name="dayOfMonth" type="number" min="1" max="31" value="${src && src.schedule.dayOfMonth || 1}">`, "f-dom") +
     field(N_("Start date"), `<input name="startDate" type="date" value="${src ? esc(src.schedule.startDate || "") : ""}">`, "f-sched") +
-    `<div class="drawerfield f-cats wide">${tplTags.html()}</div>` +
-    field("Title", `<input name="note" maxlength="200" value="${body ? esc(body.note || "") : ""}">`, "wide"),
+    `<div class="drawerfield f-cats wide">${tplTags.html()}</div>`,
     tp ? __("Save changes") : __("Add template"),
     tp ? `<button type="button" class="smallbtn" id="dlgToggle">${esc(tp.enabled ? __("Pause") : __("Resume"))}</button>${freq !== "never" ? `<button type="button" class="smallbtn" id="dlgGenerate">${esc(__("Generate due"))}</button>` : ""}` : ""));
   onDlg("dlgToggle", async () => {

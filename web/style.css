@@ -440,10 +440,10 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 @media (min-width:801px){
   #txnForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px;align-items:start}
   #txnForm>*{grid-column:1/-1}
-  #txnForm>#fAccWrap,#txnForm>#fExtWrap,#txnForm>#fToWrap,#txnForm>#fAmtWrap,#txnForm>.daterow,#txnForm>#fTzWrap,#txnForm>#fTitleWrap,#txnForm>#fTagWrap,#txnForm>#fAmtNote{grid-column:auto}
+  #txnForm>#fAccWrap,#txnForm>#fExtWrap,#txnForm>#fToWrap,#txnForm>#fAmtWrap,#txnForm>.daterow,#txnForm>#fTzWrap,#txnForm>#fTagWrap,#txnForm>#fAmtNote{grid-column:auto}
   #fAccWrap{order:2}#fExtWrap,#fToWrap{order:3}#fToNone{order:4}#fAmtWrap{order:5}#fAmtNote{order:6}
-  #txnForm>.daterow{order:7}#fTzWrap{order:8}#fTitleWrap{order:9}#fTagWrap{order:3}#fAmtNote{align-self:end;margin-bottom:12px}#fCatsWrap{order:11}#fMemoWrap{order:12}#txnForm>.saverow{order:13}
-  #fPlannedNote,#fSchedNote{order:-1}#typeSeg{order:0}#fQuick{order:1}
+  #txnForm>.daterow{order:7}#fTzWrap{order:8}#fTagWrap{order:3}#fAmtNote{align-self:end;margin-bottom:12px}#fCatsWrap{order:11}#fMemoWrap{order:12}#txnForm>.saverow{order:13}
+  #fPlannedNote,#fSchedNote{order:-1}#typeSeg{order:0}#fQuick{order:1}#fTitleWrap{order:1}
   .saverow{justify-content:flex-end}.saverow .primarybtn.big{flex:0 1 320px}
 }
 /* dashboard widgets: tables on desktop, cards on phones */

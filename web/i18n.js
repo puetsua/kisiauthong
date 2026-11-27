@@ -78,7 +78,7 @@ const I18N = {
     // common columns and fields
     "Account": "帳戶", "Amount": "金額", "Date": "日期", "Note": "備註", "Status": "狀態",     "Name": "名稱", "Currency": "幣別", "Balance": "餘額", "Free": "可用",
     "Budget": "預算", "Spent": "已花費", "Progress": "進度", "Remaining": "剩餘", "Share": "佔比",
-    "Template": "範本", "Generates": "產生", "Schedule": "排程", "Next due": "下次到期", "To account": "轉入帳戶", "Title": "標題", "Rows": "列數", "Show": "顯示",
+    "Template": "範本", "Generates": "產生", "Schedule": "排程", "Next due": "下次到期", "To account": "轉入帳戶", "Title": "標題", "Template name": "範本名稱", "Rows": "列數", "Show": "顯示",
     // dashboard
     "Balances by currency": "各幣別餘額", "Expected to confirm": "待確認",
     "Spending this month": "本月支出", "Recent transactions": "最近交易", "Customize dashboard": "自訂總覽",
