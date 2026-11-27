@@ -86,7 +86,14 @@ Income are simplified transfers with one side kept to external accounts.
   - On: a tagged own → own transfer counts as spending in the budget's
     currency.
   - The tag page's net follows the same rule.
-  - The spending report stays gross spending to external accounts.
+  - The spending report follows the switch too: the dashboard's Spending
+    widget and MCP `spending_by_category`.
+    - Off (the default): it counts only money paid to external accounts.
+    - On: a transfer between own accounts with that budget's tag also counts,
+      on that tag's row, in the budget's currency, as the budget counts it.
+    - Such a transfer never counts as uncategorised spending, and never under
+      a tag whose switch is off.
+    - The report stays gross: income never reduces it (ADR 0021).
   - A tag without a budget never keeps the switch.
 
 ## Consequences
@@ -102,4 +109,5 @@ Income are simplified transfers with one side kept to external accounts.
   budget filled by transfers.
 - Supersedes the parts of ADR 0002 that describe Transfer as a separate
   editing mode without categories. Amends ADR 0021: own → own transfers
-  count toward a budget when it is set to count them.
+  count toward a budget, and in the spending report under its tag, when it
+  is set to count them.
