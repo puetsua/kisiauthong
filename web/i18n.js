@@ -120,6 +120,7 @@ const I18N = {
     "Add transaction": "新增交易", "Edit transaction": "編輯交易", "Save transaction": "儲存交易", "Transaction editor": "交易編輯器",
     "Transaction updated.": "交易已更新。", "Saved.": "已儲存。", "Groceries": "買菜", "Close": "關閉",
     "From account": "轉出帳戶", "Choose an account to transfer to.": "請選擇轉入帳戶。",
+    "Own accounts": "自己的帳戶", "Count transfers between own accounts": "計入自己帳戶之間的轉帳",
     "No other {currency} account. To move money into another currency, record spending in one account and income in the other.": "沒有其他 {currency} 帳戶。要換成其他幣別，請在一個帳戶記一筆支出，再在另一個帳戶記一筆收入。", "Target amount": "目標金額",
    
     // accounts

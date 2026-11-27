@@ -94,6 +94,9 @@ func stateView(d *Data, today string, curOrder []string) map[string]interface{} 
 			m["periodStart"] = start
 			m["periodEnd"] = end
 			m["spentMinor"] = spent
+			if t.CountTransfers {
+				m["countTransfers"] = true // ADR 0029
+			}
 			m["remainingMinor"] = *t.LimitMinor - spent
 		}
 		tags = append(tags, m)
@@ -685,10 +688,7 @@ func (b *Book) addTransaction(t Transaction) (Transaction, error) {
 	if t.State == "" {
 		t.State = "posted"
 	}
-	if t.Type == "" {
-		return t, fmt.Errorf("type required")
-	}
-	t.ID = newID("txn")
+	t.ID = newID("txn") // no type: it is derived from the accounts (ADR 0029)
 	if err := b.data.normalizeTransaction(&t); err != nil {
 		return t, err
 	}
@@ -716,8 +716,8 @@ func handleTransaction(w http.ResponseWriter, r *http.Request, b *Book) {
 			return
 		}
 		t.ID = id
-		if t.Type == "" || t.Date == "" {
-			writeErr(w, 400, "type and date required")
+		if t.Date == "" {
+			writeErr(w, 400, "date required")
 			return
 		}
 		old := b.data.transactionByID(id)

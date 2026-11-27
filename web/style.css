@@ -245,6 +245,8 @@ tr.unconfirmed td{background:var(--plannedbg)}
 .filters .tgplist{position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:5;min-width:240px;margin:0}
 .drawer textarea{width:100%;padding:10px;border:1px solid var(--fieldline);border-radius:6px;margin-top:4px;font:inherit;font-size:1rem;color:var(--ink);background:var(--field);resize:vertical;min-height:4.5em}
 .drawer input,.drawer select{width:100%;padding:10px;border:1px solid var(--fieldline);border-radius:6px;margin-top:4px;font-size:1rem;color:var(--ink);background:var(--field)}
+/* a side kept to the only external account (ADR 0029): shown, read-only, greyed */
+.drawer select:disabled,dialog select:disabled{opacity:.6;cursor:default}
 .seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}.seg button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;cursor:pointer}
 .seg button.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 dialog{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:20px 24px;width:min(760px,calc(100vw - 32px));max-height:calc(100dvh - 32px)}
@@ -440,8 +442,8 @@ html[data-width="full"] .drawer{width:calc(100vw - 24px)}
 @media (min-width:801px){
   #txnForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px;align-items:start}
   #txnForm>*{grid-column:1/-1}
-  #txnForm>#fAccWrap,#txnForm>#fExtWrap,#txnForm>#fToWrap,#txnForm>#fAmtWrap,#txnForm>.daterow,#txnForm>#fTzWrap,#txnForm>#fTagWrap,#txnForm>#fAmtNote{grid-column:auto}
-  #fAccWrap{order:2}#fExtWrap,#fToWrap{order:3}#fToNone{order:4}#fAmtWrap{order:5}#fAmtNote{order:6}
+  #txnForm>#fFromWrap,#txnForm>#fToWrap,#txnForm>#fAmtWrap,#txnForm>.daterow,#txnForm>#fTzWrap,#txnForm>#fTagWrap,#txnForm>#fAmtNote{grid-column:auto}
+  #fFromWrap{order:2}#fToWrap{order:3}#fToNone{order:4}#fAmtWrap{order:5}#fAmtNote{order:6}
   #txnForm>.daterow{order:7}#fTzWrap{order:8}#fTagWrap{order:3}#fAmtNote{align-self:end;margin-bottom:12px}#fCatsWrap{order:11}#fMemoWrap{order:12}#txnForm>.saverow{order:13}
   #fPlannedNote,#fSchedNote{order:-1}#typeSeg{order:0}#fQuick{order:1}#fTitleWrap{order:1}
   .saverow{justify-content:flex-end}.saverow .primarybtn.big{flex:0 1 320px}
@@ -685,6 +687,7 @@ dialog .iconpick label{margin:0;display:block;cursor:pointer}
 /* a checkbox row with an (i) after its label (Settings → Sync, issue #104): the button is beside the label, not in it */
 .checkline{display:flex;align-items:center;gap:2px;margin:0 0 4px}
 .checkline .checkrow{margin:0}
+#dialogForm>.checkrow{margin:14px 0 6px}
 .infobtn{flex:none;display:grid;place-items:center;width:40px;height:40px;margin:-6px 0;padding:0;border:0;border-radius:50%;background:none;color:var(--muted);cursor:pointer}
 .infobtn:hover{background:var(--hover);color:var(--accent)}
 .infobtn:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;color:var(--accent)}

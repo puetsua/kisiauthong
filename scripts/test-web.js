@@ -2208,7 +2208,7 @@ test("shortcut without an amount (#121): optional in the dialog, no amount in li
     t.openTemplateDialog(null, { name: "", template: null, schedule: { frequency: "never" } });
     assert.match(strip($el("#dialogBody").innerHTML), /^<form id="dialogForm"><label class="wide"><span>Template name<\/span><input name="name"[^>]*><\/label><label class="wide"><span>Title<\/span><input name="note"/, "Template name first, Title right under it");
     const html = read("index.html"), at = (s) => html.indexOf(s);
-    assert.ok(at('id="fQuick"') < at('id="fTitleWrap"') && at('id="fTitleWrap"') < at('id="fAccWrap"') && at('id="fTitleWrap"') < at('id="fAmtWrap"') && at('id="fTitleWrap"') < at('id="fCatsWrap"'), "the add form's Title comes right after the quick picks");
+    assert.ok(at('id="fQuick"') < at('id="fTitleWrap"') && at('id="fTitleWrap"') < at('id="fFromWrap"') && at('id="fTitleWrap"') < at('id="fAmtWrap"') && at('id="fTitleWrap"') < at('id="fCatsWrap"'), "the add form's Title comes right after the quick picks");
     assert.doesNotMatch(amountInput(), /required/, "a shortcut's amount is optional");
     assert.match(amountInput(), /value=""/);
     t.openTemplateDialog(null, { name: "Rent", template: null, schedule: { frequency: "monthly" } });
@@ -2227,11 +2227,12 @@ test("shortcut without an amount (#121): optional in the dialog, no amount in li
     const chips = [...$el("#fQuick").innerHTML.matchAll(/<small>([^<]*)<\/small>/g)].map((m) => m[1]);
     assert.deepStrictEqual(chips, ["Daily", amt + " · Daily"], "the chip shows the account only");
     let focused = false;
-    form.elements = { accountId: { options: [{ value: "a2" }], value: "" }, amount: { value: "99", focus: () => { focused = true; }, select: () => {} }, note: { value: "old" } };
+    form.elements = { amount: { value: "99", focus: () => { focused = true; }, select: () => {} }, note: { value: "old" } };
     applyPick(picks.tpl[0], null);
     assert.strictEqual(form.elements.amount.value, "", "Amount is left empty");
     assert.strictEqual(form.elements.note.value, "", "no title is filled in");
-    assert.strictEqual(form.elements.accountId.value, "a2");
+    assert.strictEqual($el("#fFrom").value, "a2", "From is the shortcut's account");
+    assert.strictEqual($el("#fTo").value, "acc-external", "To is its external account");
     assert.ok(focused, "the focus is on Amount");
     applyPick(picks.tpl[1], null);
     assert.strictEqual(form.elements.amount.value, "120", "a shortcut with an amount still fills it in");
@@ -2245,39 +2246,69 @@ test("shortcut without an amount (#121): optional in the dialog, no amount in li
     Object.assign(d, was);
   }
 });
-test("transfer tags (#144): saving an edited transfer keeps the tags it has; a new one has none", () => {
+// ADR 0029: one form for every type. The tab only decides which accounts each side offers; every tab has
+// Tags; the type sent is what the two accounts make it. Covers #144: a transfer's tags show and are kept.
+test("one form (ADR 0029): tags on every tab and kept across tabs; the type follows the accounts", () => {
   const d = t.state.data, was = { transactions: d.transactions, tags: d.tags, accounts: d.accounts, externals: d.externals, allAccounts: d.allAccounts, txnType: t.state.txnType, editingTxn: t.state.editingTxn };
-  const { formBody } = vm.runInContext("({ formBody })", sandbox);
-  const form = $el("#txnForm");
+  const { formBody, openEditTxn, setTxnType, sidesFor } = vm.runInContext("({ formBody, openEditTxn, setTxnType, sidesFor })", sandbox);
+  const form = $el("#txnForm"), shop = { id: "x-shop", kind: "external", name: "[TEST] Shop" };
   const move = { id: "tr1", fromAccountId: "a1", toAccountId: "a2", type: "transfer", amountMinor: 1000000, currency: "TWD", date: "2026-11-17", state: "posted", note: "[TEST] cash for a trip", tagIds: ["g1", "g2"] };
-  const buy = { id: "ex1", fromAccountId: "a1", toAccountId: "acc-external", type: "transfer", amountMinor: 500, currency: "TWD", date: "2026-11-17", state: "posted", note: "[TEST] snack", tagIds: ["g1"] };
-  Object.assign(d, { transactions: [move, buy], tags: [{ id: "g1", name: "Travel" }, { id: "g2", name: "Cash" }], accounts: [acc, other], externals: [ext], allAccounts: [acc, other, ext] });
+  Object.assign(d, { transactions: [move], tags: [{ id: "g1", name: "Travel" }, { id: "g2", name: "Cash" }], accounts: [acc, other], externals: [ext, shop], allAccounts: [acc, other, ext, shop] });
   sandbox.FormData = function (f) { return new Map(Object.entries(f.fields)); };
-  form.fields = { accountId: "a1", toAccountId: "a2", amount: "10000", date: "2026-11-17", note: "[TEST] cash for a trip", memo: "", time: "", tz: "" };
+  form.fields = { amount: "10000", date: "2026-11-17", note: "[TEST] cash for a trip", memo: "", time: "", tz: "" };
+  const sides = () => [$el("#fFrom").value, $el("#fTo").value];
   try {
-    t.state.txnType = "transfer";
-    t.state.editingTxn = "tr1";
+    openEditTxn("tr1");
+    assert.strictEqual(t.state.txnType, "transfer");
+    assert.notStrictEqual($el("#fCatsWrap").hidden, true, "a transfer has Tags");
+    assert.deepStrictEqual(sides(), ["a1", "a2"]);
+    assert.deepStrictEqual([...t.pickedCats()], ["g1", "g2"], "its tags are in the picker");
     let { body } = formBody();
-    assert.deepStrictEqual([...body.tagIds], ["g1", "g2"], "an unchanged save sends the transfer's tags, so the PUT keeps them");
-    assert.strictEqual(body.fromAccountId, "a1");
-    assert.strictEqual(body.toAccountId, "a2");
-    t.state.editingTxn = null;
-    ({ body } = formBody());
-    assert.deepStrictEqual([...body.tagIds], [], "a new transfer has no tags");
-    t.state.editingTxn = "ex1";
-    ({ body } = formBody());
-    assert.deepStrictEqual([...body.tagIds], [], "an expense switched to Transfer leaves its tags, as before");
+    assert.deepStrictEqual({ type: body.type, from: body.fromAccountId, to: body.toAccountId, tags: [...body.tagIds] }, { type: "transfer", from: "a1", to: "a2", tags: ["g1", "g2"] }, "an unchanged save keeps the tags (#144)");
+    assert.match(strip($el("#fFrom").innerHTML), /<optgroup label="Own accounts">.*<optgroup label="External accounts"><option value="acc-external">External<\/option><option value="x-shop">\[TEST\] Shop<\/option><\/optgroup>/, "Transfer: From takes any account");
+    assert.doesNotMatch($el("#fTo").innerHTML, /value="a1"/, "To never repeats From");
+    // Expense: From own, To external; the tags stay
+    setTxnType("expense");
+    assert.deepStrictEqual(sides(), ["a1", "acc-external"]);
+    assert.strictEqual($el("#fToLab").textContent, "Paid to");
+    assert.deepStrictEqual([...t.pickedCats()], ["g1", "g2"], "switching tabs keeps the tags");
+    assert.strictEqual(formBody().body.type, "expense");
+    assert.strictEqual($el("#fTo").disabled, false, "two external accounts: a choice");
+    // Income: the external account comes first, then the own one
+    setTxnType("income");
+    assert.deepStrictEqual(sides(), ["acc-external", "a1"]);
+    assert.deepStrictEqual([$el("#fFromLab").textContent, $el("#fToLab").textContent], ["Received from", "To account"]);
+    assert.strictEqual(formBody().body.type, "income");
+    // Transfer keeps an external side: the record is what the accounts make it
+    setTxnType("transfer");
+    assert.deepStrictEqual(sides(), ["acc-external", "a1"]);
+    assert.strictEqual(formBody().body.type, "income", "an external side on Transfer makes it income");
+    assert.deepStrictEqual([...formBody().body.tagIds], ["g1", "g2"]);
+    // only the built-in external account: the locked side is shown, read-only
+    Object.assign(d, { externals: [ext], allAccounts: [acc, other, ext] });
+    setTxnType("expense");
+    assert.strictEqual($el("#fTo").disabled, true, "Expense: To is read-only");
+    assert.strictEqual($el("#fTo").value, "acc-external");
+    setTxnType("income");
+    assert.strictEqual($el("#fFrom").disabled, true, "Income: From is read-only");
+    assert.strictEqual($el("#fTo").disabled, false);
+    setTxnType("transfer", undefined, "a1", "a2");
+    assert.strictEqual($el("#fFrom").disabled, false, "Transfer: nothing is locked");
+    // external -> external is never offered
+    const s = sidesFor("transfer", "acc-external", "acc-external");
+    assert.ok(s.toList.every((a) => a.kind !== "external"), "From external: To offers own accounts only");
   } finally {
     delete sandbox.FormData; delete form.fields;
     Object.assign(d, { transactions: was.transactions, tags: was.tags, accounts: was.accounts, externals: was.externals, allAccounts: was.allAccounts });
     Object.assign(t.state, { txnType: was.txnType, editingTxn: was.editingTxn });
   }
 });
-later.push(["transfer template (#145): saving an unchanged transfer template keeps it a transfer to its own To account", async () => {
+// The template dialog has the same From and To (ADR 0029), and keeps a transfer template a transfer (#145).
+later.push(["template dialog (ADR 0029): From and To for every type; an unchanged transfer template stays a transfer", async () => {
   const d = t.state.data, was = { transactionTemplates: d.transactionTemplates, tags: d.tags, accounts: d.accounts, externals: d.externals, allAccounts: d.allAccounts, transactions: d.transactions };
   const form = $el("#dialogForm"), realApi = sandbox.api, realLoad = sandbox.load, sent = [];
   const pay = { id: "tpl-p", name: "[TEST] Card payment", enabled: true, template: { type: "transfer", fromAccountId: "a2", toAccountId: "a1", amountMinor: 1500000, currency: "TWD", note: "Pay card bill", tagIds: ["g1"] }, schedule: { frequency: "monthly", interval: 1, dayOfMonth: 20, startDate: "2026-12-20" } };
-  const rent = { id: "tpl-r", name: "[TEST] Rent", enabled: true, template: { type: "transfer", fromAccountId: "a1", toAccountId: "acc-external", amountMinor: 1800000, currency: "TWD", note: "Rent" }, schedule: { frequency: "monthly", interval: 1, dayOfMonth: 1, startDate: "2026-12-01" } };
+  const rent = { id: "tpl-r", name: "[TEST] Rent", enabled: true, template: { type: "expense", fromAccountId: "a1", toAccountId: "acc-external", amountMinor: 1800000, currency: "TWD", note: "Rent" }, schedule: { frequency: "monthly", interval: 1, dayOfMonth: 1, startDate: "2026-12-01" } };
   Object.assign(d, { transactionTemplates: [pay, rent], tags: [{ id: "g1", name: "Card payment" }], transactions: [], accounts: [acc, other], externals: [ext], allAccounts: [acc, other, ext] });
   sandbox.api = (path, opts) => { sent.push([opts && opts.method, path, opts && JSON.parse(opts.body)]); return Promise.resolve({}); };
   sandbox.load = () => Promise.resolve();
@@ -2286,22 +2317,50 @@ later.push(["transfer template (#145): saving an unchanged transfer template kee
   try {
     t.openTemplateDialog("tpl-p");
     assert.match(body(), /<select name="type"><option value="expense" >Expense<\/option><option value="income" >Income<\/option><option value="transfer" selected>Transfer<\/option><option value="allocate" >Put in reserve<\/option><\/select>/, "Generates shows Transfer");
-    assert.match(body(), /<option value="a2" selected>Daily \(TWD\)<\/option>/, "Account is the template's From side");
-    form.fields = { name: pay.name, note: "Pay card bill", type: "transfer", accountId: "a2", reserveId: "", amount: "15000", frequency: "monthly", rangeMin: "", rangeMax: "", dayOfMonth: "20", startDate: "2026-12-20" };
-    const submit = form.listeners.submit[form.listeners.submit.length - 1];
-    await submit({ preventDefault: () => {}, target: form });
+    assert.match(body(), /<label class="f-move"><span id="tplFromLab">From account<\/span><select name="fromAccountId" id="tplFrom">.*<option value="a2" selected>Daily \(TWD\)<\/option>/, "From is the template's From");
+    assert.match(body(), /<label class="f-move"><span id="tplToLab">To account<\/span><select name="toAccountId" id="tplTo"><optgroup label="Own accounts"><option value="a1" selected>Pay \(TWD\)<\/option><\/optgroup><optgroup label="External accounts"><option value="acc-external">External<\/option><\/optgroup><\/select>/, "To is its To; external accounts may be chosen too");
+    $el("#tplFrom").value = "a2"; $el("#tplTo").value = "a1";
+    form.fields = { name: pay.name, note: "Pay card bill", type: "transfer", accountId: "a1", reserveId: "", amount: "15000", frequency: "monthly", rangeMin: "", rangeMax: "", dayOfMonth: "20", startDate: "2026-12-20" };
+    const submit = () => form.listeners.submit[form.listeners.submit.length - 1]({ preventDefault: () => {}, target: form });
+    await submit();
     assert.strictEqual(sent.length, 1);
     const [method, path, out] = sent[0];
     assert.deepStrictEqual([method, path], ["PUT", "/api/templates/tpl-p"]);
     assert.deepStrictEqual({ type: out.template.type, from: out.template.fromAccountId, to: out.template.toAccountId, tags: out.template.tagIds },
       { type: "transfer", from: "a2", to: "a1", tags: ["g1"] }, "still a transfer from Daily to Pay with its tag");
-    // an expense template is offered no Transfer, as before
+    // an expense template: Paid to is the only external account, read-only; Transfer is offered too
     t.openTemplateDialog("tpl-r");
-    assert.doesNotMatch(body(), /value="transfer"/);
-    assert.match(body(), /<option value="expense" selected>Expense<\/option>/);
+    assert.match(body(), /<option value="expense" selected>Expense<\/option><option value="income" >Income<\/option><option value="transfer" >Transfer<\/option>/);
+    assert.match(body(), /<span id="tplToLab">Paid to<\/span><select name="toAccountId" id="tplTo" disabled><option value="acc-external" selected>External<\/option><\/select>/);
+    // a new transfer template from scratch: the type sent is what the accounts make it
+    $el("#tplFrom").value = "a1"; $el("#tplTo").value = "a2";
+    form.fields = { name: "[TEST] Top up", note: "", type: "transfer", accountId: "a1", reserveId: "", amount: "100", frequency: "never", rangeMin: "", rangeMax: "", dayOfMonth: "1", startDate: "" };
+    t.openTemplateDialog(null, { name: "", template: null, schedule: { frequency: "never" } });
+    await submit();
+    const made = sent[1];
+    assert.deepStrictEqual([made[0], made[1], made[2].template.type, made[2].template.fromAccountId, made[2].template.toAccountId], ["POST", "/api/templates", "transfer", "a1", "a2"]);
   } finally {
     sandbox.api = realApi; sandbox.load = realLoad; delete sandbox.FormData; delete form.fields;
     Object.assign(d, was);
   }
 }]);
+// the budget switch for transfers between own accounts (ADR 0029): off unless set, sent with the budget
+test("budget dialog (ADR 0029): Count transfers between own accounts, off by default", () => {
+  const d = t.state.data, was = d.tags;
+  try {
+    d.tags = [{ id: "b1", name: "Trip", limitMinor: 100000, currency: "TWD", cycle: "monthly", cycleEvery: 1, spentMinor: 0, periodStart: "2026-11-01", periodEnd: "2026-11-30" },
+      { id: "b2", name: "Savings", limitMinor: 100000, currency: "TWD", cycle: "monthly", cycleEvery: 1, spentMinor: 0, periodStart: "2026-11-01", periodEnd: "2026-11-30", countTransfers: true }];
+    t.openTagDialog(null, "b1");
+    assert.match(strip($el("#dialogBody").innerHTML), /<label class="checkrow f-budget wide"><input type="checkbox" name="countTransfers"><span>Count transfers between own accounts<\/span><\/label>/);
+    t.openTagDialog(null, "b2");
+    assert.match(strip($el("#dialogBody").innerHTML), /name="countTransfers" checked>/);
+    // the tag page's net follows the same rule
+    const own = { id: "n1", fromAccountId: "a1", toAccountId: "a2", type: "transfer", amountMinor: 500, currency: "TWD", date: "2026-11-10", state: "posted" };
+    assert.deepStrictEqual({ ...t.tagNet([own], d.tags[0]) }, {}, "off: a transfer is not counted");
+    assert.deepStrictEqual({ ...t.tagNet([own], d.tags[1]) }, { TWD: -500 }, "on: it goes out like spending");
+    t.setLang("zh-TW");
+    t.openTagDialog(null, "b1");
+    assert.match(strip($el("#dialogBody").innerHTML), /<span>計入自己帳戶之間的轉帳<\/span>/);
+  } finally { t.setLang("en"); d.tags = was; }
+});
 require("./run-tests.js")(later, n);

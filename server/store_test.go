@@ -4,10 +4,21 @@ package main
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
 )
+
+// hasColumnDB is hasColumn outside a migration's transaction.
+func hasColumnDB(db *sql.DB, table, column string) (bool, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	return hasColumn(tx, table, column)
+}
 
 func TestManualTransactionsDoNotCollideOnTemplateKey(t *testing.T) {
 	b := sampleBook(t)
@@ -216,14 +227,32 @@ func TestMigrationsUpgradeTheFirstSchema(t *testing.T) {
 	for _, tx := range d.Transactions {
 		byID[tx.ID] = tx
 	}
-	if e := byID["old-exp"]; e.Type != "transfer" || e.FromAccountID != "acc-b" || e.ToAccountID != ExternalAccountID || e.AccountID != "" {
+	if e := byID["old-exp"]; e.Type != "expense" || e.FromAccountID != "acc-b" || e.ToAccountID != ExternalAccountID || e.AccountID != "" {
 		t.Errorf("migration 1: expense not converted: %+v", e)
 	}
-	if i := byID["old-inc"]; i.Type != "transfer" || i.FromAccountID != ExternalAccountID || i.ToAccountID != "acc-a" {
+	if i := byID["old-inc"]; i.Type != "income" || i.FromAccountID != ExternalAccountID || i.ToAccountID != "acc-a" {
 		t.Errorf("migration 1: income not converted: %+v", i)
 	}
-	if tp := d.templateByID("tpl-salary"); tp == nil || tp.Template.Type != "transfer" || tp.Template.FromAccountID != ExternalAccountID || tp.Template.ToAccountID != "acc-a" {
+	if tp := d.templateByID("tpl-salary"); tp == nil || tp.Template.Type != "income" || tp.Template.FromAccountID != ExternalAccountID || tp.Template.ToAccountID != "acc-a" {
 		t.Errorf("migration 1: template not converted: %+v", tp)
+	}
+	// migration 18 (ADR 0029): the stored type column is gone; types come from the accounts
+	if has, err := hasColumnDB(s.db, "transactions", "type"); err != nil || has {
+		t.Errorf("migration 18: transactions.type still there (%v)", err)
+	}
+	if f := byID["old-food"]; f.Type != "expense" {
+		t.Errorf("migration 18: own -> external not an expense: %+v", f)
+	}
+	var stored string
+	if err := s.db.QueryRow(`SELECT template_json FROM transaction_templates WHERE id='tpl-salary'`).Scan(&stored); err != nil || !strings.Contains(stored, `"type":"transfer"`) {
+		t.Errorf("migration 18: template JSON should keep the stored form, got %s (%v)", stored, err)
+	}
+	// migration 19: budgets do not count transfers between own accounts unless set to
+	if has, err := hasColumnDB(s.db, "tags", "count_transfers"); err != nil || !has {
+		t.Errorf("migration 19: tags.count_transfers missing (%v)", err)
+	}
+	if f := d.tagByID("tag-food"); f == nil || f.CountTransfers {
+		t.Errorf("migration 19: an existing budget should not count transfers: %+v", f)
 	}
 	// migration 14: money boxes become reserves with the same ids, allocations leave the transactions
 	if r := d.allocationByID("old-rel"); r == nil || r.AmountMinor != -700 || r.AccountID != "acc-a" || r.ReserveID != "tag-furniture" || r.Note != "Back out" {

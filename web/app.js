@@ -230,11 +230,11 @@ const accById = (id) => (state.data.allAccounts || state.data.accounts).find((a)
 const accName = (id) => { const a = accById(id); if (!a) return "—"; return a.id === EXT_ID && a.name === "External" ? __("External") : a.name; };
 const accCur = (id) => (accById(id) || {}).currency || defCur();
 const isExt = (id) => { const a = accById(id); return !!a && a.kind === "external"; };
-// flow: what a record means to the user. Every transaction is stored as a transfer;
-// one to an external account is spending, one from an external account is income.
-// A template can also be an allocation template (type "allocate", ADR 0013).
+// flow: what a record is, derived from its accounts (ADR 0029): own → external is spending,
+// external → own is income, own → own a transfer. A template can also be an allocation
+// template (type "allocate", ADR 0013); a record without both accounts keeps its type.
 function flow(t) {
-  if (t.type !== "transfer") return t.type;
+  if (t.type === "allocate" || !t.fromAccountId || !t.toAccountId) return t.type;
   const f = isExt(t.fromAccountId), to = isExt(t.toAccountId);
   return to && !f ? "expense" : f && !to ? "income" : "transfer";
 }
@@ -1463,12 +1463,14 @@ function tagTotals(list) {
 const moneyTile = (lab, m) => (Object.keys(m).length ? `<div class="totcard"><span class="lab">${esc(lab)}</span>${moneyBlock(m, { sign: "", cls: "tot" })}</div>` : "");
 // A category's money in one figure per currency (issue #57): what came in minus what went out, in minor
 // units, never converted (ADR 0011) — the way budgets count a category (ADR 0021). Transfers between own
-// accounts move nothing in or out, so they do not count.
-function tagNet(list) {
+// accounts move nothing in or out, so they do not count, unless the tag is a budget set to count them
+// (countTransfers, ADR 0029): then they go out like spending.
+const netDelta = (t, tag) => { const k = flow(t); return k === "expense" || (k === "transfer" && tag && tag.countTransfers) ? -t.amountMinor : k === "income" ? t.amountMinor : null; };
+function tagNet(list, tag) {
   const net = {};
   list.forEach((t) => {
-    const k = flow(t), d = k === "expense" ? -t.amountMinor : k === "income" ? t.amountMinor : 0;
-    if (k === "expense" || k === "income") net[t.currency] = (net[t.currency] || 0) + d;
+    const d = netDelta(t, tag);
+    if (d !== null) net[t.currency] = (net[t.currency] || 0) + d;
   });
   return net;
 }
@@ -1494,7 +1496,7 @@ function categoryCard(t, p) {
   const list = tagTxns(t.id, p);
   return `<button type="button" class="tcard ccard" data-detail-tag="${esc(t.id)}">
     <span class="thead"><b>${esc(t.name)}</b><small>${esc(__("{n} transaction(s)", { n: list.length }))}</small></span>
-    <span class="tfoot">${list.length ? netHTML(tagNet(list)) : `<small>${esc(__("No transactions in this period."))}</small>`}</span></button>`;
+    <span class="tfoot">${list.length ? netHTML(tagNet(list, t)) : `<small>${esc(__("No transactions in this period."))}</small>`}</span></button>`;
 }
 const tagURL = (id, mode, at) => `#tag?${new URLSearchParams({ id, range: mode, ...(at ? { at } : {}) })}`;
 const plainDay = (iso) => { try { return new Intl.DateTimeFormat(LANG, { year: "numeric", month: "short", day: "numeric" }).format(parseDay(iso)); } catch (e) { return iso; } };
@@ -1514,7 +1516,7 @@ function screenTag(v) {
     <div class="totals">${tiles}</div>
     ${notePanel(t.memo)}
     <section class="tsection">${periodBar(mode, p)}
-    ${inP.length ? `<div class="psum"><span>${esc(__("{n} transaction(s)", { n: inP.length }))}</span>${netHTML(tagNet(inP))}</div>
+    ${inP.length ? `<div class="psum"><span>${esc(__("{n} transaction(s)", { n: inP.length }))}</span>${netHTML(tagNet(inP, t))}</div>
       <section class="panel feedpanel">${rows(inP)}</section>` : `<div class="empty">${esc(__("No transactions in this period."))}</div>`}</section>`;
   bindPeriodBar(v, mode, p, (m, at) => tagURL(t.id, m, at));
   $("#tagEdit").addEventListener("click", () => openTagDialog(null, t.id));
@@ -1644,12 +1646,12 @@ function openMergeDialog(ids) {
     if (kept) {
       // net, as the server counts it: tagged income (a refund, a shared cost paid back) takes off spending (ADR 0021)
       const spent = live.filter((t) => t.currency === kept.currency && t.date >= kept.periodStart && t.date <= kept.periodEnd)
-        .reduce((n, t) => n + (flow(t) === "expense" ? t.amountMinor : flow(t) === "income" ? -t.amountMinor : 0), 0);
+        .reduce((n, t) => n - (netDelta(t, kept) || 0), 0);
       const pct = kept.limitMinor > 0 ? spent / kept.limitMinor * 100 : 0;
       budgetHTML = `<span class="bamount"><b>${fmt(spent, kept.currency)}</b> <small>${esc(__("of {limit}", { limit: fmt(kept.limitMinor, kept.currency) }))}</small></span>${bar(pct, barCls(pct))}<small>${esc(budgetPeriodText(kept, true))}</small>`;
     }
     $("#mPreview").innerHTML = `<div class="tcard ccard mprev"><span class="thead"><b>${esc(name)}</b><small>${esc(__("{n} transaction(s) in all", { n: p.transactions }))}</small></span>${budgetHTML}
-      <span class="tfoot">${netHTML(tagNet(inP))}<small>${esc(__(TAG_NOW_L[per.mode]))}</small></span></div>`;
+      <span class="tfoot">${netHTML(tagNet(inP, kept))}<small>${esc(__(TAG_NOW_L[per.mode]))}</small></span></div>`;
   };
   const body = (dryRun) => ({ sourceIds: sources(), name: el.name.value.trim(), budgetFrom, dryRun });
   const refresh = async () => {
@@ -2549,19 +2551,59 @@ function accountsByUse() {
   return state.data.accounts.map((a, i) => ({ a, n: n[a.id] || 0, i })).sort((x, y) => y.n - x.n || x.i - y.i).map((x) => x.a);
 }
 const accOption = (a, sel) => `<option value="${esc(a.id)}" ${a.id === sel ? "selected" : ""}>${esc(a.name)} (${esc(a.currency)})</option>`;
-function fillSelects() {
-  $("#fAccount").innerHTML = accountsByUse().map((a) => accOption(a)).join("");
-  // the anonymous external account first, then named ones
-  const ext = [...state.data.externals].sort((a, b) => (a.id === EXT_ID ? -1 : b.id === EXT_ID ? 1 : a.name.localeCompare(b.name)));
-  $("#fExt").innerHTML = ext.map((a) => `<option value="${esc(a.id)}">${esc(accName(a.id))}</option>`).join("");
+/* ---------- From and To: one form for every type (ADR 0029) ----------
+   A transaction goes from one account to another, and its type follows the accounts. The add/edit form
+   and the template dialog share these rules. Expense and Income are shortcuts that keep one side to
+   external accounts (To on Expense, From on Income); Transfer takes any account on either side, so an
+   external side there simply makes it spending or income. Two own accounts share a currency, and
+   external → external is never offered. */
+// the external accounts: the built-in one first, then named ones by name
+const extAccounts = () => [...state.data.externals].sort((a, b) => (a.id === EXT_ID ? -1 : b.id === EXT_ID ? 1 : a.name.localeCompare(b.name)));
+const isOwnAcc = (id) => !!accById(id) && !isExt(id);
+// the accounts one side may take on a tab; fromId is the chosen From, which To depends on
+function sideAccounts(tab, side, fromId) {
+  const own = accountsByUse(), ext = extAccounts();
+  if (tab === "expense") return side === "from" ? own : ext;
+  if (tab === "income") return side === "from" ? ext : own;
+  if (side === "from") return [...own, ...ext];
+  const from = accById(fromId);
+  if (!from || from.kind === "external") return own;
+  return [...own.filter((a) => a.id !== from.id && a.currency === from.currency), ...ext];
 }
-// A transfer stays in one currency: the target list holds the other accounts in the source's currency.
-function refreshToAccounts(sel) {
-  const from = state.data.accounts.find((a) => a.id === $("#fAccount").value);
-  const list = from ? accountsByUse().filter((a) => a.id !== from.id && a.currency === from.currency) : [];
-  $("#fToAccount").innerHTML = list.map((a) => accOption(a, sel)).join("");
-  $("#fToAccount").disabled = !list.length;
-  const none = state.txnType === "transfer" && from && !list.length;
+// options for a side: own accounts with their currency, external accounts by name; both kinds in groups
+function sideOptions(list, sel) {
+  const opt = (a) => `<option value="${esc(a.id)}"${a.id === sel ? " selected" : ""}>${esc(a.kind === "external" ? accName(a.id) : `${a.name} (${a.currency})`)}</option>`;
+  const own = list.filter((a) => a.kind !== "external"), ext = list.filter((a) => a.kind === "external");
+  if (!own.length || !ext.length) return list.map(opt).join("");
+  return `<optgroup label="${esc(__("Own accounts"))}">${own.map(opt).join("")}</optgroup><optgroup label="${esc(__("External accounts"))}">${ext.map(opt).join("")}</optgroup>`;
+}
+// the two sides for a tab, carried over from what was chosen: switching tabs keeps the own account and
+// the external one where the tab allows them (Expense ⇄ Income swaps them), else takes the first choice.
+// A side kept to external accounts while only the built-in one exists is shown read-only (ro).
+function sidesFor(tab, from, to) {
+  if (tab === "expense") [from, to] = [isOwnAcc(from) ? from : isOwnAcc(to) ? to : "", isExt(to) ? to : isExt(from) ? from : EXT_ID];
+  else if (tab === "income") [from, to] = [isExt(from) ? from : isExt(to) ? to : EXT_ID, isOwnAcc(to) ? to : isOwnAcc(from) ? from : ""];
+  const fromList = sideAccounts(tab, "from");
+  if (!fromList.some((a) => a.id === from)) from = (fromList[0] || {}).id || "";
+  const toList = sideAccounts(tab, "to", from);
+  if (!toList.some((a) => a.id === to)) to = (toList[0] || {}).id || "";
+  return { from, to, fromList, toList, fromRO: tab === "income" && fromList.length < 2, toRO: (tab === "expense" && toList.length < 2) || !toList.length };
+}
+function fillSides(fromSel, toSel, s) {
+  fromSel.innerHTML = sideOptions(s.fromList, s.from); fromSel.value = s.from; fromSel.disabled = s.fromRO;
+  toSel.innerHTML = sideOptions(s.toList, s.to); toSel.value = s.to; toSel.disabled = s.toRO;
+}
+// the field names on each tab
+const SIDE_L = { expense: [N_("From account"), N_("Paid to")], income: [N_("Received from"), N_("To account")], transfer: [N_("From account"), N_("To account")] };
+// the two sides' values; a read-only (disabled) select is left out of FormData, so they are read here
+const sideValues = (fromSel, toSel) => ({ fromAccountId: fromSel.value || "", toAccountId: toSel.value || "" });
+// the currency of a movement: the own side's (an external account has none)
+const sideCur = (from, to) => accCur(isExt(from) ? to : from);
+// On Transfer, an own account with no other own account in its currency gets external accounts only: say why.
+function syncToNote() {
+  const from = accById($("#fFrom").value), tab = state.txnType;
+  const others = from && from.kind !== "external" ? state.data.accounts.filter((a) => a.id !== from.id) : [];
+  const none = tab === "transfer" && others.length > 0 && !others.some((a) => a.currency === from.currency);
   $("#fToNone").hidden = !none;
   $("#fToNone").textContent = none ? __("No other {currency} account. To move money into another currency, record spending in one account and income in the other.", { currency: from.currency }) : "";
 }
@@ -2741,7 +2783,7 @@ function makeTagPicker(id, o) {
   pickers[id] = api;
   return api;
 }
-// the add/edit form's tags (expense and income): the picker with Recently used and Create
+// the add/edit form's tags (every type, ADR 0029): the picker with Recently used and Create
 function drawTxnTags(ids) {
   const tp = makeTagPicker("fCats", { ids, label: __("Tags"), create: true, recent: true });
   $("#fCatsWrap").innerHTML = tp.html();
@@ -2792,41 +2834,35 @@ function drawQuick(picks) {
   box.innerHTML = group(__("Templates"), tpl, 0) + group(__("Recent"), recent, tpl.length);
   box.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => applyPick(state.quick[+b.dataset.pick], b)));
 }
-const setSel = (sel, v) => { if (v && [...sel.options].some((o) => o.value === v)) sel.value = v; };
 // fill the form from a pick; the date and time stay now, and the amount is ready to change
 // (empty when the shortcut has none, issue #121)
 function applyPick(p, btn) {
-  const t = p.t, mode = flow(t), el = $("#txnForm").elements;
-  setSel(el.accountId, mode === "transfer" ? t.fromAccountId : ownAcc(t));
-  setTxnType(mode, txnCats(t));
-  if (mode === "transfer") refreshToAccounts(t.toAccountId);
-  if (mode === "expense" || mode === "income") setSel($("#fExt"), extAcc(t) || EXT_ID);
+  const t = p.t, el = $("#txnForm").elements;
+  setTxnType(flow(t), txnCats(t), t.fromAccountId, t.toAccountId);
   el.amount.value = t.amountMinor ? decimal(t.amountMinor, t.currency) : "";
   el.note.value = p.title;
   $("#fQuick").querySelectorAll("[data-pick]").forEach((b) => b.setAttribute("aria-pressed", b === btn));
   el.amount.focus();
   el.amount.select();
 }
-// setTxnType shows only the fields the type uses. tags: the category ids; kept when left out
-function setTxnType(type, tags) {
+// setTxnType picks a tab (ADR 0029): every tab has the same fields, From before To; the tab only decides
+// which accounts each side offers. tags: the category ids, kept when left out (switching tabs keeps them);
+// from, to: the accounts to show, else the ones chosen now, carried over where the tab allows them.
+function setTxnType(type, tags, from, to) {
   state.txnType = type;
-  const transfer = type === "transfer";
   document.querySelectorAll("#typeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.type === type));
-  $("#fAccountLab").textContent = transfer ? __("From account") : __("Account");
-  $("#fToWrap").hidden = !transfer;
-  // expense/income are transfers to/from an external account; only ask which one when there is a choice
-  const flowMode = type === "expense" || type === "income";
-  $("#fExtWrap").hidden = !flowMode || state.data.externals.length < 2;
-  $("#fExtLab").textContent = type === "income" ? __("Received from") : __("Paid to");
-  $("#fCatsWrap").hidden = !flowMode;
+  const [fromL, toL] = SIDE_L[type] || SIDE_L.transfer;
+  $("#fFromLab").textContent = __(fromL);
+  $("#fToLab").textContent = __(toL);
+  fillSides($("#fFrom"), $("#fTo"), sidesFor(type, from !== undefined ? from : $("#fFrom").value, to !== undefined ? to : $("#fTo").value));
   if (tags !== undefined || !pickers.fCats) drawTxnTags(tags || []);
-  refreshToAccounts($("#fToAccount").value);
+  syncToNote();
   syncActions();
 }
-// ⋯ beside Save: actions on the form (a transfer cannot become a template)
+// ⋯ beside Save: actions on the form; any transaction can become a template
 function syncActions() {
-  $("#fSaveTpl").hidden = state.txnType === "transfer";
-  $("#fMoreBtn").hidden = $("#fSaveTpl").hidden && $("#fDelete").hidden;
+  $("#fSaveTpl").hidden = false;
+  $("#fMoreBtn").hidden = false;
   showActions(false);
 }
 function showActions(open) {
@@ -2850,14 +2886,13 @@ $("#fSaveTpl").addEventListener("click", () => {
 function openDrawer(type, tag) {
   state.editingTxn = null;
   $("#fDelete").hidden = true;
-  fillSelects();
   $("#txnForm").reset();
   delete pickers.fCats; // the next setTxnType draws a fresh picker
   // now, as this device's clock shows it (not UTC: before 08:00 in Taipei that was still yesterday)
   const now = zoneParts(new Date(), deviceTZ()), el = $("#txnForm").elements;
   el.date.value = now.date; el.time.value = now.time; $("#fTz").innerHTML = zoneOptions(deviceTZ());
   syncTz();
-  setTxnType(type || "expense", tag ? [tag] : []);
+  setTxnType(type || "expense", tag ? [tag] : [], "", "");
   state.quickOn = !tag;
   drawQuick(state.quickOn ? quickPicks(state.txnType) : []);
   $("#fPlannedNote").hidden = true;
@@ -2869,14 +2904,9 @@ function openEditTxn(id) {
   const t = state.data.transactions.find((x) => x.id === id);
   if (!t) return;
   state.editingTxn = id;
-  fillSelects();
   const form = $("#txnForm");
   form.reset();
-  const mode = flow(t);
-  form.elements.accountId.value = mode === "transfer" ? t.fromAccountId : ownAcc(t);
-  setTxnType(mode, txnCats(t));
-  if (mode === "transfer") refreshToAccounts(t.toAccountId);
-  if (mode === "expense" || mode === "income") $("#fExt").value = extAcc(t);
+  setTxnType(flow(t), txnCats(t), t.fromAccountId, t.toAccountId);
   form.elements.amount.value = decimal(t.amountMinor, t.currency);
   form.elements.date.value = t.date;
   form.elements.time.value = t.time || "";
@@ -2926,9 +2956,9 @@ function syncSchedNote() {
   $("#fPostNow").hidden = !(wasSched && future);
   if (!future && !wasSched) return;
   if (!future) { $("#fSchedHead").textContent = __("Posts when saved"); $("#fSchedText").textContent = __("Dated today or earlier: saving posts it now."); return; }
-  const { body, type } = formBody(), when = dayLabel(date);
+  const { body } = formBody(), when = dayLabel(date);
   $("#fSchedHead").textContent = __("Scheduled · posts {date}", { date: when });
-  $("#fSchedText").textContent = type === "income"
+  $("#fSchedText").textContent = body.type === "income"
     ? __("Until then it is not in the balance of {account}, and not free to use.", { account: accName(body.toAccountId) })
     : body.amountMinor > 0 ? __("Until then it is not in the balance; {amount} is held in {account} so it cannot be reserved or spent. Moving the date to today or earlier posts it.", { amount: fmt(body.amountMinor, body.currency), account: accName(body.fromAccountId) })
       : __("Until then it is not in the balance; the amount is held in {account} so it cannot be reserved or spent. Moving the date to today or earlier posts it.", { account: accName(body.fromAccountId) });
@@ -2947,7 +2977,8 @@ document.querySelectorAll("#typeSeg button").forEach((b) => b.addEventListener("
   if (state.quickOn) drawQuick(quickPicks(b.dataset.type));
   syncSchedNote();
 }));
-$("#fAccount").addEventListener("change", () => refreshToAccounts($("#fToAccount").value));
+// a new From changes what To may be; To keeps its account when it still may
+$("#fFrom").addEventListener("change", () => { fillSides($("#fFrom"), $("#fTo"), sidesFor(state.txnType, $("#fFrom").value, $("#fTo").value)); syncToNote(); });
 $("#addBtn").addEventListener("click", () => openDrawer("expense"));
 $("#tabAdd").addEventListener("click", () => openDrawer("expense"));
 // More (phones): a sheet with the pages the tab bar has no room for
@@ -2961,27 +2992,19 @@ $("#moreBack").addEventListener("click", () => showMore(false));
 $("#moreSheet").addEventListener("click", (e) => { if (e.target.closest("a")) showMore(false); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#moreSheet").hidden) { showMore(false); $("#tabMore").focus(); } });
 
-// the transaction the form describes, in the API's shape; f: the raw fields
+// the transaction the form describes, in the API's shape; f: the raw fields. Its type is what the two
+// accounts make it (ADR 0029), whichever tab they were chosen on; every tab sends its tags.
 function formBody() {
   const f = Object.fromEntries(new FormData($("#txnForm")).entries());
-  const cur = accCur(f.accountId), type = state.txnType;
-  const body = { type, accountId: f.accountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", memo: f.memo || "", time: f.time || "", tz: f.time ? f.tz : "", state: "posted" }; // saving confirms an expected transaction
-  if (type === "expense" || type === "income") { // stored as a transfer with an external side
-    const ext = f.extAccountId || EXT_ID;
-    Object.assign(body, { type: "transfer", accountId: "", fromAccountId: type === "expense" ? f.accountId : ext, toAccountId: type === "expense" ? ext : f.accountId });
-    body.tagIds = pickedCats();
-  } else if (type === "transfer") {
-    body.fromAccountId = f.accountId; body.toAccountId = f.toAccountId; body.accountId = "";
-    // the Transfer tab has no Tags field and saving replaces the tags (ADR 0010): a transfer being edited
-    // sends the tags it has (set through the API or MCP), so saving it never clears them (issue #144)
-    const was = state.editingTxn && state.data.transactions.find((x) => x.id === state.editingTxn);
-    body.tagIds = was && flow(was) === "transfer" ? [...txnCats(was)] : [];
-  }
+  const { fromAccountId, toAccountId } = sideValues($("#fFrom"), $("#fTo")), cur = sideCur(fromAccountId, toAccountId);
+  const type = flow({ type: "transfer", fromAccountId, toAccountId });
+  const body = { type, fromAccountId, toAccountId, amountMinor: toMinor(f.amount, cur), currency: cur, date: f.date, note: f.note || "", memo: f.memo || "",
+    time: f.time || "", tz: f.time ? f.tz : "", state: "posted", tagIds: pickedCats() }; // saving confirms an expected transaction
   return { f, cur, type, body };
 }
 onSubmit($("#txnForm"), async (e) => {
-  const { f, cur, type, body } = formBody();
-  if (type === "transfer" && !f.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to."), "error"); return; }
+  const { f, cur, body } = formBody();
+  if (!body.fromAccountId || !body.toAccountId) { msg($("#fToNone").textContent || __("Choose an account to transfer to."), "error"); return; }
   if (toMinor(f.amount, cur) === 0) { msg(__("Enter an amount other than zero."), "error"); return; }
   try {
     const was = state.editingTxn && state.data.transactions.find((x) => x.id === state.editingTxn);
@@ -3072,6 +3095,8 @@ function openTagDialog(kind, editId) {
     field(N_("First period starts"), `<input name="anchor" type="date" value="${t && cyc !== "range" ? esc(t.cycleStart || "") : ""}">`, "f-budget f-anchor") +
     field(N_("From"), `<input name="rangeStart" type="date" value="${t && cyc === "range" ? esc(t.cycleStart || "") : ""}">`, "f-budget f-range") +
     field(N_("To"), `<input name="rangeEnd" type="date" value="${t && cyc === "range" ? esc(t.cycleEnd || "") : ""}">`, "f-budget f-range") +
+    // transfers between own accounts with this tag count toward the budget only when asked (ADR 0029)
+    `<label class="checkrow f-budget wide"><input type="checkbox" name="countTransfers"${t && t.countTransfers ? " checked" : ""}><span>${esc(__("Count transfers between own accounts"))}</span></label>` +
     noteField(t && t.memo, __("What this category includes or leaves out…"), "f-note"),
     t ? __("Save changes") : newBudget ? __("Add budget") : __("Add category")));
   const form = $("#dialogForm"), el = form.elements;
@@ -3095,6 +3120,7 @@ function openTagDialog(kind, editId) {
     const body = { name: into ? into.name : f.name.trim(), memo: into ? into.memo || "" : f.memo || "", group: into ? into.group || "" : (f.group || "").trim() };
     if (f.role === "budget") {
       body.currency = f.limitCur; body.limitMinor = toMinor(f.limit, f.limitCur);
+      body.countTransfers = f.countTransfers === "on";
       if (f.preset === "range") Object.assign(body, { cycle: "range", cycleStart: f.rangeStart, cycleEnd: f.rangeEnd });
       else {
         const [cycle, n] = f.preset === "custom" ? [f.unit, parseInt(f.every, 10) || 1] : [f.preset.split(":")[0], parseInt(f.preset.split(":")[1], 10)];
@@ -3111,24 +3137,28 @@ function openTagDialog(kind, editId) {
 }
 // editId: the template to edit; draft: the values of a new one (Save as template in the add form).
 // A template that never repeats is a shortcut: it only fills in the add form (ADR 0012), so its
-// amount may be empty (issue #121); Tags and Title are always optional.
+// amount may be empty (issue #121); Tags and Title are always optional. What it generates has the
+// add form's From and To (ADR 0029): Expense, Income and Transfer offer the same accounts there;
+// Put in reserve has an Account and a Reserve instead.
 function openTemplateDialog(editId, draft) {
   const tp = editId ? state.data.transactionTemplates.find((x) => x.id === editId) : null;
   const src = tp || draft || null, body = src && src.template;
   const freq = src ? src.schedule.frequency || "monthly" : "monthly";
-  const mode = body ? flow(body) : "expense", own = body ? (mode === "transfer" ? body.fromAccountId : ownAcc(body)) : "";
-  // a template that generates a transfer between own accounts (made through the API) is offered as one,
-  // so saving it unchanged keeps it: Account is its From side and its To side is kept (issue #145)
-  const kinds = mode === "transfer" ? ["expense", "income", "transfer", "allocate"] : ["expense", "income", "allocate"];
-  const acc = accountsByUse().map((a) => accOption(a, own)).join("");
+  const mode = body ? flow(body) : "expense", alloc0 = mode === "allocate";
+  const acc = accountsByUse().map((a) => accOption(a, alloc0 ? body.accountId : "")).join("");
+  const sd = sidesFor(alloc0 ? "expense" : mode, body && !alloc0 ? body.fromAccountId : "", body && !alloc0 ? body.toAccountId : "");
+  const [fromL, toL] = SIDE_L[alloc0 ? "expense" : mode];
+  const sideField = (id, name, lab, list, sel, ro) => `<label class="f-move"><span id="${id}Lab">${esc(__(lab))}</span><select name="${name}" id="${id}"${ro ? " disabled" : ""}>${sideOptions(list, sel)}</select></label>`;
   const rng = body && body.expectedRangeMinor ? body.expectedRangeMinor : null;
   const amt = body && body.amountMinor > 0 ? decimal(body.amountMinor, body.currency) : "";
   const tplTags = makeTagPicker("tplCats", { ids: body && flow(body) !== "allocate" ? txnCats(body) : [], label: __("Tags"), create: true, recent: true });
   openDialog(tp ? __("Edit transaction template") : __("New transaction template"), dialogForm(
     field(N_("Template name"), `<input name="name" required placeholder="${esc(__("Streaming"))}" value="${src ? esc(src.name || "") : ""}">`, "wide") +
     field("Title", `<input name="note" maxlength="200" value="${body ? esc(body.note || "") : ""}">`, "wide") +
-    field("Generates", `<select name="type">${enumOptions(TPL_TYPE_L, kinds, mode)}</select>`) +
-    field("Account", `<select name="accountId">${acc}</select>`) +
+    field("Generates", `<select name="type">${enumOptions(TPL_TYPE_L, ["expense", "income", "transfer", "allocate"], mode)}</select>`, "wide") +
+    sideField("tplFrom", "fromAccountId", fromL, sd.fromList, sd.from, sd.fromRO) +
+    sideField("tplTo", "toAccountId", toL, sd.toList, sd.to, sd.toRO) +
+    field("Account", `<select name="accountId">${acc}</select>`, "f-res") +
     field("Reserve", `<select name="reserveId">${state.data.reserves.map((r) => `<option value="${esc(r.id)}" ${body && body.reserveId === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("") || `<option value="">${esc(__("No reserves yet."))}</option>`}</select>`, "f-res") +
     field("Amount", `<input name="amount" type="number" step="any" min="0.01"${freq !== "never" ? " required" : ""} value="${amt}">`) +
     field(N_("Frequency"), `<select name="frequency">${enumOptions(FREQ_L, ["never", "monthly", "quarterly", "yearly", "weekly", "daily"], freq)}</select>`) +
@@ -3149,6 +3179,7 @@ function openTemplateDialog(editId, draft) {
     const alloc = form.elements.type.value === "allocate", never = form.elements.frequency.value === "never";
     const show = (sel, on) => form.querySelectorAll(sel).forEach((el) => { el.hidden = !on; });
     show(".f-res", alloc);
+    show(".f-move", !alloc);
     show(".f-cats", !alloc);
     show(".f-range", !alloc && !never);
     show(".f-sched", !never);
@@ -3157,20 +3188,28 @@ function openTemplateDialog(editId, draft) {
     form.elements.startDate.required = !never;
     form.elements.amount.required = !never; // a shortcut may leave it empty (issue #121); what repeats has one fixed amount
   };
-  form.elements.type.addEventListener("change", sync);
+  // the type picks which accounts From and To offer, as the add form's tabs do; what is chosen carries over
+  const sides = (from, to) => {
+    const tab = form.elements.type.value;
+    if (tab === "allocate") return;
+    const [fl, tl] = SIDE_L[tab];
+    $("#tplFromLab").textContent = __(fl); $("#tplToLab").textContent = __(tl);
+    fillSides($("#tplFrom"), $("#tplTo"), sidesFor(tab, from, to));
+  };
+  form.elements.type.addEventListener("change", () => { const from = $("#tplFrom").value || form.elements.accountId.value; sides(from, $("#tplTo").value); sync(); });
+  $("#tplFrom").addEventListener("change", () => sides($("#tplFrom").value, $("#tplTo").value));
   form.elements.frequency.addEventListener("change", sync);
   sync();
   onSubmit(form, async (e) => {
-    const f = Object.fromEntries(new FormData(e.target).entries()), cur = accCur(f.accountId);
-    const tpl = { accountId: f.accountId, type: f.type, amountMinor: toMinor(f.amount, cur), currency: cur, note: f.note || "" };
-    if (f.type === "allocate") tpl.reserveId = f.reserveId;
-    if (f.type === "transfer") { // only offered for a transfer template: keep its To account (issue #145)
-      Object.assign(tpl, { accountId: "", fromAccountId: f.accountId, toAccountId: body.toAccountId });
-      tpl.tagIds = pickedCats("tplCats");
-    } else if (f.type !== "allocate") { // generates a transfer with an external side; keep a named one
-      const ext = (body && flow(body) === f.type && namedExt(body)) || EXT_ID;
-      Object.assign(tpl, { type: "transfer", accountId: "", fromAccountId: f.type === "expense" ? f.accountId : ext, toAccountId: f.type === "expense" ? ext : f.accountId });
-      tpl.tagIds = pickedCats("tplCats");
+    const f = Object.fromEntries(new FormData(e.target).entries());
+    let tpl, cur;
+    if (f.type === "allocate") {
+      cur = accCur(f.accountId);
+      tpl = { type: "allocate", accountId: f.accountId, reserveId: f.reserveId, amountMinor: toMinor(f.amount, cur), currency: cur, note: f.note || "" };
+    } else { // its type is what the two accounts make it (ADR 0029)
+      const { fromAccountId, toAccountId } = sideValues($("#tplFrom"), $("#tplTo"));
+      cur = sideCur(fromAccountId, toAccountId);
+      tpl = { type: flow({ type: "transfer", fromAccountId, toAccountId }), fromAccountId, toAccountId, amountMinor: toMinor(f.amount, cur), currency: cur, note: f.note || "", tagIds: pickedCats("tplCats") };
     }
     if (f.type !== "allocate" && f.frequency !== "never" && f.rangeMin && f.rangeMax) tpl.expectedRangeMinor = { min: toMinor(f.rangeMin, cur), max: toMinor(f.rangeMax, cur) };
     const schedule = f.frequency === "never" ? { frequency: "never" }

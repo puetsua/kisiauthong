@@ -17,14 +17,16 @@ type Account struct {
 	Memo                string `json:"memo,omitempty"` // the user's own free-text note (issue #42)
 }
 
-// Transaction is a money movement (ADR 0013): always stored as a transfer.
+// Transaction is a money movement (ADR 0013): from one account to another. Its type is
+// derived from the accounts and never stored (ADR 0029): "expense" (own → external),
+// "income" (external → own) or "transfer" (between own accounts).
 type Transaction struct {
 	ID                    string   `json:"id"`
 	AccountID             string   `json:"accountId,omitempty"` // input only: the own account of an expense or income shorthand
 	FromAccountID         string   `json:"fromAccountId,omitempty"`
 	ToAccountID           string   `json:"toAccountId,omitempty"`
 	TagIDs                []string `json:"tagIds,omitempty"` // its categories (ADR 0010)
-	Type                  string   `json:"type"`
+	Type                  string   `json:"type"`             // derived from the accounts (ADR 0029); on input a check, or a shorthand
 	State                 string   `json:"state"`
 	AmountMinor           int64    `json:"amountMinor"`
 	Currency              string   `json:"currency"`
@@ -88,6 +90,8 @@ type Tag struct {
 	Currency   string `json:"currency,omitempty"`   // a budget's currency
 	Memo       string `json:"memo,omitempty"`       // the user's own free-text note (issue #42)
 	Group      string `json:"group,omitempty"`      // orders it in tag pickers; "" = ungrouped (ADR 0028)
+	// CountTransfers: a budget also counts transfers between own accounts that carry the tag (ADR 0029)
+	CountTransfers bool `json:"countTransfers,omitempty"`
 }
 
 // Reserve earmarks money in own accounts, optionally toward a target (ADR 0013).

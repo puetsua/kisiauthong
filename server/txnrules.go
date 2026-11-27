@@ -21,16 +21,37 @@ const ExternalAccountID = "acc-external"
 // IsExternal reports whether money in this account is outside the user's books.
 func (a *Account) IsExternal() bool { return a.Kind == "external" }
 
+// Kind is what a money movement from one account to another is, derived from the two
+// accounts and never stored (ADR 0029): "expense" when an own account pays an external
+// one, "income" when an external account pays an own one, else "transfer" (between own
+// accounts; external → external is never accepted).
+func (d *Data) Kind(fromID, toID string) string {
+	from, to := d.accountByID(fromID), d.accountByID(toID)
+	switch {
+	case from == nil || to == nil:
+		return "transfer"
+	case !from.IsExternal() && to.IsExternal():
+		return "expense"
+	case from.IsExternal() && !to.IsExternal():
+		return "income"
+	}
+	return "transfer"
+}
+
 // IsSpending: money leaves the user's books (an own account pays an external one).
 func (d *Data) IsSpending(t Transaction) bool {
-	from, to := d.accountByID(t.FromAccountID), d.accountByID(t.ToAccountID)
-	return t.Type == "transfer" && from != nil && to != nil && !from.IsExternal() && to.IsExternal()
+	return d.Kind(t.FromAccountID, t.ToAccountID) == "expense"
 }
 
 // IsIncome: money enters the user's books from an external account.
 func (d *Data) IsIncome(t Transaction) bool {
+	return d.Kind(t.FromAccountID, t.ToAccountID) == "income"
+}
+
+// IsInternal: money moves between two of the user's own accounts.
+func (d *Data) IsInternal(t Transaction) bool {
 	from, to := d.accountByID(t.FromAccountID), d.accountByID(t.ToAccountID)
-	return t.Type == "transfer" && from != nil && to != nil && from.IsExternal() && !to.IsExternal()
+	return from != nil && to != nil && !from.IsExternal() && !to.IsExternal()
 }
 
 func (d *Data) transactionByID(id string) *Transaction {
@@ -60,14 +81,16 @@ func (d *Data) tagByID(id string) *Tag {
 	return nil
 }
 
-// normalizeTransaction stores every transaction as a transfer (ADR 0013).
-// "expense" and "income" are accepted as shorthands and become transfers to
-// or from an external account (the anonymous one unless the client names
-// another external account). It takes the currency from the user's own
-// account and rejects combinations the rules forbid: two different accounts,
-// at least one of them the user's own; between two own accounts the currency
-// must match (converting currency is spending in one and income in the
-// other); a positive amount; categories that exist.
+// normalizeTransaction checks a money movement from one account to another (ADR 0013)
+// and sets its type from the accounts (ADR 0029). type "transfer" (or none) takes
+// fromAccountId and toAccountId as given, so an external side makes it an expense or
+// an income. "expense" and "income" are also shorthands: accountId is the user's own
+// account and the other side is the external account named, else the anonymous one.
+// It takes the currency from the user's own account and rejects combinations the
+// rules forbid: two different accounts, at least one of them the user's own (external
+// → external is not a transaction); between two own accounts the currency must match
+// (converting currency is spending in one and income in the other); a positive
+// amount; categories that exist.
 func (d *Data) normalizeTransaction(t *Transaction) error {
 	if err := normalizeWhen(&t.Date, &t.Time, &t.TZ, &t.At); err != nil {
 		return err
@@ -88,11 +111,18 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 	}
 	switch t.Type {
 	case "expense", "income":
+		want := t.Type
 		if err := d.expandShorthand(&t.Type, &t.AccountID, &t.FromAccountID, &t.ToAccountID); err != nil {
 			return err
 		}
-		return d.normalizeTransaction(t)
-	case "transfer":
+		if err := d.normalizeTransaction(t); err != nil {
+			return err
+		}
+		if t.Type != want { // the expansion always gives one; kept as the check the type promises
+			return fmt.Errorf("an %s needs one of your own accounts and an external one", want)
+		}
+		return nil
+	case "", "transfer":
 		if t.AmountMinor <= 0 {
 			return fmt.Errorf("amountMinor must be positive")
 		}
@@ -107,8 +137,9 @@ func (d *Data) normalizeTransaction(t *Transaction) error {
 		t.TagIDs = ids
 		t.AccountID = ""
 		t.Currency = cur
+		t.Type = d.Kind(t.FromAccountID, t.ToAccountID)
 	default:
-		return fmt.Errorf("type must be transfer (expense and income are accepted as shorthands); reserves take allocations")
+		return fmt.Errorf("type must be expense, income or transfer (derived from the accounts); reserves take allocations")
 	}
 	return nil
 }
@@ -300,10 +331,17 @@ func checkTemplateAmount(tp TransactionTemplate) error {
 func (d *Data) normalizeTemplate(b *TemplateBody) error {
 	switch b.Type {
 	case "expense", "income":
+		want := b.Type
 		if err := d.expandShorthand(&b.Type, &b.AccountID, &b.FromAccountID, &b.ToAccountID); err != nil {
 			return err
 		}
-		return d.normalizeTemplate(b)
+		if err := d.normalizeTemplate(b); err != nil {
+			return err
+		}
+		if b.Type != want {
+			return fmt.Errorf("an %s needs one of your own accounts and an external one", want)
+		}
+		return nil
 	case "allocate": // an allocation template (ADR 0013)
 		a := d.accountByID(b.AccountID)
 		if a == nil || a.IsExternal() {
@@ -314,7 +352,7 @@ func (d *Data) normalizeTemplate(b *TemplateBody) error {
 		}
 		b.FromAccountID, b.ToAccountID, b.ExpectedRangeMinor, b.TagIDs = "", "", nil, nil
 		b.Currency = a.Currency
-	case "transfer":
+	case "", "transfer":
 		cur, err := d.transferCurrency(b.FromAccountID, b.ToAccountID)
 		if err != nil {
 			return err
@@ -326,8 +364,9 @@ func (d *Data) normalizeTemplate(b *TemplateBody) error {
 		b.TagIDs, b.ReserveID = ids, ""
 		b.AccountID = ""
 		b.Currency = cur
+		b.Type = d.Kind(b.FromAccountID, b.ToAccountID)
 	default:
-		return fmt.Errorf("a template generates a transfer (expense and income are accepted as shorthands) or an allocate")
+		return fmt.Errorf("a template generates an expense, an income or a transfer (derived from its accounts), or an allocate")
 	}
 	return nil
 }

@@ -44,7 +44,7 @@ func (d *Data) balanceWhere(accountID string, keep func(Transaction) bool) int64
 		bal = a.OpeningBalanceMinor
 	}
 	for _, t := range d.Transactions {
-		if t.Type != "transfer" || !keep(t) {
+		if !keep(t) {
 			continue
 		}
 		if t.FromAccountID == accountID {
@@ -84,7 +84,7 @@ func (d *Data) Held(accountID, today string) int64 {
 	}
 	var total int64
 	for _, t := range d.Transactions {
-		if t.Type == "transfer" && t.FromAccountID == accountID && Scheduled(t, today) {
+		if t.FromAccountID == accountID && Scheduled(t, today) {
 			total += t.AmountMinor
 		}
 	}
@@ -99,7 +99,7 @@ func (d *Data) Incoming(accountID, today string) int64 {
 	}
 	var total int64
 	for _, t := range d.Transactions {
-		if t.Type == "transfer" && t.ToAccountID == accountID && Scheduled(t, today) {
+		if t.ToAccountID == accountID && Scheduled(t, today) {
 			total += t.AmountMinor
 		}
 	}
@@ -210,11 +210,16 @@ func (d *Data) countsToward(tagID, cur string) bool {
 // posted spending (own account -> external) minus posted income (external
 // -> own account, e.g. a refund or a shared cost paid back) carrying the same
 // tag (ADR 0021). It is not floored, so more income than spending gives a
-// negative amount. Transfers between own accounts never count. Scheduled
-// transactions (dated after today) count once they post.
+// negative amount. Transfers between own accounts count, as spending, only when
+// the tag is set to count them (CountTransfers, off by default; ADR 0029).
+// Scheduled transactions (dated after today) count once they post.
 func (d *Data) BudgetSpent(tagID, start, end, today string) int64 {
 	if today < end {
 		end = today
+	}
+	internal := false
+	if tag := d.tagByID(tagID); tag != nil {
+		internal = tag.CountTransfers
 	}
 	linked := map[string]bool{}
 	for _, tt := range d.TransactionTags {
@@ -232,6 +237,8 @@ func (d *Data) BudgetSpent(tagID, start, end, today string) int64 {
 			total += t.AmountMinor
 		case d.IsIncome(t):
 			total -= t.AmountMinor
+		case internal && d.IsInternal(t):
+			total += t.AmountMinor
 		}
 	}
 	return total

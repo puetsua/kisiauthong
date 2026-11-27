@@ -50,7 +50,7 @@ func TestExpenseAndIncomeBecomeTransfers(t *testing.T) {
 	if err := d.normalizeTransaction(&exp); err != nil {
 		t.Fatal(err)
 	}
-	if exp.Type != "transfer" || exp.FromAccountID != "acc-jpy" || exp.ToAccountID != ExternalAccountID || exp.AccountID != "" || exp.Currency != "JPY" || len(exp.TagIDs) != 1 || exp.TagIDs[0] != "tag-travel" {
+	if exp.Type != "expense" || exp.FromAccountID != "acc-jpy" || exp.ToAccountID != ExternalAccountID || exp.AccountID != "" || exp.Currency != "JPY" || len(exp.TagIDs) != 1 || exp.TagIDs[0] != "tag-travel" {
 		t.Errorf("expense shorthand: %+v", exp)
 	}
 	named := Transaction{Type: "expense", AccountID: "acc-b", ToAccountID: "acc-shop", AmountMinor: 500}
@@ -182,7 +182,7 @@ func TestTitleAndMemo(t *testing.T) {
 func TestNormalizeTemplate(t *testing.T) {
 	d := seededData(t)
 	b := TemplateBody{Type: "income", AccountID: "acc-a", AmountMinor: 100}
-	if err := d.normalizeTemplate(&b); err != nil || b.Type != "transfer" || b.FromAccountID != ExternalAccountID || b.ToAccountID != "acc-a" || b.Currency != "TWD" {
+	if err := d.normalizeTemplate(&b); err != nil || b.Type != "income" || b.FromAccountID != ExternalAccountID || b.ToAccountID != "acc-a" || b.Currency != "TWD" {
 		t.Errorf("income template: %v %+v", err, b)
 	}
 	bad := TemplateBody{Type: "allocate", AccountID: "acc-a", ReserveID: "tag-food"}
@@ -230,8 +230,8 @@ func TestSeedTransactionsFollowRules(t *testing.T) {
 		if err := d.normalizeTransaction(&c); err != nil {
 			t.Errorf("%s: %v", tx.ID, err)
 		}
-		if tx.Type != "transfer" {
-			t.Errorf("%s: stored type %q", tx.ID, tx.Type)
+		if want := d.Kind(tx.FromAccountID, tx.ToAccountID); tx.Type != want || c.Type != want {
+			t.Errorf("%s: type %q / %q, the accounts make it %q", tx.ID, tx.Type, c.Type, want)
 		}
 	}
 	for _, a := range d.Allocations {
