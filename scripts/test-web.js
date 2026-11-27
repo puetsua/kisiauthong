@@ -891,24 +891,25 @@ test("Settings → Sync (#104): each (i) opens what its choice does, per ADR 002
   t.openSyncHelp("custom");
   assert.strictEqual($el("#dialogTitle").textContent, "Sync themes across devices");
   let body = $el("#dialogBody").innerHTML;
-  assert.match(body, /^<ul class="helplist"><li>Themes are kept on this device unless you turn on sync\./, "local by default");
-  assert.match(body, /custom themes on this device are uploaded to your account on the server/, "what it uploads");
-  assert.match(body, /Each time it is turned on, the themes here and on the server are merged: when the same theme is on both sides, the copy changed last is kept\. Themes made separately stay separate, even with the same name\./, "merge by id, newer wins");
-  assert.match(body, /Light or dark mode is not synced: each device keeps its own\./);
-  assert.match(body, /Turning it off stops syncing\. The copies already on the server stay there\./);
+  // at most three short lines each (#120), none of the dropped merge details
+  assert.strictEqual((body.match(/<li>/g) || []).length, 3);
+  assert.match(body, /^<ul class="helplist"><li>Shares your custom themes with your other devices that have this on\.<\/li>/, "what it shares, per device");
+  assert.match(body, /When a theme was changed on two devices, the last change is kept\. Deleting a theme deletes it on all of them\./, "newer wins, deletes spread");
+  assert.match(body, /<li>Turning it off keeps the copies on the server\.<\/li><\/ul>/);
+  assert.doesNotMatch(body, /Themes made separately|This choice is per device|Light or dark mode/);
   assert.match(body, /<button type="button" class="primarybtn" id="syncHelpOk">Close<\/button>/);
   t.openSyncHelp("selected");
   assert.strictEqual($el("#dialogTitle").textContent, "Sync theme selection");
   body = $el("#dialogBody").innerHTML;
-  assert.match(body, /the theme you pick here is uploaded/, "what it uploads");
-  assert.match(body, /that theme itself is uploaded too, even when Sync themes across devices is off/);
-  assert.match(body, /If the server did not have that theme yet, a notice says it was uploaded\./);
-  assert.match(body, /Light or dark mode is not synced/);
-  assert.match(body, /Turning it off stops syncing\. What is already on the server stays there\./);
+  assert.strictEqual((body.match(/<li>/g) || []).length, 3);
+  assert.match(body, /<li>Uses the theme you pick on your other devices that have this on\. Light or dark mode stays per device\.<\/li>/);
+  assert.match(body, /<li>A custom theme you pick is uploaded too, even with Sync themes across devices off\.<\/li>/);
+  assert.match(body, /<li>Turning it off keeps what is on the server\.<\/li>/);
+  assert.doesNotMatch(body, /a notice says it was uploaded|This choice is per device/);
   t.setLang("zh-TW");
   t.openSyncHelp("selected");
   assert.strictEqual($el("#dialogTitle").textContent, "主題選擇同步");
-  assert.match($el("#dialogBody").innerHTML, /即使「跨裝置主題同步」是關閉的，這個主題本身也會一起上傳.*>關閉<\/button>/s);
+  assert.match($el("#dialogBody").innerHTML, /即使「跨裝置主題同步」是關閉的.*>關閉<\/button>/s);
   t.setLang("en");
   // closing it (Close, ✕ or Esc) drops its width and gives the focus back to the (i) that opened it, found by id
   // so a section redrawn meanwhile still gets it

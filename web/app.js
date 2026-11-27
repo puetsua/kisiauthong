@@ -2110,23 +2110,18 @@ function themeSyncOnLoad(s) {
   drawAppearance();
 }
 // Settings → Sync (issue #104): each theme sync choice has an (i) button after its label that opens what it
-// does, in plain words (ADR 0027). The button sits beside the label, not in it, so it never toggles the box.
+// does in at most three short lines (issue #120; ADR 0027 keeps the full rules). The button sits beside the
+// label, not in it, so it never toggles the box.
 const SYNC_HELP = {
   custom: [N_("Sync themes across devices"), [
-    N_("Themes are kept on this device unless you turn on sync. This choice is per device: turn it on on each device that should share themes."),
-    N_("When it is on, the custom themes on this device are uploaded to your account on the server, and the custom themes your other devices uploaded are added here."),
-    N_("Each time it is turned on, the themes here and on the server are merged: when the same theme is on both sides, the copy changed last is kept. Themes made separately stay separate, even with the same name."),
-    N_("A custom theme deleted on one device that syncs is deleted on the others too."),
-    N_("Light or dark mode is not synced: each device keeps its own."),
-    N_("Turning it off stops syncing. The copies already on the server stay there."),
+    N_("Shares your custom themes with your other devices that have this on."),
+    N_("When a theme was changed on two devices, the last change is kept. Deleting a theme deletes it on all of them."),
+    N_("Turning it off keeps the copies on the server."),
   ]],
   selected: [N_("Sync theme selection"), [
-    N_("Themes are kept on this device unless you turn on sync. This choice is per device: turn it on on each device that should share themes."),
-    N_("When it is on, the theme you pick here is uploaded, and a theme picked on another device that syncs is used here too."),
-    N_("When the selected theme is a custom theme, that theme itself is uploaded too, even when Sync themes across devices is off, so your other devices can show it."),
-    N_("If the server did not have that theme yet, a notice says it was uploaded."),
-    N_("Light or dark mode is not synced: each device keeps its own."),
-    N_("Turning it off stops syncing. What is already on the server stays there."),
+    N_("Uses the theme you pick on your other devices that have this on. Light or dark mode stays per device."),
+    N_("A custom theme you pick is uploaded too, even with Sync themes across devices off."),
+    N_("Turning it off keeps what is on the server."),
   ]],
 };
 const INFO_SVG = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v6M12 7.5h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`;
