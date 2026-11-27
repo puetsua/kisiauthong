@@ -3116,7 +3116,10 @@ function openTemplateDialog(editId, draft) {
   const tp = editId ? state.data.transactionTemplates.find((x) => x.id === editId) : null;
   const src = tp || draft || null, body = src && src.template;
   const freq = src ? src.schedule.frequency || "monthly" : "monthly";
-  const mode = body ? flow(body) : "expense", own = body ? ownAcc(body) : "";
+  const mode = body ? flow(body) : "expense", own = body ? (mode === "transfer" ? body.fromAccountId : ownAcc(body)) : "";
+  // a template that generates a transfer between own accounts (made through the API) is offered as one,
+  // so saving it unchanged keeps it: Account is its From side and its To side is kept (issue #145)
+  const kinds = mode === "transfer" ? ["expense", "income", "transfer", "allocate"] : ["expense", "income", "allocate"];
   const acc = accountsByUse().map((a) => accOption(a, own)).join("");
   const rng = body && body.expectedRangeMinor ? body.expectedRangeMinor : null;
   const amt = body && body.amountMinor > 0 ? decimal(body.amountMinor, body.currency) : "";
@@ -3124,7 +3127,7 @@ function openTemplateDialog(editId, draft) {
   openDialog(tp ? __("Edit transaction template") : __("New transaction template"), dialogForm(
     field(N_("Template name"), `<input name="name" required placeholder="${esc(__("Streaming"))}" value="${src ? esc(src.name || "") : ""}">`, "wide") +
     field("Title", `<input name="note" maxlength="200" value="${body ? esc(body.note || "") : ""}">`, "wide") +
-    field("Generates", `<select name="type">${enumOptions(TPL_TYPE_L, ["expense", "income", "allocate"], mode)}</select>`) +
+    field("Generates", `<select name="type">${enumOptions(TPL_TYPE_L, kinds, mode)}</select>`) +
     field("Account", `<select name="accountId">${acc}</select>`) +
     field("Reserve", `<select name="reserveId">${state.data.reserves.map((r) => `<option value="${esc(r.id)}" ${body && body.reserveId === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("") || `<option value="">${esc(__("No reserves yet."))}</option>`}</select>`, "f-res") +
     field("Amount", `<input name="amount" type="number" step="any" min="0.01"${freq !== "never" ? " required" : ""} value="${amt}">`) +
@@ -3161,7 +3164,10 @@ function openTemplateDialog(editId, draft) {
     const f = Object.fromEntries(new FormData(e.target).entries()), cur = accCur(f.accountId);
     const tpl = { accountId: f.accountId, type: f.type, amountMinor: toMinor(f.amount, cur), currency: cur, note: f.note || "" };
     if (f.type === "allocate") tpl.reserveId = f.reserveId;
-    if (f.type !== "allocate") { // generates a transfer with an external side; keep a named one
+    if (f.type === "transfer") { // only offered for a transfer template: keep its To account (issue #145)
+      Object.assign(tpl, { accountId: "", fromAccountId: f.accountId, toAccountId: body.toAccountId });
+      tpl.tagIds = pickedCats("tplCats");
+    } else if (f.type !== "allocate") { // generates a transfer with an external side; keep a named one
       const ext = (body && flow(body) === f.type && namedExt(body)) || EXT_ID;
       Object.assign(tpl, { type: "transfer", accountId: "", fromAccountId: f.type === "expense" ? f.accountId : ext, toAccountId: f.type === "expense" ? ext : f.accountId });
       tpl.tagIds = pickedCats("tplCats");

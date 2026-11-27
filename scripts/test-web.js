@@ -2273,4 +2273,35 @@ test("transfer tags (#144): saving an edited transfer keeps the tags it has; a n
     Object.assign(t.state, { txnType: was.txnType, editingTxn: was.editingTxn });
   }
 });
+later.push(["transfer template (#145): saving an unchanged transfer template keeps it a transfer to its own To account", async () => {
+  const d = t.state.data, was = { transactionTemplates: d.transactionTemplates, tags: d.tags, accounts: d.accounts, externals: d.externals, allAccounts: d.allAccounts, transactions: d.transactions };
+  const form = $el("#dialogForm"), realApi = sandbox.api, realLoad = sandbox.load, sent = [];
+  const pay = { id: "tpl-p", name: "[TEST] Card payment", enabled: true, template: { type: "transfer", fromAccountId: "a2", toAccountId: "a1", amountMinor: 1500000, currency: "TWD", note: "Pay card bill", tagIds: ["g1"] }, schedule: { frequency: "monthly", interval: 1, dayOfMonth: 20, startDate: "2026-12-20" } };
+  const rent = { id: "tpl-r", name: "[TEST] Rent", enabled: true, template: { type: "transfer", fromAccountId: "a1", toAccountId: "acc-external", amountMinor: 1800000, currency: "TWD", note: "Rent" }, schedule: { frequency: "monthly", interval: 1, dayOfMonth: 1, startDate: "2026-12-01" } };
+  Object.assign(d, { transactionTemplates: [pay, rent], tags: [{ id: "g1", name: "Card payment" }], transactions: [], accounts: [acc, other], externals: [ext], allAccounts: [acc, other, ext] });
+  sandbox.api = (path, opts) => { sent.push([opts && opts.method, path, opts && JSON.parse(opts.body)]); return Promise.resolve({}); };
+  sandbox.load = () => Promise.resolve();
+  sandbox.FormData = function (f) { return new Map(Object.entries(f.fields)); };
+  const body = () => strip($el("#dialogBody").innerHTML);
+  try {
+    t.openTemplateDialog("tpl-p");
+    assert.match(body(), /<select name="type"><option value="expense" >Expense<\/option><option value="income" >Income<\/option><option value="transfer" selected>Transfer<\/option><option value="allocate" >Put in reserve<\/option><\/select>/, "Generates shows Transfer");
+    assert.match(body(), /<option value="a2" selected>Daily \(TWD\)<\/option>/, "Account is the template's From side");
+    form.fields = { name: pay.name, note: "Pay card bill", type: "transfer", accountId: "a2", reserveId: "", amount: "15000", frequency: "monthly", rangeMin: "", rangeMax: "", dayOfMonth: "20", startDate: "2026-12-20" };
+    const submit = form.listeners.submit[form.listeners.submit.length - 1];
+    await submit({ preventDefault: () => {}, target: form });
+    assert.strictEqual(sent.length, 1);
+    const [method, path, out] = sent[0];
+    assert.deepStrictEqual([method, path], ["PUT", "/api/templates/tpl-p"]);
+    assert.deepStrictEqual({ type: out.template.type, from: out.template.fromAccountId, to: out.template.toAccountId, tags: out.template.tagIds },
+      { type: "transfer", from: "a2", to: "a1", tags: ["g1"] }, "still a transfer from Daily to Pay with its tag");
+    // an expense template is offered no Transfer, as before
+    t.openTemplateDialog("tpl-r");
+    assert.doesNotMatch(body(), /value="transfer"/);
+    assert.match(body(), /<option value="expense" selected>Expense<\/option>/);
+  } finally {
+    sandbox.api = realApi; sandbox.load = realLoad; delete sandbox.FormData; delete form.fields;
+    Object.assign(d, was);
+  }
+}]);
 require("./run-tests.js")(later, n);
