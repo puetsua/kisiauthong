@@ -391,7 +391,9 @@ topmost popup only.
 - Quick picks (`#fQuick.quickbox`) are labelled groups (`.qgroup`, a small
   `.qhead` title: Templates, then Recent), each an even grid (`.quickpicks`)
   of `.qpick` buttons (name, then amount · account), long names cut with an
-  ellipsis. A template's name carries a bookmark icon (`.qtpl`).
+  ellipsis. A template's name carries a bookmark icon (`.qtpl`). A shortcut
+  without an amount shows the account only and, when used, leaves Amount
+  empty with the focus there (issue #121).
 - Tags (spending and income) are the tag picker (`#fCatsWrap`, see
   [Tag picker](#tag-picker)) with Recently used and Create tag. A transfer
   has no tags.

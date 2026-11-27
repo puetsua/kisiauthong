@@ -788,13 +788,17 @@ func handleCreateTemplate(w http.ResponseWriter, r *http.Request, b *Book) {
 	if !decode(w, r, &tp) {
 		return
 	}
-	if tp.Name == "" || tp.Template.AmountMinor <= 0 {
-		writeErr(w, 400, "name and template amount required")
+	if tp.Name == "" {
+		writeErr(w, 400, "name required")
 		return
 	}
 	tp.ID = newID("tpl")
 	tp.Enabled = true
 	if err := normalizeSchedule(&tp.Schedule); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if err := checkTemplateAmount(tp); err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
@@ -831,11 +835,15 @@ func handleTemplate(w http.ResponseWriter, r *http.Request, b *Book) {
 			return
 		}
 		tp.ID = id
-		if tp.Name == "" || tp.Template.AmountMinor <= 0 {
-			writeErr(w, 400, "name and template amount required")
+		if tp.Name == "" {
+			writeErr(w, 400, "name required")
 			return
 		}
 		if err := normalizeSchedule(&tp.Schedule); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		if err := checkTemplateAmount(tp); err != nil {
 			writeErr(w, 400, err.Error())
 			return
 		}

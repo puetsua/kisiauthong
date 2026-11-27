@@ -1178,7 +1178,7 @@ paths:
       tags: [templates]
       operationId: createTemplate
       summary: Add a transaction template
-      description: It starts enabled. name and a positive template amount are required.
+      description: It starts enabled. name is required, and a positive template amount unless the schedule frequency is never (a shortcut).
       security: [{ session: [] }, { apiKey: [] }]
       x-api-key-scope: "templates:write"
       requestBody:
@@ -1202,7 +1202,7 @@ paths:
       tags: [templates]
       operationId: updateTemplate
       summary: Replace a template
-      description: Changes future occurrences only.
+      description: Changes future occurrences only. The same rules as on create apply; a template that repeats needs a positive amount.
       security: [{ session: [] }, { apiKey: [] }]
       x-api-key-scope: "templates:write"
       requestBody:
@@ -1600,7 +1600,7 @@ components:
     TemplateBody:
       type: object
       description: What a template generates; allocate makes allocations into reserveId from accountId.
-      required: [type, amountMinor]
+      required: [type]
       properties:
         type: { type: string, enum: [transfer, expense, income, allocate] }
         accountId: { type: string }
@@ -1608,7 +1608,15 @@ components:
         toAccountId: { type: string }
         reserveId: { type: string }
         tagIds: { type: array, items: { type: string } }
-        amountMinor: { type: integer, format: int64, exclusiveMinimum: 0 }
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: >-
+            Positive for a template that repeats: what it generates always has one fixed amount.
+            A shortcut (schedule frequency never) may leave it out or send 0 for an amount that
+            differs every time; using it leaves the add form's amount empty.
         expectedRangeMinor:
           type: object
           required: [min, max]

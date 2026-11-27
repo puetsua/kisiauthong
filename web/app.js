@@ -1398,7 +1398,7 @@ const scheduleText = (s) => lbl(FREQ_L, s.frequency) + (s.dayOfMonth ? " · " + 
 const isShortcut = (tp) => tp.schedule.frequency === "never";
 function screenTemplates(v) {
   const name = (t) => ({ l: N_("Template"), v: `<button class="titlelink" data-detail-template="${esc(t.id)}">${esc(t.name)}</button>${t.template.expectedRangeMinor ? `<br><span class="chip due">${esc(__("variable {min}–{max}", { min: fmt(t.template.expectedRangeMinor.min, t.template.currency), max: fmt(t.template.expectedRangeMinor.max, t.template.currency) }))}</span>` : ""}` });
-  const what = (t, l) => ({ l, v: `${esc(lbl(TPL_TYPE_L, flow(t.template)))} ${fmt(t.template.amountMinor, t.template.currency)}<br><span class="muted">${esc(transferAcct(t.template))}${t.template.reserveId ? " → " + esc(resName(t.template.reserveId)) : ""}${(t.template.tagIds || []).map((id) => " → " + esc(tagName(id))).join("")}</span>` });
+  const what = (t, l) => ({ l, v: `${esc(lbl(TPL_TYPE_L, flow(t.template)))}${t.template.amountMinor > 0 ? " " + fmt(t.template.amountMinor, t.template.currency) : ""}<br><span class="muted">${esc(transferAcct(t.template))}${t.template.reserveId ? " → " + esc(resName(t.template.reserveId)) : ""}${(t.template.tagIds || []).map((id) => " → " + esc(tagName(id))).join("")}</span>` });
   const status = (t) => ({ l: N_("Status"), v: esc(t.enabled ? __("Enabled") : __("Paused")) });
   const all = state.data.transactionTemplates;
   const rows = all.filter((t) => !isShortcut(t)).map((t) => row([name(t), what(t, N_("Generates")),
@@ -2753,11 +2753,12 @@ function quickPicks(type) {
   const mine = state.data.transactions.filter((t) => t.state === "posted" && flow(t) === type);
   const uses = {};
   mine.filter((t) => t.date >= addDays(today, -90) && t.date <= today).forEach((t) => { const k = key(t, pickLabel(t)); uses[k] = (uses[k] || 0) + 1; });
+  // a shortcut fills in its own title, none when it has none (issue #121); its entries are counted by the label they get
   const tpl = state.data.transactionTemplates.filter((tp) => tp.enabled && isShortcut(tp) && flow(tp.template) === type).map((tp) => {
-    const title = tp.template.note || tp.name;
-    return { label: tp.name, title, t: tp.template, n: uses[key(tp.template, title)] || 0, tpl: true };
+    const k = key(tp.template, pickLabel(tp.template));
+    return { label: tp.name, title: tp.template.note || "", t: tp.template, n: uses[k] || 0, tpl: true, k };
   }).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
-  const seen = new Set(tpl.map((p) => key(p.t, p.title))), recent = [];
+  const seen = new Set(tpl.map((p) => p.k)), recent = [];
   for (const t of [...mine].sort((a, b) => enteredAt(b).localeCompare(enteredAt(a)))) {
     const label = pickLabel(t), k = key(t, label);
     if (!label || seen.has(k)) continue;
@@ -2772,7 +2773,7 @@ function drawQuick(picks) {
   const { tpl = [], recent = [] } = Array.isArray(picks) ? {} : picks;
   state.quick = [...tpl, ...recent];
   const box = $("#fQuick"), acc = (t) => (flow(t) === "transfer" ? t.fromAccountId : ownAcc(t));
-  const chip = (p, i) => `<button type="button" class="qpick${p.tpl ? " qtpl" : ""}" data-pick="${i}" aria-pressed="false" title="${esc(p.label)}"><b>${p.tpl ? TPL_ICON : ""}${esc(p.label)}</b><small>${esc(fmt(Math.abs(p.t.amountMinor), p.t.currency))} · ${esc(accName(acc(p.t)))}</small></button>`;
+  const chip = (p, i) => `<button type="button" class="qpick${p.tpl ? " qtpl" : ""}" data-pick="${i}" aria-pressed="false" title="${esc(p.label)}"><b>${p.tpl ? TPL_ICON : ""}${esc(p.label)}</b><small>${p.t.amountMinor ? esc(fmt(Math.abs(p.t.amountMinor), p.t.currency)) + " · " : ""}${esc(accName(acc(p.t)))}</small></button>`;
   const group = (title, list, from) => list.length ? `<div class="qgroup" role="group" aria-label="${esc(title)}"><span class="qhead">${esc(title)}</span><div class="quickpicks">${list.map((p, i) => chip(p, from + i)).join("")}</div></div>` : "";
   box.hidden = !state.quick.length;
   box.innerHTML = group(__("Templates"), tpl, 0) + group(__("Recent"), recent, tpl.length);
@@ -2780,13 +2781,14 @@ function drawQuick(picks) {
 }
 const setSel = (sel, v) => { if (v && [...sel.options].some((o) => o.value === v)) sel.value = v; };
 // fill the form from a pick; the date and time stay now, and the amount is ready to change
+// (empty when the shortcut has none, issue #121)
 function applyPick(p, btn) {
   const t = p.t, mode = flow(t), el = $("#txnForm").elements;
   setSel(el.accountId, mode === "transfer" ? t.fromAccountId : ownAcc(t));
   setTxnType(mode, txnCats(t));
   if (mode === "transfer") refreshToAccounts(t.toAccountId);
   if (mode === "expense" || mode === "income") setSel($("#fExt"), extAcc(t) || EXT_ID);
-  el.amount.value = decimal(t.amountMinor, t.currency);
+  el.amount.value = t.amountMinor ? decimal(t.amountMinor, t.currency) : "";
   el.note.value = p.title;
   $("#fQuick").querySelectorAll("[data-pick]").forEach((b) => b.setAttribute("aria-pressed", b === btn));
   el.amount.focus();
@@ -3089,7 +3091,8 @@ function openTagDialog(kind, editId) {
   });
 }
 // editId: the template to edit; draft: the values of a new one (Save as template in the add form).
-// A template that never repeats is a shortcut: it only fills in the add form (ADR 0012).
+// A template that never repeats is a shortcut: it only fills in the add form (ADR 0012), so its
+// amount may be empty (issue #121); Tags and Title are always optional.
 function openTemplateDialog(editId, draft) {
   const tp = editId ? state.data.transactionTemplates.find((x) => x.id === editId) : null;
   const src = tp || draft || null, body = src && src.template;
@@ -3104,7 +3107,7 @@ function openTemplateDialog(editId, draft) {
     field("Generates", `<select name="type">${enumOptions(TPL_TYPE_L, ["expense", "income", "allocate"], mode)}</select>`) +
     field("Account", `<select name="accountId">${acc}</select>`) +
     field("Reserve", `<select name="reserveId">${state.data.reserves.map((r) => `<option value="${esc(r.id)}" ${body && body.reserveId === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("") || `<option value="">${esc(__("No reserves yet."))}</option>`}</select>`, "f-res") +
-    field("Amount", `<input name="amount" type="number" step="any" min="0.01" required value="${amt}">`) +
+    field("Amount", `<input name="amount" type="number" step="any" min="0.01"${freq !== "never" ? " required" : ""} value="${amt}">`) +
     field(N_("Frequency"), `<select name="frequency">${enumOptions(FREQ_L, ["never", "monthly", "quarterly", "yearly", "weekly", "daily"], freq)}</select>`) +
     field(N_("Expected min (variable bill, optional)"), `<input name="rangeMin" type="number" step="any" value="${rng ? decimal(rng.min, body.currency) : ""}">`, "f-range") +
     field(N_("Expected max (variable bill, optional)"), `<input name="rangeMax" type="number" step="any" value="${rng ? decimal(rng.max, body.currency) : ""}">`, "f-range") +
@@ -3130,6 +3133,7 @@ function openTemplateDialog(editId, draft) {
     show(".f-dom", ["monthly", "quarterly", "yearly"].includes(form.elements.frequency.value));
     form.elements.reserveId.required = alloc;
     form.elements.startDate.required = !never;
+    form.elements.amount.required = !never; // a shortcut may leave it empty (issue #121); what repeats has one fixed amount
   };
   form.elements.type.addEventListener("change", sync);
   form.elements.frequency.addEventListener("change", sync);
