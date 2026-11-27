@@ -2128,13 +2128,21 @@ const INFO_SVG = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="t
 const infoBtn = (id, label) => `<button type="button" class="infobtn" id="${id}" aria-haspopup="dialog" aria-label="${esc(__("About “{name}”", { name: label }))}" title="${esc(__("About “{name}”", { name: label }))}">${INFO_SVG}</button>`;
 // a clock time in the display zone (Settings → Time zone), for when something last happened today
 const clockTime = (iso) => new Date(iso).toLocaleTimeString(LANG, { hour: "2-digit", minute: "2-digit", timeZone: displayTZ() });
+// Settings → Appearance → Spending and income (issue #117): what Color only means, behind an (i) after the row label
+const AMT_HELP = [N_("Spending and income"), [
+  N_("With Color only, spending and income differ only by color and by the icon in front of each row."),
+]];
 function openSyncHelp(which) {
-  const [title, lines] = SYNC_HELP[which], back = which === "custom" ? "syncCustomHelp" : "syncSelectedHelp";
+  const [title, lines] = SYNC_HELP[which];
+  openHelp(title, lines, which === "custom" ? "syncCustomHelp" : "syncSelectedHelp");
+}
+// the help dialog of an (i) button: its lines and Close; back is the id of the (i) that opened it
+function openHelp(title, lines, back) {
   const dlg = $("#dialog");
   openDialog(__(title), `<ul class="helplist">${lines.map((l) => `<li>${esc(__(l))}</li>`).join("")}</ul>`
-    + `<div class="formactions"><span class="grow"></span><button type="button" class="primarybtn" id="syncHelpOk">${esc(__("Close"))}</button></div>`);
+    + `<div class="formactions"><span class="grow"></span><button type="button" class="primarybtn" id="helpOk">${esc(__("Close"))}</button></div>`);
   dlg.classList.add("helpdlg");
-  $("#syncHelpOk").addEventListener("click", () => dlg.close());
+  $("#helpOk").addEventListener("click", () => dlg.close());
   // back to the (i) that opened it, also when a sync redrew the section meanwhile
   dlg.addEventListener("close", () => { dlg.classList.remove("helpdlg"); const b = document.getElementById(back); if (b) b.focus(); }, { once: true });
 }
@@ -2446,7 +2454,11 @@ function screenSettings(v) {
   const src = state.about && state.about.sourceUrl;
   const pref = (state.general && state.general.language) || "";
   const langOpts = [["", __("Browser default")], ...Object.entries(LANGS)].map(([k, name]) => `<option value="${esc(k)}" ${k === pref ? "selected" : ""} ${k ? `lang="${esc(k)}"` : ""}>${esc(name)}</option>`).join("");
-  const row = (label, control, forId) => `<div class="srow"><${forId ? `label for="${forId}"` : "span"} class="sl">${esc(label)}</${forId ? "label" : "span"}><div class="sc">${control}</div></div>`;
+  // info: an (i) button after the label, beside it and not in it (docs/ui-guide.md, Info button)
+  const row = (label, control, forId, info) => {
+    const l = `<${forId ? `label for="${forId}"` : "span"} class="sl">${esc(label)}</${forId ? "label" : "span"}>`;
+    return `<div class="srow">${info ? `<div class="slline">${l}${info}</div>` : l}<div class="sc">${control}</div></div>`;
+  };
   const select = (id, opts) => `<select id="${id}">${opts}</select>`;
   const SECTIONS = [
     ["region", __("Language & region"), [
@@ -2467,8 +2479,8 @@ function screenSettings(v) {
     ["appearance", __("Appearance"), [
       row(__("Theme"), `<div id="themePick"></div>`),
       row(__("Mode"), `<div id="modePick"></div>`),
-      row(__("Spending and income"), `<select id="setAmtStyle" aria-describedby="setAmtHint">${enumOptions(AMTSTYLE_L, Object.keys(AMTSTYLE_L), amountStyle())}</select>`
-        + `<p class="shint" id="setAmtHint">${esc(__("With Color only, spending and income differ only by color and by the icon in front of each row."))}</p>`, "setAmtStyle"),
+      row(__("Spending and income"), `<select id="setAmtStyle">${enumOptions(AMTSTYLE_L, Object.keys(AMTSTYLE_L), amountStyle())}</select>`,
+        "setAmtStyle", infoBtn("setAmtHelp", __("Spending and income"))),
     ]],
     // Sync (issue #104): where this device stands with the server: live updates, the last fetch of the
     // books, and the theme sync choices (ADR 0023, 0027). Nothing here is a new kind of sync.
@@ -2512,6 +2524,7 @@ function screenSettings(v) {
   $("#setNumFmt").addEventListener("change", (e) => saveGeneral({ numberFormat: e.target.value }, () => __("Number format saved.")));
   $("#setWidth").addEventListener("change", (e) => saveGeneral({ pageWidth: e.target.value }, () => __("Page width saved.")));
   $("#setAmtStyle").addEventListener("change", (e) => saveGeneral({ amountStyle: e.target.value }, () => __("Spending and income display saved.")));
+  $("#setAmtHelp").addEventListener("click", () => openHelp(...AMT_HELP, "setAmtHelp"));
   drawAppearance(keep);
   $("#setTz").addEventListener("change", (e) => saveGeneral({ timeZone: e.target.value }, () => __("Time zone saved.")));
   if ($("#copyCommit")) $("#copyCommit").addEventListener("click", async () => { try { await navigator.clipboard.writeText(verAbout().commit); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } });
