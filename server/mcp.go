@@ -275,7 +275,7 @@ func init() {
 			"limit":     integer("At most this many (default 50, up to 500)"),
 			"offset":    integer("Skip this many first, for paging"),
 		}), toolListTransactions},
-		{"spending_by_category", "Total posted spending per category and currency in one calendar month: money paid to external accounts, plus transfers between own accounts under a budget set to count them (countTransfers).", ScopeRead, obj(map[string]interface{}{
+		{"spending_by_category", "Total posted spending per category and currency in one calendar month.", ScopeRead, obj(map[string]interface{}{
 			"month": str("YYYY-MM; this month when left out"),
 		}), toolSpending},
 		{"list_templates", "List recurring transaction templates (salary, rent, subscriptions, automatic saving) and when each is next due.", ScopeRead,

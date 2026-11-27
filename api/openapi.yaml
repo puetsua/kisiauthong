@@ -1668,7 +1668,6 @@ components:
         today: { type: string, format: date, description: "The user's today." }
         spendingThisMonth:
           type: array
-          description: "Posted spending this calendar month per (category, currency): money paid to external accounts, plus transfers between own accounts under a budget with countTransfers, in its currency (ADR 0029)."
           items:
             type: object
             required: [tagId, currency, amountMinor]

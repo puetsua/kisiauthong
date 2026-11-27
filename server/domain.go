@@ -258,10 +258,7 @@ type TagSpend struct {
 // largest first within a currency. Currencies are never mixed. An
 // expense linked to two category tags counts toward both, as in BudgetSpent.
 // Unlike BudgetSpent it is gross spending: income never reduces it (ADR 0021).
-// A transfer between own accounts counts only under a budget tag set to count
-// transfers (CountTransfers, ADR 0029), in that budget's currency, as its
-// budget counts it; never as uncategorised. Scheduled expenses (dated after
-// today) count once they post.
+// Scheduled expenses (dated after today) count once they post.
 func (d *Data) SpendingByCategory(ref, today string, curOrder []string) []TagSpend {
 	month := ref[:7]
 	cats := map[string][]string{}
@@ -271,24 +268,15 @@ func (d *Data) SpendingByCategory(ref, today string, curOrder []string) []TagSpe
 	type key struct{ tag, cur string }
 	sums := map[key]int64{}
 	for _, t := range d.Transactions {
-		if !happened(t, today) || len(t.Date) < 7 || t.Date[:7] != month {
+		if !happened(t, today) || !d.IsSpending(t) || len(t.Date) < 7 || t.Date[:7] != month {
 			continue
 		}
-		switch {
-		case d.IsSpending(t):
-			tags := cats[t.ID]
-			if len(tags) == 0 {
-				tags = []string{""}
-			}
-			for _, tag := range tags {
-				sums[key{tag, t.Currency}] += t.AmountMinor
-			}
-		case d.IsInternal(t):
-			for _, tag := range cats[t.ID] {
-				if tg := d.tagByID(tag); tg != nil && tg.CountTransfers && d.countsToward(tag, t.Currency) {
-					sums[key{tag, t.Currency}] += t.AmountMinor
-				}
-			}
+		tags := cats[t.ID]
+		if len(tags) == 0 {
+			tags = []string{""}
+		}
+		for _, tag := range tags {
+			sums[key{tag, t.Currency}] += t.AmountMinor
 		}
 	}
 	out := make([]TagSpend, 0, len(sums))
