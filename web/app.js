@@ -2285,7 +2285,26 @@ function screenThemeEditor(v) {
   $("#themeCancel").addEventListener("click", (e) => leaveThemeEditor(e, d));
 }
 function themeSplitOff(d) { d.split = false; d.dark = null; d.editing = "light"; render(); }
-async function copyText(text) { try { await navigator.clipboard.writeText(text); msg(__("Copied.")); } catch (e) { msg(__("Copy failed."), "error"); } }
+// copyText puts text on the clipboard and confirms with a toast (done). navigator.clipboard needs a
+// secure context, so on plain http:// LAN addresses it is missing; a hidden textarea and
+// execCommand("copy") cover that, and focus goes back to the button pressed
+function copyFallback(text) {
+  const ta = document.createElement("textarea"), back = document.activeElement;
+  ta.value = text; ta.setAttribute("readonly", ""); ta.setAttribute("aria-hidden", "true");
+  ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px";
+  document.body.append(ta); ta.select(); ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { /* not supported */ }
+  ta.remove();
+  if (back && back.focus) back.focus();
+  return ok;
+}
+async function copyText(text, done = __("Copied.")) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { if (!copyFallback(text)) { msg(__("Copy failed."), "error"); return false; } }
+  msg(done);
+  return true;
+}
 async function leaveThemeEditor(e, d) {
   if (!draftDirty(d)) { state.themeDraft = null; return; }
   e.preventDefault();
@@ -3408,6 +3427,11 @@ function screenAccount(v) {
 }
 
 // Two-step verification card: off -> scan + verify -> recovery codes -> on
+// the manual key: grouped in fours; its mask has the same groups, so showing it does not move the line
+const keyGroups = (k) => k.replace(/\s+/g, "").replace(/(.{4})/g, "$1 ").trim();
+const keyMask = (k) => keyGroups(k).replace(/\S/g, "•");
+const EYE_SVG = `<svg class="eye-open" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg><svg class="eye-shut" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9.9 4.24A9 9 0 0 1 12 4c6.4 0 10 8 10 8a18 18 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24M17.94 17.94A10 10 0 0 1 12 20c-6.4 0-10-8-10-8a18 18 0 0 1 5.06-5.94M2 2l20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const COPY_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 9h11v11H9zM5 15H4V4h11v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 async function refreshMe() { state.me = await api("/api/me"); renderUserBtn(); }
 function drawTotp(stage, data) {
   const card = $("#totpCard"), u = state.me;
@@ -3416,10 +3440,18 @@ function drawTotp(stage, data) {
     card.innerHTML = `<div class="totpsetup">
         <img class="qr" src="${esc(data.qr)}" alt="${esc(__("QR code for your authenticator app"))}" width="180" height="180">
         <div><ol class="steps"><li>${esc(__("Scan the QR code with an authenticator app (Google Authenticator, 1Password, Authy…)."))}</li>
-          <li>${esc(__("Or enter this key by hand:"))} <code class="secret">${esc(data.secret.replace(/(.{4})/g, "$1 ").trim())}</code></li>
+          <li>${esc(__("Or enter this key by hand:"))} <code class="secret" id="totpKey">${esc(keyMask(data.secret))}</code><span class="keybtns"><button class="iconbtn keybtn" type="button" id="totpKeyShow" aria-pressed="false" aria-label="${esc(__("Show key"))}" title="${esc(__("Show key"))}">${EYE_SVG}</button><button class="iconbtn keybtn" type="button" id="totpKeyCopy" aria-label="${esc(__("Copy key"))}" title="${esc(__("Copy key"))}">${COPY_SVG}</button></span></li>
           <li>${esc(__("Enter the 6-digit code it shows:"))}</li></ol>
         <form id="totpEnable" class="inline"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required placeholder="123456"><button class="primarybtn" type="submit">${esc(__("Verify"))}</button><button class="smallbtn" type="button" id="totpCancel">${esc(__("Cancel"))}</button></form></div></div>`;
     card.querySelector("[name=code]").focus();
+    // the key stays hidden (only its mask is in the page) until the eye shows it; every new draw hides it
+    const key = data.secret, keyEl = $("#totpKey"), show = $("#totpKeyShow");
+    show.addEventListener("click", () => {
+      const on = show.getAttribute("aria-pressed") !== "true", label = on ? __("Hide key") : __("Show key");
+      keyEl.textContent = on ? keyGroups(key) : keyMask(key);
+      show.setAttribute("aria-pressed", String(on)); show.setAttribute("aria-label", label); show.title = label;
+    });
+    $("#totpKeyCopy").addEventListener("click", () => copyText(key.replace(/\s+/g, ""), __("Key copied.")));
     $("#totpCancel").addEventListener("click", () => drawTotp());
     onSubmit($("#totpEnable"), async (e) => {
       try { const res = await post("/api/me/totp/enable", { code: e.target.elements.code.value }); await refreshMe(); drawTotp("codes", res.recoveryCodes); }

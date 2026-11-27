@@ -48,7 +48,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(read("i18n.js"), sandbox, { filename: "i18n.js" });
 vm.runInContext(read("theme.js"), sandbox, { filename: "theme.js" });
-vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, widgetName, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, screenAccount, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog, own };", sandbox, { filename: "app.js" });
+vm.runInContext(read("app.js") + "\nthis.__t = { state, accountCard, feedRow, screenAcct, screenTransactions, bindDetails, currentScreen, render, setLang, verHTML, verAboutRows, screenTags, screenSettings, appServerRows, askConfirm, drawAppServers, showAuth, showCodeStep, dashTile, dashPaneHTML, tileMeta, widgetName, screenDashboardEditor, DASH_DEFAULT, screenTag, openAccountDialog, openTagDialog, categoryCard, budgetCard, periodFor, notePanel, live, liveStart, liveStop, liveOnChange, liveRefresh, liveWake, liveBehind, liveBusy, tagNet, netHTML, budgetEnded, widgetBody, screenTags, moneyBlock, moneyTile, curOrder, curSort, pickItems, currencyOptions, fmtNum, fmt, dayNet, dayNetHTML, amountStyle, applyAmountStyle, drawAppearance, pickTheme, openSyncHelp, liveStateHTML, loadedHTML, drawLiveState, SYNC_HELP, themeSyncPlan, themeSyncPrefs, screenThemeEditor, syncThemes, deleteCustomTheme, draftDirty, duplicateTheme, makeTagPicker, screenAccount, tagGroups, recentTags, pickedCats, pickers, openTemplateDialog, own, drawTotp, copyText };", sandbox, { filename: "app.js" });
 const t = sandbox.__t;
 
 // made-up data: today is 2026-11-18; one own account with a reserve, two scheduled rows out and one in
@@ -2104,5 +2104,70 @@ later.push(["save guard (#131): every form in the web UI submits through onSubmi
   // the one addEventListener("submit") is onSubmit's own; a form wired directly would have the gap again
   assert.strictEqual((src.match(/addEventListener\(\s*["'`]submit["'`]|\.onsubmit\s*=/g) || []).length, 1, "only onSubmit listens for submit");
   assert.ok((src.match(/onSubmit\(\S+, async \(e\) =>/g) || []).length >= 17, "the dialog, transaction, sign-in and Settings forms use onSubmit");
+}]);
+later.push(["two-step setup (#122): the manual key is masked, the eye shows it, Copy copies it hidden", async () => {
+  const wasMe = t.state.me, wasNav = sandbox.navigator, secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"; // a made-up key
+  const card = $el("#totpCard"), keyEl = $el("#totpKey"), show = $el("#totpKeyShow"), copy = $el("#totpKeyCopy"), toast = $el("#toast");
+  const attrs = {};
+  show.getAttribute = (k) => attrs[k] ?? null; show.setAttribute = (k, v) => { attrs[k] = v; };
+  card.querySelector = () => ({ focus: () => {} });
+  const copied = [];
+  try {
+    t.state.me = { username: "demo", totpEnabled: false };
+    const draw = () => { show.listeners = {}; copy.listeners = {}; Object.keys(attrs).forEach((k) => delete attrs[k]); keyEl.textContent = undefined; t.drawTotp("setup", { secret, qr: "data:image/png;base64,AA==" }); };
+    draw();
+    const html = card.innerHTML, mask = "•••• •••• •••• •••• •••• •••• •••• ••••";
+    assert.ok(!html.includes(secret) && !html.includes("JBSW"), "the key is not in the page while hidden");
+    assert.match(html, /Or enter this key by hand: <code class="secret" id="totpKey">•••• •••• •••• •••• •••• •••• •••• ••••<\/code><span class="keybtns">/, "the mask has the key's groups of four");
+    assert.match(html, /<button class="iconbtn keybtn" type="button" id="totpKeyShow" aria-pressed="false" aria-label="Show key"/);
+    assert.match(html, /<button class="iconbtn keybtn" type="button" id="totpKeyCopy" aria-label="Copy key"/);
+    assert.match(html, /<img class="qr" src="data:image\/png;base64,AA=="/, "the QR code stays");
+    // the eye shows the key in fours and hides it again
+    show.listeners.click[0]();
+    assert.strictEqual(keyEl.textContent, "JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP");
+    assert.strictEqual(attrs["aria-pressed"], "true"); assert.strictEqual(attrs["aria-label"], "Hide key");
+    show.listeners.click[0]();
+    assert.strictEqual(keyEl.textContent, mask);
+    assert.strictEqual(attrs["aria-pressed"], "false"); assert.strictEqual(attrs["aria-label"], "Show key");
+    // Copy: the key without spaces, while it stays hidden
+    sandbox.navigator = { languages: ["en"], clipboard: { writeText: (v) => { copied.push(v); return Promise.resolve(); } } };
+    await copy.listeners.click[0]();
+    assert.deepStrictEqual(copied, [secret]);
+    assert.strictEqual(toast.textContent, "Key copied.");
+    assert.strictEqual(keyEl.textContent, mask, "copying does not show the key");
+    // a new draw (Cancel, a new setup, coming back) hides a shown key
+    show.listeners.click[0]();
+    draw();
+    assert.ok(!card.innerHTML.includes("JBSW"), "drawn anew: hidden again");
+    assert.match(card.innerHTML, /aria-pressed="false" aria-label="Show key"/);
+    t.setLang("zh-TW");
+    draw();
+    assert.match(card.innerHTML, /aria-label="顯示金鑰".*aria-label="複製金鑰"/s);
+    show.listeners.click[0]();
+    assert.strictEqual(attrs["aria-label"], "隱藏金鑰");
+    await copy.listeners.click[0]();
+    assert.strictEqual(toast.textContent, "已複製金鑰。");
+  } finally { t.setLang("en"); t.state.me = wasMe; sandbox.navigator = wasNav; }
+}]);
+later.push(["copyText (#122): without navigator.clipboard (http:// on the LAN) a hidden textarea and execCommand copy", async () => {
+  const wasNav = sandbox.navigator, toast = $el("#toast"), btn = { focused: 0, focus() { this.focused++; } };
+  const made = [], ran = [];
+  const ta = () => { const el = { value: "", style: {}, setAttribute: () => {}, select: () => { el.selected = true; }, setSelectionRange: () => {}, remove: () => { el.removed = true; } }; made.push(el); return el; };
+  Object.assign(docProps, { createElement: ta, activeElement: btn, body: { append: () => {} } });
+  try {
+    sandbox.navigator = { languages: ["en"] }; // no clipboard outside a secure context
+    docProps.execCommand = (c) => { ran.push([c, made[0].value, made[0].selected]); return true; };
+    assert.strictEqual(await t.copyText("ABCD2345", "Key copied."), true);
+    assert.deepStrictEqual(ran, [["copy", "ABCD2345", true]]);
+    assert.ok(made[0].removed, "the textarea is removed"); assert.strictEqual(btn.focused, 1, "focus goes back to the button");
+    assert.strictEqual(toast.textContent, "Key copied.");
+    docProps.execCommand = () => false;
+    assert.strictEqual(await t.copyText("ABCD2345"), false);
+    assert.strictEqual(toast.textContent, "Copy failed.");
+    sandbox.navigator = { languages: ["en"], clipboard: { writeText: () => Promise.reject(new Error("denied")) } };
+    docProps.execCommand = () => true;
+    assert.strictEqual(await t.copyText("x"), true, "a refused clipboard falls back too");
+    assert.strictEqual(toast.textContent, "Copied.");
+  } finally { sandbox.navigator = wasNav; ["createElement", "activeElement", "body", "execCommand"].forEach((k) => delete docProps[k]); }
 }]);
 require("./run-tests.js")(later, n);

@@ -421,6 +421,10 @@ topmost popup only.
   Success: `role="status"`, 3 s. Error: red, `role="alert"`, 7 s, click to
   dismiss. A new toast replaces the old one.
 - Phrase it as the result, short, ending with a full stop.
+- Copying to the clipboard goes through `copyText(text, done)`: it toasts
+  `done` ("Copied." by default) or "Copy failed.", and where
+  `navigator.clipboard` is missing (plain `http://` on the local network) it
+  copies through a hidden textarea and gives focus back to the button.
 - A change that can be taken back (merging tags) uses `msgUndo(text, undo)`:
   the toast carries an Undo button and stays 10 s, longer while the pointer
   or keyboard focus is on it.
@@ -440,6 +444,7 @@ topmost popup only.
 | Info button | `button.infobtn` (an (i) icon, 40px, `aria-haspopup="dialog"`, `aria-label` "About “{label}”") after a `label.checkrow`, both in a `div.checkline` | opens a short explanation of a choice in the dialog (`dialog.helpdlg`, a `.helplist` and Close); beside the label, never in it, so it toggles nothing. For a rule a label cannot carry, not for hints the layout already gives (Settings → Sync) |
 | Colour swatch | `.tswatches` of `button.tswatch` (`aria-pressed`) with the colour, its name and hex | the theme editor's main colours; the chosen one opens the picker under its group |
 | Colour picker | `.tpick`: `.tpsv` (`role=slider`, arrow keys), `.tphue` range, hex field, a plain contrast figure | the theme editor only; a figure, never a warning (ADR 0015) |
+| Secret key | `code.secret` holding a mask of the same groups (`keyMask()`), then `span.keybtns`: an eye `button.keybtn` (`aria-pressed`, "Show key" / "Hide key") and a copy `button.keybtn` ("Copy key") | a secret shown for typing by hand (two-step setup, issue #122): hidden by default, the real value not in the page until the eye shows it, hidden again on every new draw; Copy uses `copyText()` with the spaces removed and never shows it |
 | Tag picker | `makeTagPicker(id, opts)` → `.tagpicker`: `.tgpbox` (chips + `input.tgpq`, `role=combobox`), `.tgplist` (`role=listbox`, `.tgpopt` options; `.ty-budget` marks), `.tgprecent` | choosing tags: the add form, the template dialog, the Transactions filter (`multiple: false`); see below |
 
 ### Tag picker

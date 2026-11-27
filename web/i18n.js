@@ -47,7 +47,7 @@ const I18N = {
     "Lost your phone? Enter one of your recovery codes instead.": "手機遺失了？改輸入一組備用碼。", "Verify": "驗證", "‹ Back": "‹ 返回",
     "QR code for your authenticator app": "給驗證器 App 掃描的 QR 碼",
     "Scan the QR code with an authenticator app (Google Authenticator, 1Password, Authy…).": "用驗證器 App（Google Authenticator、1Password、Authy…）掃描 QR 碼。",
-    "Or enter this key by hand:": "或手動輸入這組金鑰：", "Enter the 6-digit code it shows:": "輸入 App 顯示的 6 位數驗證碼：",
+    "Or enter this key by hand:": "或手動輸入這組金鑰：", "Show key": "顯示金鑰", "Hide key": "隱藏金鑰", "Copy key": "複製金鑰", "Key copied.": "已複製金鑰。", "Enter the 6-digit code it shows:": "輸入 App 顯示的 6 位數驗證碼：",
     "Two-step verification is on.": "已開啟兩步驟驗證。",
     "Save these recovery codes somewhere safe. Each works once if you lose your phone; they will not be shown again.": "請把這些備用碼存放在安全的地方。手機遺失時，每組可使用一次；之後不會再顯示。",
     "Copy": "複製", "Download": "下載", "Done": "完成", "Copied.": "已複製。", "Copy failed.": "無法複製。", "nightly": "nightly", "Version details": "版本資訊", "Build time": "建置時間", "Server version": "伺服器版本", "App": "App", "Check for updates": "檢查更新", "Version {version} is available": "有新版本 {version}", "Commit": "提交", "Nightly test build, built automatically every day": "每日自動建置的測試版（nightly）", "Copy failed; select the codes instead.": "無法複製，請直接選取備用碼。",
