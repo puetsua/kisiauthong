@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 [package]
 name = "kisiauthong-app"
-version = "0.6.0"
+version = "0.7.0"
 description = "記數通 KiSiauThong app: opens the web UI of the user's own server"
 authors = ["kisiauthong contributors"]
 license = "AGPL-3.0-or-later"
