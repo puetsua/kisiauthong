@@ -90,6 +90,7 @@
       <button type="button" data-type="expense" class="on" data-i18n="Expense">Expense</button><button type="button" data-type="income" data-i18n="Income">Income</button><button type="button" data-type="transfer" data-i18n="Transfer">Transfer</button>
     </div>
     <div id="fQuick" class="quickbox" hidden></div>
+    <label id="fTitleWrap"><span data-i18n="Title">Title</span> <input name="note" maxlength="200" data-i18n-placeholder="Groceries"></label>
     <label id="fAccWrap"><span id="fAccountLab">Account</span> <select name="accountId" id="fAccount"></select></label>
     <label id="fExtWrap" hidden><span id="fExtLab">Paid to</span> <select name="extAccountId" id="fExt"></select></label>
     <label id="fToWrap" hidden><span data-i18n="To account">To account</span> <select name="toAccountId" id="fToAccount"></select></label>
@@ -98,7 +99,6 @@
     <div class="daterow"><label><span data-i18n="Date">Date</span> <input name="date" type="date" required></label><div class="timenow"><label><span data-i18n="Time">Time</span> <input name="time" type="time"></label><button type="button" id="fNowBtn" class="iconbtn nowbtn" data-i18n-aria="Fill in current date and time" data-i18n-title="Fill in current date and time"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.84 8.2A9 9 0 1 1 5.64 18.36"/><path d="M3.55 4.81L3.84 8.2L6.63 6.25"/><path d="M12 7.5V12l3 2"/></svg></button></div></div>
     <label id="fTzWrap"><span data-i18n="Time zone">Time zone</span> <select name="tz" id="fTz"></select></label>
     <div id="fCatsWrap" class="drawerfield"></div>
-    <label id="fTitleWrap"><span data-i18n="Title">Title</span> <input name="note" maxlength="200" data-i18n-placeholder="Groceries"></label>
     <label id="fMemoWrap"><span data-i18n="Note">Note</span> <textarea name="memo" rows="3" maxlength="4000" data-i18n-placeholder="Details worth remembering: who, why, receipt number…"></textarea></label>
     <div class="saverow">
       <button class="primarybtn big" type="submit" data-i18n="Save transaction">Save transaction</button>

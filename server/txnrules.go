@@ -283,6 +283,19 @@ func normalizeSchedule(s *Schedule) error {
 	return nil
 }
 
+// checkTemplateAmount needs a positive amount on a template that repeats: what it
+// generates is a transaction or an allocation, always one fixed positive amount.
+// A shortcut (frequency never, ADR 0012) only fills in the add form, so it may
+// have none (0), for entries whose amount differs every time (issue #121).
+// Call it after normalizeSchedule.
+func checkTemplateAmount(tp TransactionTemplate) error {
+	a := tp.Template.AmountMinor
+	if a < 0 || (a == 0 && tp.Schedule.Frequency != "never") {
+		return fmt.Errorf("a repeating template needs a positive amount; only a shortcut (frequency never) may have none")
+	}
+	return nil
+}
+
 // normalizeTemplate applies the same rules to what a template generates.
 func (d *Data) normalizeTemplate(b *TemplateBody) error {
 	switch b.Type {

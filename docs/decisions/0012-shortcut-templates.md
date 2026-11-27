@@ -31,4 +31,14 @@ manual starting point.
   what a shortcut covers). Entry order comes from the transaction's
   `createdAt` (migration 13); older transactions fall back to their date
   and time. Recent is derived in the client and never stored.
+- A shortcut's amount is optional (issue #121): for a coffee or a grocery
+  run it differs every time. Stored as `amountMinor` 0 (or left out), it
+  fills in the rest of the add form and leaves Amount empty, with the focus
+  there; the Shortcuts table and the add form's template chips show no
+  amount for it. Its Tags and Title are optional too: empty, they fill in
+  nothing. A template that repeats still needs a positive amount, in the
+  form and on the server, because what it generates is a Transaction (or
+  an Allocation) with one fixed positive amount. Letting a repeating
+  template leave its amount open until confirmation would change that
+  invariant and needs its own ADR.
 - No new element: this stays inside TransactionTemplate.

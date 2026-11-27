@@ -2171,4 +2171,51 @@ later.push(["copyText (#122): without navigator.clipboard (http:// on the LAN) a
     assert.strictEqual(toast.textContent, "Copied.");
   } finally { sandbox.navigator = wasNav; ["createElement", "activeElement", "body", "execCommand"].forEach((k) => delete docProps[k]); }
 }]);
+test("shortcut without an amount (#121): optional in the dialog, no amount in lists, an empty Amount when used", () => {
+  const d = t.state.data, was = { transactionTemplates: d.transactionTemplates, transactions: d.transactions, tags: d.tags, accounts: d.accounts, externals: d.externals, allAccounts: d.allAccounts };
+  // app.js's own functions, from the same context (not exported on __t)
+  const { screenTemplates, quickPicks, drawQuick, applyPick } = vm.runInContext("({ screenTemplates, quickPicks, drawQuick, applyPick })", sandbox);
+  const form = $el("#txnForm"), wasEls = form.elements;
+  try {
+    const amountInput = () => strip($el("#dialogBody").innerHTML).match(/<input name="amount"[^>]*>/)[0];
+    t.openTemplateDialog(null, { name: "", template: null, schedule: { frequency: "never" } });
+    assert.match(strip($el("#dialogBody").innerHTML), /^<form id="dialogForm"><label class="wide"><span>Template name<\/span><input name="name"[^>]*><\/label><label class="wide"><span>Title<\/span><input name="note"/, "Template name first, Title right under it");
+    const html = read("index.html"), at = (s) => html.indexOf(s);
+    assert.ok(at('id="fQuick"') < at('id="fTitleWrap"') && at('id="fTitleWrap"') < at('id="fAccWrap"') && at('id="fTitleWrap"') < at('id="fAmtWrap"') && at('id="fTitleWrap"') < at('id="fCatsWrap"'), "the add form's Title comes right after the quick picks");
+    assert.doesNotMatch(amountInput(), /required/, "a shortcut's amount is optional");
+    assert.match(amountInput(), /value=""/);
+    t.openTemplateDialog(null, { name: "Rent", template: null, schedule: { frequency: "monthly" } });
+    assert.match(amountInput(), / required /, "a repeating template needs an amount");
+    const coffee = { id: "tpl-c", name: "Coffee", enabled: true, template: { type: "transfer", fromAccountId: "a2", toAccountId: "acc-external", amountMinor: 0, currency: "TWD", note: "" }, schedule: { frequency: "never", interval: 1 } };
+    const lunch = { id: "tpl-l", name: "Lunch", enabled: true, template: { type: "transfer", fromAccountId: "a2", toAccountId: "acc-external", amountMinor: 12000, currency: "TWD", note: "Lunch" }, schedule: { frequency: "never", interval: 1 } };
+    Object.assign(d, { transactionTemplates: [coffee, lunch], transactions: [], tags: [], accounts: [acc, other], externals: [ext], allAccounts: [acc, other, ext] });
+    const amt = t.fmt(12000, "TWD");
+    const v = view();
+    screenTemplates(v);
+    const cells = [...v.innerHTML.matchAll(/data-label="Fills in"[^>]*><div class="tdv">([^<]*)</g)].map((m) => m[1]);
+    assert.deepStrictEqual(cells, ["Expense", "Expense " + amt], "the Shortcuts table shows no amount for a shortcut without one");
+    const picks = quickPicks("expense");
+    assert.deepStrictEqual(picks.tpl.map((p) => [p.label, p.title]), [["Coffee", ""], ["Lunch", "Lunch"]], "an empty title stays empty");
+    drawQuick(picks);
+    const chips = [...$el("#fQuick").innerHTML.matchAll(/<small>([^<]*)<\/small>/g)].map((m) => m[1]);
+    assert.deepStrictEqual(chips, ["Daily", amt + " · Daily"], "the chip shows the account only");
+    let focused = false;
+    form.elements = { accountId: { options: [{ value: "a2" }], value: "" }, amount: { value: "99", focus: () => { focused = true; }, select: () => {} }, note: { value: "old" } };
+    applyPick(picks.tpl[0], null);
+    assert.strictEqual(form.elements.amount.value, "", "Amount is left empty");
+    assert.strictEqual(form.elements.note.value, "", "no title is filled in");
+    assert.strictEqual(form.elements.accountId.value, "a2");
+    assert.ok(focused, "the focus is on Amount");
+    applyPick(picks.tpl[1], null);
+    assert.strictEqual(form.elements.amount.value, "120", "a shortcut with an amount still fills it in");
+    t.setLang("zh-TW");
+    t.openTemplateDialog("tpl-c");
+    assert.doesNotMatch(amountInput(), /required/);
+    assert.match(strip($el("#dialogBody").innerHTML), /selected>永不<\/option>/, "zh-TW: Frequency Never");
+    assert.match(strip($el("#dialogBody").innerHTML), /<span>範本名稱<\/span>/, "zh-TW: Template name");
+  } finally {
+    t.setLang("en"); form.elements = wasEls;
+    Object.assign(d, was);
+  }
+});
 require("./run-tests.js")(later, n);
