@@ -2970,7 +2970,13 @@ function formBody() {
     const ext = f.extAccountId || EXT_ID;
     Object.assign(body, { type: "transfer", accountId: "", fromAccountId: type === "expense" ? f.accountId : ext, toAccountId: type === "expense" ? ext : f.accountId });
     body.tagIds = pickedCats();
-  } else if (type === "transfer") { body.fromAccountId = f.accountId; body.toAccountId = f.toAccountId; body.accountId = ""; }
+  } else if (type === "transfer") {
+    body.fromAccountId = f.accountId; body.toAccountId = f.toAccountId; body.accountId = "";
+    // the Transfer tab has no Tags field and saving replaces the tags (ADR 0010): a transfer being edited
+    // sends the tags it has (set through the API or MCP), so saving it never clears them (issue #144)
+    const was = state.editingTxn && state.data.transactions.find((x) => x.id === state.editingTxn);
+    body.tagIds = was && flow(was) === "transfer" ? [...txnCats(was)] : [];
+  }
   return { f, cur, type, body };
 }
 onSubmit($("#txnForm"), async (e) => {
